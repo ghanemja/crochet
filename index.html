@@ -373,8 +373,28 @@ function parsePattern(text) {
       else if (c) { found = resolve(c[1]); count = 1; }
 
       if (!found) continue;
+
+      // "across" / "in each" with no explicit count = repeat this stitch to fill the row.
+      // Fill up to the stated (N) target, else fall back to the previous row's width.
+      const isFill = /\b(across|in each|in every|around)\b/i.test(clause) && count === 1 && !repeatMatch;
+      if (isFill) {
+        const prevWidth = rows.length ? rows[rows.length-1].stitches.length : 0;
+        const goal = targetCount || prevWidth || 1;
+        const remaining = Math.max(1, goal - stitches.length);
+        for (let i = 0; i < remaining; i++) stitches.push({ key: found, abbr: found });
+        continue;
+      }
+
       const total = count * repeatN;
       for (let i = 0; i < total; i++) stitches.push({ key: found, abbr: found });
+    }
+
+    // if a (N) target is given and we still fell short (e.g. "repeat" rounds), top up
+    // by repeating the row's stitch pattern until we reach the target count.
+    if (targetCount && stitches.length && stitches.length < targetCount) {
+      const base = stitches.slice();
+      let i = 0;
+      while (stitches.length < targetCount) { stitches.push({ ...base[i % base.length] }); i++; }
     }
 
     if (stitches.length) rows.push({ label, stitches });

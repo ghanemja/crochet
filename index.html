@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YarnFlow — Crochet Pattern Animator</title>
+<style>
+  :root {
+    --bg: #14101a;
+    --bg-2: #1d1726;
+    --panel: #251d32;
+    --panel-2: #2e2440;
+    --ink: #f4eefb;
+    --muted: #b6a9c9;
+    --faint: #7c6f91;
+    --accent: #ff6f91;
+    --accent-2: #ffd166;
+    --accent-3: #7be0c8;
+    --line: #3a2f4d;
+    --good: #7be0c8;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    font-synthesis: none;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: radial-gradient(1200px 700px at 80% -10%, #2a1f3a 0%, var(--bg) 55%) fixed;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Top bar ---------- */
+  header.appbar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(20,16,26,.6);
+    backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 20;
+  }
+  .logo {
+    width: 38px; height: 38px; border-radius: 11px;
+    background: conic-gradient(from 200deg, var(--accent), var(--accent-2), var(--accent-3), var(--accent));
+    display: grid; place-items: center; font-size: 20px;
+    box-shadow: 0 4px 16px rgba(255,111,145,.4);
+  }
+  .brand { font-weight: 800; font-size: 19px; letter-spacing: .2px; }
+  .brand small { display:block; font-weight: 500; font-size: 11px; color: var(--faint); letter-spacing: 1.5px; text-transform: uppercase; }
+  .badge {
+    margin-left: 10px; font-size: 11px; font-weight: 700; color: var(--accent-2);
+    border: 1px solid var(--accent-2); padding: 3px 9px; border-radius: 999px; opacity: .85;
+  }
+  .spacer { flex: 1; }
+  .ghost-btn {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600;
+  }
+  .ghost-btn:hover { color: var(--ink); border-color: var(--accent); }
+
+  /* ---------- Layout ---------- */
+  .workspace {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 18px;
+    padding: 18px;
+    max-width: 1500px; margin: 0 auto;
+    align-items: start;
+  }
+  @media (max-width: 920px) { .workspace { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  .panel h2 {
+    margin: 0; padding: 14px 16px; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--faint); border-bottom: 1px solid var(--line); font-weight: 700;
+  }
+  .panel .body { padding: 16px; }
+
+  /* ---------- Upload / input ---------- */
+  .dropzone {
+    border: 2px dashed var(--line); border-radius: 12px; padding: 18px; text-align: center;
+    color: var(--muted); cursor: pointer; transition: .15s; background: rgba(255,255,255,.015);
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent); color: var(--ink); background: rgba(255,111,145,.06); }
+  .dropzone .big { font-size: 26px; }
+  .dropzone .hint { font-size: 12px; color: var(--faint); margin-top: 4px; }
+
+  textarea#patternInput {
+    width: 100%; min-height: 150px; resize: vertical; margin-top: 12px;
+    background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 10px; padding: 11px 12px; font-family: "SF Mono", ui-monospace, "Cascadia Code", monospace;
+    font-size: 12.5px; line-height: 1.5;
+  }
+  textarea#patternInput:focus { outline: none; border-color: var(--accent); }
+
+  .samples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip {
+    font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); cursor: pointer;
+  }
+  .chip:hover { border-color: var(--accent-3); color: var(--ink); }
+
+  .primary-btn {
+    width: 100%; margin-top: 14px; padding: 12px; border: none; cursor: pointer;
+    border-radius: 11px; font-weight: 800; font-size: 14px; color: #1a1020;
+    background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    box-shadow: 0 6px 18px rgba(255,111,145,.35);
+  }
+  .primary-btn:active { transform: translateY(1px); }
+
+  /* ---------- Stage ---------- */
+  .stage-wrap { display: flex; flex-direction: column; gap: 16px; }
+  .stage {
+    position: relative; border-radius: var(--radius); overflow: hidden;
+    border: 1px solid var(--line); box-shadow: var(--shadow);
+    background:
+      radial-gradient(800px 400px at 50% 0%, #322545 0%, #1a1424 60%);
+  }
+  canvas#stage { display: block; width: 100%; height: auto; }
+  .stage-overlay {
+    position: absolute; left: 14px; top: 12px; display: flex; gap: 8px; align-items: center;
+    font-size: 12px; color: var(--muted); pointer-events: none;
+  }
+  .pill { background: rgba(0,0,0,.35); border: 1px solid var(--line); padding: 4px 10px; border-radius: 999px; }
+  .pill b { color: var(--ink); }
+  .now-stitch {
+    position: absolute; right: 14px; top: 12px; text-align: right; pointer-events: none;
+  }
+  .now-stitch .label { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 1px; }
+  .now-stitch .val { font-size: 22px; font-weight: 800; color: var(--accent-2); }
+  .now-stitch .desc { font-size: 12px; color: var(--muted); max-width: 220px; }
+
+  /* ---------- Transport ---------- */
+  .transport { padding: 14px 16px; }
+  .scrub { width: 100%; appearance: none; height: 7px; border-radius: 999px; cursor: pointer;
+    background: var(--line); outline: none; }
+  .scrub::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--accent); border: 3px solid #fff2; box-shadow: 0 2px 8px rgba(0,0,0,.5); cursor: pointer; }
+  .scrub::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff2; cursor: pointer; }
+
+  .controls { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .tbtn {
+    width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--ink); font-size: 17px; cursor: pointer; display: grid; place-items: center;
+  }
+  .tbtn:hover { border-color: var(--accent); }
+  .tbtn.play { width: 54px; height: 54px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); color: #1a1020; border: none; font-size: 20px; box-shadow: 0 6px 16px rgba(255,111,145,.35); }
+  .counter { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; margin-left: 4px; }
+  .counter b { color: var(--ink); }
+  .speed { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  .speed select { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+
+  /* ---------- Steps list ---------- */
+  .steps { max-height: 280px; overflow: auto; }
+  .step {
+    display: flex; gap: 10px; align-items: center; padding: 9px 16px; border-bottom: 1px solid var(--line);
+    cursor: pointer; font-size: 13px;
+  }
+  .step:hover { background: rgba(255,255,255,.03); }
+  .step.active { background: linear-gradient(90deg, rgba(255,111,145,.18), transparent); }
+  .step.done .num { background: var(--good); color: #10261f; }
+  .step .num {
+    flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--panel-2); color: var(--muted); font-size: 11px; font-weight: 800; border: 1px solid var(--line);
+  }
+  .step.active .num { background: var(--accent); color: #2a0f18; border: none; }
+  .step .txt { flex: 1; }
+  .step .txt .main { font-weight: 600; }
+  .step .txt .sub { font-size: 11px; color: var(--faint); }
+  .step .ab { font-size: 11px; font-weight: 700; color: var(--accent-3); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .legend .li { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .legend .sw { width: 14px; height: 14px; border-radius: 4px; }
+
+  footer.note { text-align: center; color: var(--faint); font-size: 11.5px; padding: 4px 0 22px; }
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--panel-2); border: 1px solid var(--accent); color: var(--ink);
+    padding: 10px 16px; border-radius: 12px; font-size: 13px; opacity: 0; transition: .25s; pointer-events: none; z-index: 50;
+    box-shadow: var(--shadow);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="logo">🧶</div>
+  <div class="brand">YarnFlow<small>Crochet Pattern Animator</small></div>
+  <span class="badge">MOCKUP</span>
+  <div class="spacer"></div>
+  <button class="ghost-btn" id="helpBtn">How it works</button>
+</header>
+
+<div class="workspace">
+
+  <!-- LEFT: input -->
+  <section class="panel" aria-label="Pattern input">
+    <h2>1 · Upload your pattern</h2>
+    <div class="body">
+      <label class="dropzone" id="dropzone" for="fileInput">
+        <div class="big">📄⬆️</div>
+        <div>Drop a <b>.txt / .pdf</b> pattern or click to browse</div>
+        <div class="hint">…or paste the pattern below</div>
+        <input type="file" id="fileInput" accept=".txt,.pdf,.md" hidden />
+      </label>
+
+      <textarea id="patternInput" spellcheck="false" placeholder="Row 1: ch 12&#10;Row 2: sc in 2nd ch from hook, sc across (11)&#10;Row 3: ch 1, turn, sc across (11)"></textarea>
+
+      <div class="samples" id="samples"></div>
+      <button class="primary-btn" id="loadBtn">✨ Animate this pattern</button>
+    </div>
+  </section>
+
+  <!-- RIGHT: stage + steps -->
+  <div class="stage-wrap">
+
+    <section class="panel">
+      <div class="stage">
+        <canvas id="stage" width="1040" height="560"></canvas>
+        <div class="stage-overlay">
+          <span class="pill" id="rowPill">Row <b>—</b></span>
+          <span class="pill" id="progPill"><b>0</b>%</span>
+        </div>
+        <div class="now-stitch">
+          <div class="label">Now stitching</div>
+          <div class="val" id="nowAbbr">—</div>
+          <div class="desc" id="nowDesc">Load a pattern to begin the tutorial.</div>
+        </div>
+      </div>
+
+      <div class="transport">
+        <input type="range" class="scrub" id="scrub" min="0" max="0" value="0" />
+        <div class="controls">
+          <button class="tbtn" id="toStart" title="Restart">⏮</button>
+          <button class="tbtn" id="prev" title="Previous stitch">◀︎</button>
+          <button class="tbtn play" id="play" title="Play / Pause">▶</button>
+          <button class="tbtn" id="next" title="Next stitch">▶︎</button>
+          <span class="counter">Stitch <b id="curN">0</b> / <span id="totN">0</span></span>
+          <div class="speed">
+            Speed
+            <select id="speed">
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2.5">2.5×</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Step-by-step</h2>
+      <div class="steps" id="steps"></div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <footer class="note">YarnFlow mockup · stitch glyphs are stylized for tutorial clarity · parses ch, sc, hdc, dc, tr, sl st, inc, dec, magic ring</footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   YarnFlow — crochet pattern animator (mockup)
+   - parse() turns pattern text into a flat list of stitches
+   - layout() assigns each stitch an (x,y) on a grid of rows
+   - the animator draws stitches up to a fractional progress,
+     with a moving hook + yarn strand for the in-progress one
+   ============================================================ */
+
+// ---- Stitch dictionary -------------------------------------------------
+const STITCHES = {
+  ch:   { name: "Chain",          color: "#ffd166", h: 0.55, desc: "Yarn over, pull through the loop on your hook." },
+  sl:   { name: "Slip stitch",    color: "#c0a3ff", h: 0.45, desc: "Insert hook, yarn over, pull through stitch and loop in one motion." },
+  sc:   { name: "Single crochet", color: "#ff6f91", h: 1.0,  desc: "Insert hook, yarn over & pull up a loop, yarn over & pull through both loops." },
+  hdc:  { name: "Half double",    color: "#7be0c8", h: 1.4,  desc: "Yarn over, insert hook, pull up a loop, yarn over, pull through all three loops." },
+  dc:   { name: "Double crochet", color: "#5ec5ff", h: 1.9,  desc: "Yarn over, insert, pull up loop, [yarn over pull through 2] twice." },
+  tr:   { name: "Treble crochet", color: "#ffa657", h: 2.4,  desc: "Yarn over twice, insert, pull up loop, [yarn over pull through 2] three times." },
+  inc:  { name: "Increase",       color: "#ff9ecd", h: 1.0,  desc: "Work two stitches into the same stitch." },
+  dec:  { name: "Decrease",       color: "#9aa0ff", h: 1.0,  desc: "Work two stitches together into one." },
+  mr:   { name: "Magic ring",     color: "#ffe08a", h: 0.6,  desc: "Form an adjustable loop to start working in the round." },
+};
+
+// abbreviation aliases -> canonical key
+const ALIAS = {
+  ch:"ch", chain:"ch",
+  sc:"sc", "single":"sc",
+  hdc:"hdc",
+  dc:"dc", "double":"dc",
+  tr:"tr", trc:"tr", treble:"tr",
+  "sl":"sl", slst:"sl", "sl st":"sl", ss:"sl", slip:"sl",
+  inc:"inc", dec:"dec",
+  mr:"mr", "magic ring":"mr", "magic circle":"mr", ring:"mr",
+};
+
+// ---- Sample patterns ---------------------------------------------------
+const SAMPLES = {
+  "Scarf swatch":
+`Row 1: ch 14
+Row 2: sc in 2nd ch from hook, sc across (13)
+Row 3: ch 1, turn, sc across (13)
+Row 4: ch 1, turn, hdc across (13)
+Row 5: ch 1, turn, dc across (13)`,
+  "Granny start":
+`Row 1: ch 6, sl st to join
+Row 2: ch 3, dc 11 into ring
+Row 3: ch 3, dc 11
+Row 4: ch 3, dc 11`,
+  "Amigurumi ball":
+`Rnd 1: mr, 6 sc in ring (6)
+Rnd 2: inc x6 (12)
+Rnd 3: sc, inc, repeat (18)
+Rnd 4: sc 2, inc, repeat (24)
+Rnd 5: sc across (24)`,
+  "Mesh row":
+`Row 1: ch 20
+Row 2: ch 4, turn, dc, ch 1, skip 1, dc across
+Row 3: ch 4, turn, dc, ch 1, dc across`,
+};
+
+// ---- Parser ------------------------------------------------------------
+// Returns { rows: [ { label, stitches:[{key,abbr}] } ], flat:[...] }
+function parsePattern(text) {
+  const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const rows = [];
+  let rowCount = 0;
+
+  for (let line of lines) {
+    rowCount++;
+    // strip a leading "Row 3:" / "Rnd 1:" / "R1:" label
+    let label = "Row " + rowCount;
+    const m = line.match(/^(row|rnd|round|r)\s*([0-9]+)\s*[:.\-]?\s*/i);
+    if (m) { label = (/rnd|round/i.test(m[1]) ? "Rnd " : "Row ") + m[2]; line = line.slice(m[0].length); }
+    // strip a trailing stitch count "(13)"
+    line = line.replace(/\(\s*\d+\s*\)\s*$/,"").trim();
+
+    const stitches = [];
+    // tokenize into clauses separated by commas
+    const clauses = line.split(/,|;/).map(s => s.trim()).filter(Boolean);
+
+    for (let clause of clauses) {
+      // handle "repeat" by light expansion: "<...> repeat" or "* ... rep"
+      const repeatMatch = clause.match(/x\s*(\d+)/i);
+      const repeatN = repeatMatch ? parseInt(repeatMatch[1],10) : 1;
+      if (repeatMatch) clause = clause.replace(repeatMatch[0],"").trim();
+
+      // find a known stitch abbreviation in the clause
+      let found = null, count = 1;
+      // pattern like "sc 5" or "5 sc" or "dc 11 into ring"
+      const a = clause.match(/(\d+)\s+([a-z ]+?)(?:\b)/i);
+      const b = clause.match(/([a-z]+(?:\s*st)?)\s+(\d+)/i);
+      const c = clause.match(/\b(ch|sc|hdc|dc|tr|trc|sl\s*st|slst|ss|inc|dec|mr|magic ring|magic circle|chain|single|double|treble|ring)\b/i);
+
+      const resolve = (raw) => {
+        if (!raw) return null;
+        const norm = raw.toLowerCase().replace(/\s+/g," ").trim();
+        return ALIAS[norm] || ALIAS[norm.replace(/ st$/,"")] || null;
+      };
+
+      if (a && resolve(a[2])) { count = parseInt(a[1],10); found = resolve(a[2]); }
+      else if (b && resolve(b[1])) { count = parseInt(b[2],10); found = resolve(b[1]); }
+      else if (c) { found = resolve(c[1]); count = 1; }
+
+      if (!found) continue;
+      const total = count * repeatN;
+      for (let i = 0; i < total; i++) stitches.push({ key: found, abbr: found });
+    }
+
+    if (stitches.length) rows.push({ label, stitches });
+    else rowCount--; // ignore lines with no recognizable stitches
+  }
+
+  // flatten with row index
+  const flat = [];
+  rows.forEach((r, ri) => r.stitches.forEach((s, si) => {
+    flat.push({ ...s, row: ri, idxInRow: si });
+  }));
+  return { rows, flat };
+}
+
+// ---- Layout: assign positions in a serpentine grid ---------------------
+function layout(parsed, W, H) {
+  const { rows } = parsed;
+  const pad = 80;
+  const usableW = W - pad*2;
+  const maxLen = Math.max(1, ...rows.map(r => r.stitches.length));
+  const gap = Math.min(46, usableW / Math.max(maxLen, 6));
+  const rowH = 64;
+  const baseY = H - 90;
+  const positions = [];
+
+  rows.forEach((r, ri) => {
+    const n = r.stitches.length;
+    const rowWidth = (n - 1) * gap;
+    const startX = (W - rowWidth) / 2;
+    const y = baseY - ri * rowH;
+    const reverse = ri % 2 === 1; // serpentine: alternate direction like real turning rows
+    r.stitches.forEach((s, si) => {
+      const order = reverse ? (n - 1 - si) : si;
+      positions.push({
+        x: startX + order * gap,
+        y,
+        key: s.key,
+        row: ri,
+        rowLabel: r.label,
+      });
+    });
+  });
+  return { positions, gap, rowH, baseY };
+}
+
+// ---- Renderer / animator ----------------------------------------------
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+
+const App = {
+  parsed: null,
+  lay: null,
+  progress: 0,     // fractional index into flat stitch list
+  playing: false,
+  speed: 1,
+  lastT: 0,
+};
+
+function fitCanvas() {
+  const ratio = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth;
+  const cssH = cssW * (560/1040);
+  canvas.width = cssW * ratio;
+  canvas.height = cssH * ratio;
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+  App.W = cssW; App.H = cssH;
+  if (App.parsed) App.lay = layout(App.parsed, App.W, App.H);
+}
+
+// draw a single stitch glyph at p, with t in [0,1] = how complete it is
+function drawStitch(p, t, isCurrent) {
+  const st = STITCHES[p.key];
+  const col = st.color;
+  const unit = 26;
+  const h = st.h * unit * 0.9 + 8;
+  const w = 15;
+  const x = p.x, yBase = p.y;
+  const yTop = yBase - h * t;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (p.key === "ch" || p.key === "sl" || p.key === "mr") {
+    // a yarn loop / oval
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 6;
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.ellipse(x, yBase - 10, 10*t+2, 13*t+2, 0, 0, Math.PI*2);
+    ctx.stroke();
+    // inner highlight
+    ctx.strokeStyle = "rgba(255,255,255,.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(x-2, yBase - 12, 6*t, 8*t, 0, -0.4, Math.PI);
+    ctx.stroke();
+  } else {
+    // post-style stitch (sc/dc/...) : a braided vertical post with top loop
+    // main post (two strands twisted)
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(x - 3, yBase);
+    ctx.bezierCurveTo(x - 6, yBase - h*0.4*t, x + 6, yBase - h*0.7*t, x + 3, yTop);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + 3, yBase);
+    ctx.bezierCurveTo(x + 6, yBase - h*0.4*t, x - 6, yBase - h*0.7*t, x - 3, yTop);
+    ctx.stroke();
+    // top loop (the "V")
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(x - 9, yTop + 3);
+    ctx.quadraticCurveTo(x, yTop - 7*t, x + 9, yTop + 3);
+    ctx.stroke();
+    // little crossbars for taller stitches (dc/tr) to suggest yarn-overs
+    if (st.h >= 1.4 && t > 0.5) {
+      ctx.strokeStyle = "rgba(255,255,255,.45)";
+      ctx.lineWidth = 2.5;
+      const bars = st.h >= 2.4 ? 3 : (st.h >= 1.9 ? 2 : 1);
+      for (let i=1; i<=bars; i++) {
+        const by = yBase - (h*i/(bars+1));
+        ctx.beginPath();
+        ctx.moveTo(x-7, by); ctx.lineTo(x+7, by);
+        ctx.stroke();
+      }
+    }
+  }
+
+  if (isCurrent) {
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 18;
+    ctx.strokeStyle = "rgba(255,255,255,.9)";
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.arc(x, yTop, 5, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHook(x, y, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  // shaft
+  const grad = ctx.createLinearGradient(0,-6,0,90);
+  grad.addColorStop(0, "#e7ecf5");
+  grad.addColorStop(1, "#9aa6bd");
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 7; ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0,0);
+  ctx.lineTo(0, 78);
+  ctx.stroke();
+  // hook head
+  ctx.strokeStyle = "#f2f5fb";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(-4, -2, 6, -0.4, Math.PI*1.25);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawYarnBall(cx, cy, t) {
+  ctx.save();
+  const r = 34;
+  const g = ctx.createRadialGradient(cx-10, cy-10, 6, cx, cy, r);
+  g.addColorStop(0, "#ff9ab1");
+  g.addColorStop(1, "#d94e72");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+  // wound strands
+  ctx.strokeStyle = "rgba(0,0,0,.18)"; ctx.lineWidth = 2;
+  for (let i=0;i<6;i++){
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r-3, 12, (i*Math.PI/6)+t*0.5, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function clear() {
+  ctx.clearRect(0,0,App.W,App.H);
+  // subtle base line (the foundation surface)
+  ctx.strokeStyle = "rgba(255,255,255,.05)";
+  ctx.lineWidth = 1;
+  for (let gy = App.H-20; gy > 40; gy -= 32){
+    ctx.beginPath(); ctx.moveTo(40, gy); ctx.lineTo(App.W-40, gy); ctx.stroke();
+  }
+}
+
+function render() {
+  clear();
+  if (!App.lay) {
+    ctx.fillStyle = "rgba(255,255,255,.25)";
+    ctx.font = "600 18px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("🧶  Load a pattern to watch it come to life", App.W/2, App.H/2);
+    return;
+  }
+  const pos = App.lay.positions;
+  const prog = App.progress;
+  const completeCount = Math.floor(prog);
+  const frac = prog - completeCount;
+
+  // draw completed stitches
+  for (let i = 0; i < pos.length && i < completeCount; i++) {
+    drawStitch(pos[i], 1, false);
+  }
+
+  // yarn ball anchored bottom-left, strand to the hook
+  const ballPos = { x: 60, y: App.H - 44 };
+
+  // current (in-progress) stitch
+  if (completeCount < pos.length) {
+    const p = pos[completeCount];
+    const t = Math.max(0.06, frac);
+    drawStitch(p, t, true);
+
+    // hook hovering at the working loop
+    const st = STITCHES[p.key];
+    const h = st.h * 26 * 0.9 + 8;
+    const loopY = p.y - h * t;
+    const wob = Math.sin(performance.now()/180) * 3;
+    const hookX = p.x + 12 + wob;
+    const hookY = loopY - 64;
+    drawHook(hookX, hookY, 0.25);
+
+    // yarn strand: ball -> up -> hook tip -> working loop
+    ctx.save();
+    ctx.strokeStyle = "#ff6f91";
+    ctx.lineWidth = 4; ctx.lineCap = "round";
+    ctx.shadowColor = "rgba(255,111,145,.5)"; ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(ballPos.x, ballPos.y);
+    ctx.bezierCurveTo(
+      ballPos.x + 40, ballPos.y - 30,
+      hookX - 50, hookY + 30 + wob,
+      hookX - 4, hookY + 6
+    );
+    // around the hook tip down to the loop
+    ctx.quadraticCurveTo(hookX + 8, loopY - 20, p.x, loopY);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawYarnBall(ballPos.x, ballPos.y, prog);
+
+  updateHUD();
+}
+
+// ---- HUD / step list ---------------------------------------------------
+function updateHUD() {
+  if (!App.parsed) return;
+  const total = App.parsed.flat.length;
+  const cur = Math.min(Math.ceil(App.progress), total);
+  const idx = Math.min(Math.floor(App.progress), total - 1);
+  const s = App.parsed.flat[Math.max(0,idx)];
+  const st = STITCHES[s.key];
+
+  document.getElementById("curN").textContent = cur;
+  document.getElementById("totN").textContent = total;
+  document.getElementById("rowPill").querySelector("b").textContent =
+    (App.lay.positions[Math.max(0,idx)] || {}).rowLabel?.replace(/^(Row|Rnd)\s*/,"") ?? "—";
+  document.getElementById("progPill").querySelector("b").textContent =
+    Math.round((App.progress/total)*100);
+  document.getElementById("nowAbbr").textContent = s.key.toUpperCase();
+  document.getElementById("nowDesc").textContent = st.desc;
+
+  document.getElementById("scrub").value = App.progress;
+
+  // step rows
+  document.querySelectorAll(".step").forEach((el) => {
+    const ri = +el.dataset.row;
+    el.classList.toggle("active", ri === s.row);
+    el.classList.toggle("done", ri < s.row);
+  });
+  const activeEl = document.querySelector(".step.active");
+  if (activeEl) activeEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function buildStepList() {
+  const wrap = document.getElementById("steps");
+  wrap.innerHTML = "";
+  App.parsed.rows.forEach((r, ri) => {
+    // summarize stitch composition
+    const counts = {};
+    r.stitches.forEach(s => counts[s.key] = (counts[s.key]||0)+1);
+    const summary = Object.entries(counts).map(([k,v]) => `${v} ${k}`).join(", ");
+    const el = document.createElement("div");
+    el.className = "step";
+    el.dataset.row = ri;
+    el.innerHTML = `
+      <div class="num">${ri+1}</div>
+      <div class="txt">
+        <div class="main">${r.label} · ${r.stitches.length} stitches</div>
+        <div class="sub">${summary}</div>
+      </div>
+      <div class="ab">▶</div>`;
+    el.addEventListener("click", () => {
+      // jump to start of this row
+      let acc = 0;
+      for (let k=0;k<ri;k++) acc += App.parsed.rows[k].stitches.length;
+      App.progress = acc + 0.001;
+      pause(); render();
+    });
+    wrap.appendChild(el);
+  });
+  // legend
+  const used = [...new Set(App.parsed.flat.map(s => s.key))];
+  const lg = document.getElementById("legend");
+  lg.innerHTML = used.map(k =>
+    `<div class="li"><span class="sw" style="background:${STITCHES[k].color}"></span>${k.toUpperCase()} — ${STITCHES[k].name}</div>`
+  ).join("");
+}
+
+// ---- Playback ----------------------------------------------------------
+function loop(t) {
+  if (!App.playing) return;
+  const dt = (t - App.lastT) / 1000;
+  App.lastT = t;
+  const total = App.parsed.flat.length;
+  App.progress += dt * 1.6 * App.speed; // ~1.6 stitches/sec at 1x
+  if (App.progress >= total) { App.progress = total; pause(); }
+  render();
+  requestAnimationFrame(loop);
+}
+function play() {
+  if (!App.parsed) { toast("Load a pattern first ✨"); return; }
+  if (App.progress >= App.parsed.flat.length) App.progress = 0;
+  App.playing = true; App.lastT = performance.now();
+  document.getElementById("play").textContent = "⏸";
+  requestAnimationFrame(loop);
+}
+function pause() {
+  App.playing = false;
+  document.getElementById("play").textContent = "▶";
+}
+
+// continuous redraw for hook wobble even when paused-ish
+function idleAnim(){
+  if (!App.playing && App.parsed) render();
+  requestAnimationFrame(idleAnim);
+}
+
+// ---- Wiring ------------------------------------------------------------
+function loadPattern(text) {
+  const parsed = parsePattern(text);
+  if (!parsed.flat.length) { toast("Couldn't find stitches — try a sample 👇"); return; }
+  App.parsed = parsed;
+  App.lay = layout(parsed, App.W, App.H);
+  App.progress = 0;
+  buildStepList();
+  const scrub = document.getElementById("scrub");
+  scrub.max = parsed.flat.length;
+  scrub.value = 0;
+  render();
+  toast(`Loaded ${parsed.rows.length} rows · ${parsed.flat.length} stitches`);
+}
+
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+document.getElementById("loadBtn").addEventListener("click", () =>
+  loadPattern(document.getElementById("patternInput").value));
+
+document.getElementById("play").addEventListener("click", () =>
+  App.playing ? pause() : play());
+
+document.getElementById("next").addEventListener("click", () => {
+  if (!App.parsed) return; pause();
+  App.progress = Math.min(App.parsed.flat.length, Math.floor(App.progress)+1); render();
+});
+document.getElementById("prev").addEventListener("click", () => {
+  if (!App.parsed) return; pause();
+  App.progress = Math.max(0, Math.ceil(App.progress)-1); render();
+});
+document.getElementById("toStart").addEventListener("click", () => {
+  if (!App.parsed) return; pause(); App.progress = 0; render();
+});
+document.getElementById("scrub").addEventListener("input", (e) => {
+  if (!App.parsed) return; pause(); App.progress = +e.target.value; render();
+});
+document.getElementById("speed").addEventListener("change", (e) => App.speed = +e.target.value);
+
+// samples
+const sc = document.getElementById("samples");
+Object.keys(SAMPLES).forEach(name => {
+  const c = document.createElement("button");
+  c.className = "chip"; c.textContent = name;
+  c.addEventListener("click", () => {
+    document.getElementById("patternInput").value = SAMPLES[name];
+    loadPattern(SAMPLES[name]);
+  });
+  sc.appendChild(c);
+});
+
+// file upload (txt read inline; pdf just acknowledged in mockup)
+const dz = document.getElementById("dropzone");
+const fi = document.getElementById("fileInput");
+fi.addEventListener("change", e => handleFile(e.target.files[0]));
+["dragenter","dragover"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("drag"); }));
+["dragleave","drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("drag"); }));
+dz.addEventListener("drop", e => handleFile(e.dataTransfer.files[0]));
+function handleFile(file){
+  if (!file) return;
+  if (/\.pdf$/i.test(file.name)) {
+    toast("PDF parsing is stubbed in this mockup — paste the text 🙂");
+    return;
+  }
+  const r = new FileReader();
+  r.onload = () => { document.getElementById("patternInput").value = r.result; loadPattern(r.result); };
+  r.readAsText(file);
+}
+
+document.getElementById("helpBtn").addEventListener("click", () =>
+  toast("Upload/paste a pattern → press ▶ to watch each stitch form"));
+
+// keyboard
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "TEXTAREA") return;
+  if (e.code === "Space") { e.preventDefault(); App.playing ? pause() : play(); }
+  if (e.code === "ArrowRight") document.getElementById("next").click();
+  if (e.code === "ArrowLeft") document.getElementById("prev").click();
+});
+
+window.addEventListener("resize", () => { fitCanvas(); render(); });
+
+// boot
+fitCanvas();
+render();
+idleAnim();
+// preload first sample so the mockup looks alive on open
+document.getElementById("patternInput").value = SAMPLES["Scarf swatch"];
+loadPattern(SAMPLES["Scarf swatch"]);
+</script>
+</body>
+</html>

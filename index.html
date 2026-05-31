@@ -342,7 +342,9 @@ function parsePattern(text) {
     let label = "Row " + rowCount;
     const m = line.match(/^(row|rnd|round|r)\s*([0-9]+)\s*[:.\-]?\s*/i);
     if (m) { label = (/rnd|round/i.test(m[1]) ? "Rnd " : "Row ") + m[2]; line = line.slice(m[0].length); }
-    // strip a trailing stitch count "(13)"
+    // capture + strip a trailing stitch count "(13)" — this is the target row width
+    const countMatch = line.match(/\(\s*(\d+)\s*\)\s*$/);
+    const targetCount = countMatch ? parseInt(countMatch[1],10) : null;
     line = line.replace(/\(\s*\d+\s*\)\s*$/,"").trim();
 
     const stitches = [];

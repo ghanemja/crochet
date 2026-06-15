@@ -188,9 +188,71 @@
     box-shadow: var(--shadow);
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---------- Access gate ---------- */
+  .gate {
+    position: fixed; inset: 0; z-index: 100;
+    display: grid; place-items: center;
+    background: radial-gradient(1000px 600px at 50% -10%, #2a1f3a 0%, var(--bg) 60%);
+  }
+  .gate.hidden { display: none; }
+  .gate-card {
+    width: min(360px, 90vw);
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%);
+    border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+    padding: 30px 26px 26px; text-align: center;
+  }
+  .gate-logo {
+    width: 54px; height: 54px; margin: 0 auto 12px; border-radius: 15px;
+    display: grid; place-items: center; font-size: 28px;
+    background: conic-gradient(from 200deg, var(--accent), var(--accent-2), var(--accent-3), var(--accent));
+    box-shadow: 0 6px 20px rgba(255,111,145,.4);
+  }
+  .gate-card h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: .3px; }
+  .gate-sub { margin: 4px 0 20px; color: var(--faint); font-size: 13px; }
+  .gate-field { display: block; text-align: left; margin-bottom: 14px; }
+  .gate-field span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--faint); margin-bottom: 6px; }
+  .gate-field input {
+    width: 100%; background: var(--bg); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; font-size: 14px;
+  }
+  .gate-field input:focus { outline: none; border-color: var(--accent); }
+  .gate-error {
+    display: none; color: #ff8aa3; font-size: 12.5px; margin: -4px 0 12px; text-align: left;
+  }
+  .gate-error.show { display: block; }
+  .gate.shake .gate-card { animation: gshake .35s; }
+  @keyframes gshake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-7px)} 75%{transform:translateX(7px)} }
+  .gate-btn {
+    width: 100%; margin-top: 4px; padding: 12px; border: none; cursor: pointer;
+    border-radius: 11px; font-weight: 800; font-size: 14px; color: #1a1020;
+    background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    box-shadow: 0 6px 18px rgba(255,111,145,.35);
+  }
+  .gate-btn:active { transform: translateY(1px); }
 </style>
 </head>
 <body>
+
+<!-- Lightweight access gate. NOTE: this is a client-side deterrent only,
+     not real security — the credentials live in the page source. -->
+<div class="gate" id="gate">
+  <form class="gate-card" id="gateForm" autocomplete="off">
+    <div class="gate-logo">🧶</div>
+    <h1>YarnFlow</h1>
+    <p class="gate-sub">Please sign in to continue</p>
+    <label class="gate-field">
+      <span>Username</span>
+      <input type="text" id="gateUser" autocomplete="username" placeholder="username" />
+    </label>
+    <label class="gate-field">
+      <span>Password</span>
+      <input type="password" id="gatePass" autocomplete="current-password" placeholder="password" />
+    </label>
+    <div class="gate-error" id="gateError">Incorrect username or password.</div>
+    <button type="submit" class="gate-btn">Sign in</button>
+  </form>
+</div>
 
 <header class="appbar">
   <div class="logo">🧶</div>
@@ -831,6 +893,37 @@ window.addEventListener("keydown", e => {
 });
 
 window.addEventListener("resize", () => { fitCanvas(); render(); });
+
+// ---- Access gate (client-side deterrent only) --------------------------
+// Not real security: credentials are visible in source. Keeps casual
+// visitors out of the shared GitHub Pages link.
+const GATE_USER = "admin";
+const GATE_PASS = "password";
+const gate = document.getElementById("gate");
+const gateForm = document.getElementById("gateForm");
+const gateError = document.getElementById("gateError");
+
+function openGate() {
+  // remember sign-in for the session so a refresh doesn't re-prompt
+  if (sessionStorage.getItem("yarnflow_in") === "1") { gate.classList.add("hidden"); return; }
+  setTimeout(() => document.getElementById("gateUser").focus(), 50);
+}
+gateForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const u = document.getElementById("gateUser").value.trim();
+  const p = document.getElementById("gatePass").value;
+  if (u === GATE_USER && p === GATE_PASS) {
+    sessionStorage.setItem("yarnflow_in", "1");
+    gate.classList.add("hidden");
+  } else {
+    gateError.classList.add("show");
+    gate.classList.add("shake");
+    setTimeout(() => gate.classList.remove("shake"), 360);
+    document.getElementById("gatePass").value = "";
+    document.getElementById("gatePass").focus();
+  }
+});
+openGate();
 
 // boot
 fitCanvas();

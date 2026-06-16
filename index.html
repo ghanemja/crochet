@@ -258,6 +258,85 @@
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(16px); background: var(--surface-3); border: 1px solid var(--border-2); color: var(--text); padding: 11px 16px; border-radius: var(--r); font-size: 13px; opacity: 0; transition: .25s var(--ease); pointer-events: none; z-index: 60; box-shadow: var(--sh-3); }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  /* ---------- Import URL ---------- */
+  .import-url { display: flex; gap: 7px; margin-top: 10px; }
+  .import-url input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 9px 11px; font-size: 12.5px; transition: .15s var(--ease); }
+  .import-url input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .import-url button { flex: none; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: .14s var(--ease); }
+  .import-url button:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- Design / paint ---------- */
+  .seg-mode { display: flex; gap: 5px; margin: 4px 0 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r); padding: 4px; }
+  .modebtn { flex: 1; padding: 8px 6px; border: none; background: transparent; color: var(--text-2); font-size: 12px; font-weight: 600; border-radius: 7px; cursor: pointer; transition: .14s var(--ease); }
+  .modebtn:hover { color: var(--text); }
+  .modebtn.active { background: var(--accent); color: #fff; box-shadow: var(--sh-1); }
+  .edit-hint { margin: 0 0 12px; font-size: 11.5px; color: var(--text-3); line-height: 1.45; }
+  .design-actions { display: flex; gap: 8px; }
+  .mini-btn { flex: 1; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font-size: 12px; font-weight: 600; padding: 9px; border-radius: var(--r-sm); cursor: pointer; transition: .14s var(--ease); }
+  .mini-btn:hover { border-color: var(--accent); color: var(--text); }
+
+  /* stage edit-mode cursor */
+  .stage.painting canvas { cursor: crosshair; }
+
+  /* ---------- Export menu ---------- */
+  .menu-wrap { position: relative; }
+  .menu { position: absolute; right: 0; top: calc(100% + 6px); background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r); box-shadow: var(--sh-3); padding: 5px; min-width: 190px; z-index: 40; display: none; }
+  .menu.open { display: block; }
+  .menu button { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text-2); font-size: 13px; padding: 9px 11px; border-radius: var(--r-sm); cursor: pointer; transition: .12s var(--ease); }
+  .menu button:hover { background: var(--surface-3); color: var(--text); }
+
+  /* ---------- Embed mode (strip chrome when ?embed=1) ---------- */
+  body.embed header.appbar, body.embed .left-col, body.embed footer.note,
+  body.embed #steps, body.embed .legend, body.embed .gate { display: none !important; }
+  body.embed .workspace { grid-template-columns: 1fr; padding: 10px; }
+  body.embed { background: var(--bg); }
+
+  /* ---------- Learn-now button ---------- */
+  .learn-now { pointer-events: auto; margin-top: 8px; background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 650; cursor: pointer; box-shadow: var(--sh-1); transition: .14s var(--ease); }
+  .learn-now:hover { background: var(--accent-press); }
+
+  /* ---------- Modals ---------- */
+  .modal { position: fixed; inset: 0; z-index: 80; display: none; place-items: center; background: rgba(10,8,6,.66); backdrop-filter: blur(4px); padding: 24px; }
+  .modal.open { display: grid; }
+  .modal-card { width: min(560px, 96vw); max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--r-lg); box-shadow: var(--sh-3); }
+  .modal-card.lg { width: min(820px, 96vw); }
+  .modal-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+  .modal-head h3 { font-size: 17px; flex: none; }
+  .modal-search { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 11px; font-size: 13px; }
+  .modal-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .modal-x { margin-left: auto; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .modal-x:hover { color: var(--text); border-color: var(--accent); }
+  .modal-body { padding: 18px; overflow: auto; }
+  .modal-note { font-size: 12.5px; color: var(--text-3); margin: 0 0 14px; line-height: 1.5; }
+  .modal-note b { color: var(--text-2); }
+
+  /* glossary */
+  .gloss-fam { font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--accent); margin: 14px 0 8px; }
+  .gloss-fam:first-child { margin-top: 0; }
+  .gloss-cards { display: grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 10px; }
+  .gloss-card { text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; transition: .14s var(--ease); }
+  .gloss-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .gc-ab { font-size: 16px; font-weight: 800; letter-spacing: .5px; }
+  .gc-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .gc-desc { font-size: 11.5px; color: var(--text-3); line-height: 1.4; }
+  .gc-learn { font-size: 11px; font-weight: 700; color: var(--accent); margin-top: 4px; }
+  .gloss-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 30px; }
+
+  /* learn */
+  .learn-desc { font-size: 13px; color: var(--text-2); margin: 12px 0 8px; line-height: 1.5; }
+  .learn-steps { margin: 0; padding-left: 20px; }
+  .learn-steps li { font-size: 13px; color: var(--text-3); padding: 3px 0; transition: .15s var(--ease); }
+  .learn-steps li.on { color: var(--text); font-weight: 650; }
+
+  /* threads */
+  .thread-list { display: flex; flex-direction: column; gap: 8px; }
+  .thread-row { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 13px; }
+  .th-main { flex: 1; min-width: 0; }
+  .th-title { font-size: 13.5px; font-weight: 650; }
+  .th-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+  .th-actions { display: flex; gap: 6px; flex: none; }
+  .th-actions .mini-btn { flex: none; padding: 7px 10px; }
+
   /* ---------- Gate ---------- */
   .gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
     background: radial-gradient(900px 500px at 50% -10%, #241f18 0%, var(--bg) 65%); }
@@ -310,6 +389,9 @@
   <div class="brand-txt"><b>YarnFlow</b><span>Crochet Studio</span></div>
   <span class="pill-tag">Beta</span>
   <div class="spacer"></div>
+  <button class="link-btn" id="glossaryBtn">📖 Stitch glossary</button>
+  <button class="link-btn" id="communityBtn">🧶 Community</button>
+  <button class="link-btn" id="publishBtn">↑ Publish</button>
   <button class="link-btn" id="helpBtn">How it works</button>
 </header>
 
@@ -329,6 +411,10 @@
           <div class="dz-t"><b>Drop a .txt file</b> or click to browse<br><span>plain-text crochet pattern</span></div>
           <input type="file" id="fileInput" accept=".txt,.md" hidden />
         </label>
+        <div class="import-url">
+          <input type="text" id="importUrl" placeholder="Paste a pattern URL (blog, free pattern…)" spellcheck="false" />
+          <button id="importBtn" title="Fetch & parse">Import</button>
+        </div>
         <textarea id="patternInput" spellcheck="false" placeholder="Row 1: ch 12&#10;Row 2: sc across (12)"></textarea>
         <div class="edit-row">
           <span class="pp-status" id="ppStatus"><span class="dot"></span>—</span>
@@ -381,6 +467,34 @@
         </div>
       </div>
     </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div class="kicker">Step 3</div>
+        <h2>Design the look</h2>
+        <p>Recolour your make — by row, or stitch by stitch.</p>
+      </div>
+      <div class="card-body">
+        <div class="ctl">
+          <div class="cap"><label>Paint colour</label><b id="paintName">Rose</b></div>
+          <div class="swatches" id="paintSwatches"></div>
+          <div class="color-custom">
+            <input type="color" id="paintColor" value="#e0608a" />
+            <span class="lbl">custom paint colour</span>
+          </div>
+        </div>
+        <div class="seg-mode" id="paintModeWrap">
+          <button class="modebtn active" id="modeOff" data-mode="off">Off</button>
+          <button class="modebtn" id="modeRow" data-mode="row">Paint row</button>
+          <button class="modebtn" id="modeStitch" data-mode="stitch">Paint stitch</button>
+        </div>
+        <p class="edit-hint" id="editHint">Turn on a paint mode, then click the piece in either view.</p>
+        <div class="design-actions">
+          <button class="mini-btn" id="stripeBtn" title="Auto-stripe every 2 rows with the last two paints">Auto-stripe</button>
+          <button class="mini-btn" id="clearPaintBtn" title="Reset all custom colours">Reset colours</button>
+        </div>
+      </div>
+    </section>
   </div>
 
   <!-- RIGHT -->
@@ -396,13 +510,28 @@
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
             Finished piece
           </button>
+          <button class="finish" id="shareBtn" title="Copy a link to this exact make">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+            Share
+          </button>
+          <div class="menu-wrap">
+            <button class="finish" id="exportBtn" title="Export image or embed">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              Export
+            </button>
+            <div class="menu" id="exportMenu">
+              <button data-act="png">Save image (PNG)</button>
+              <button data-act="embed">Copy embed code</button>
+              <button data-act="json">Download .crochet (JSON)</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="stage-host">
         <div class="stage" id="stage2dWrap">
           <canvas id="stage" class="stagecanvas" width="1040" height="600"></canvas>
           <div class="ov ov-tl"><span class="badge2" id="rowPill">Row <b>—</b></span><span class="badge2" id="progPill"><b>0</b>%</span></div>
-          <div class="ov ov-tr"><div class="lbl">Now stitching</div><div class="val" id="nowAbbr">—</div><div class="desc" id="nowDesc">Load a pattern to begin.</div></div>
+          <div class="ov ov-tr"><div class="lbl">Now stitching</div><div class="val" id="nowAbbr">—</div><div class="desc" id="nowDesc">Load a pattern to begin.</div><button class="learn-now" id="learnNowBtn">▶ Learn this stitch</button></div>
         </div>
         <div class="stage hidden" id="stage3dWrap">
           <canvas id="stage3d" class="stagecanvas"></canvas>
@@ -439,6 +568,62 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- ===== Stitch glossary modal ===== -->
+<div class="modal" id="glossaryModal">
+  <div class="modal-card lg">
+    <div class="modal-head">
+      <h3>Stitch glossary</h3>
+      <input type="text" id="glossarySearch" class="modal-search" placeholder="Search abbreviations…" />
+      <button class="modal-x" id="glossaryClose">✕</button>
+    </div>
+    <div class="modal-body" id="glossaryGrid"></div>
+  </div>
+</div>
+
+<!-- ===== Learn-this-stitch close-up modal ===== -->
+<div class="modal" id="learnModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="learnTitle">Stitch</h3>
+      <button class="modal-x" id="learnClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <canvas id="learnCanvas" style="width:100%;border-radius:12px;display:block"></canvas>
+      <p id="learnDesc" class="learn-desc"></p>
+      <ol id="learnSteps" class="learn-steps"></ol>
+      <button class="mini-btn" id="learnReplay" style="margin-top:6px">↻ Replay</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Community modal ===== -->
+<div class="modal" id="communityModal">
+  <div class="modal-card lg">
+    <div class="modal-head">
+      <h3>Community patterns &amp; variations</h3>
+      <button class="modal-x" id="communityClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-note">Open a pattern to load it, or post a variation that branches from it — variations nest under the original so you can see the whole family tree. <b>Demo:</b> posts are saved in your browser only.</p>
+      <div id="threadList" class="thread-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Publish modal ===== -->
+<div class="modal" id="publishModal">
+  <div class="modal-card">
+    <div class="modal-head"><h3>Publish your make</h3><button class="modal-x" id="publishCancel">✕</button></div>
+    <div class="modal-body">
+      <p class="modal-note" id="publishParent">Posting a new pattern</p>
+      <label class="gate-field"><span>Title</span><input id="publishTitle" placeholder="e.g. Striped market bag" /></label>
+      <label class="gate-field"><span>Your name</span><input id="publishAuthor" placeholder="maker handle" /></label>
+      <p class="modal-note">It captures your current pattern, yarn, hook &amp; colours.</p>
+      <button class="btn-primary" id="publishSave" style="margin-top:4px">Publish</button>
+    </div>
+  </div>
+</div>
+
 <!-- Vendored Three.js (classic global build; works from file:// and offline) -->
 <script src="vendor/three/three.min.js"></script>
 <script src="vendor/three/js/OrbitControls.js"></script>
@@ -459,6 +644,26 @@ const STITCHES = {
   mr:   { name:"Magic ring",     color:"#d8b865", h:0.6,  desc:"Form an adjustable loop to start working in the round." },
 };
 const ALIAS = { ch:"ch",chain:"ch",sc:"sc","single":"sc",hdc:"hdc",dc:"dc","double":"dc",tr:"tr",trc:"tr",treble:"tr","sl":"sl",slst:"sl","sl st":"sl",ss:"sl",slip:"sl",inc:"inc",dec:"dec",mr:"mr","magic ring":"mr","magic circle":"mr",ring:"mr" };
+
+// Macro step sequences — used by the "Learn this stitch" close-up animation.
+// Each step: a short label + how many yarn-overs / pull-throughs, so the
+// close-up can show the hook going through the loops for sc/hdc/dc/tr/etc.
+const STITCH_STEPS = {
+  ch:  ["Yarn over","Pull through loop"],
+  sl:  ["Insert hook","Yarn over","Pull through stitch & loop"],
+  sc:  ["Insert hook","Yarn over","Pull up a loop (2 on hook)","Yarn over","Pull through both loops"],
+  hdc: ["Yarn over first","Insert hook","Yarn over, pull up loop (3 on hook)","Yarn over","Pull through all 3 loops"],
+  dc:  ["Yarn over first","Insert hook","Pull up a loop (3 on hook)","Yarn over, pull through 2","Yarn over, pull through 2"],
+  tr:  ["Yarn over twice","Insert hook","Pull up a loop (4 on hook)","Yarn over, through 2","Yarn over, through 2","Yarn over, through 2"],
+  inc: ["Work 1 stitch","Work a 2nd in the same stitch","Two stitches made"],
+  dec: ["Pull up loop in st 1","Pull up loop in st 2","Yarn over, pull through all"],
+  mr:  ["Loop the yarn","Work stitches into ring","Pull tail to close"],
+};
+const STITCH_FAMILY = {
+  ch:"Foundations", mr:"Foundations", sl:"Joins & edges",
+  sc:"Basic stitches", hdc:"Basic stitches", dc:"Basic stitches", tr:"Tall stitches",
+  inc:"Shaping", dec:"Shaping",
+};
 
 const WEIGHTS = [
   { label:"Lace (0)",      radius:0.55 }, { label:"Fingering (1)", radius:0.72 },
@@ -621,11 +826,14 @@ function render2D(){
   if(!App.parsed){ctx.fillStyle="rgba(255,255,255,.22)";ctx.font="500 16px system-ui";ctx.textAlign="center";ctx.fillText("Load a pattern to watch it come to life",App.W/2,App.H/2);return;}
   const proj=App.proj2d||(App.proj2d=project2D()), prog=App.progress, complete=Math.floor(prog), frac=prog-complete;
   const yt=YARN_TYPES[settings.type], width=Math.max(4,yarnRadius()*6.5);
-  for(let i=0;i<proj.length&&i<complete;i++){const p=proj[i];yarnStroke(stitchPath2D(p,1),width,settings.color,yt.fuzz,yt.twist);
+  for(let i=0;i<proj.length&&i<complete;i++){const p=proj[i];yarnStroke(stitchPath2D(p,1),width,colorAt(i),yt.fuzz,yt.twist);
     ctx.fillStyle=STITCHES[p.key].color;ctx.globalAlpha=.85;ctx.beginPath();ctx.arc(p.sx,p.sy+2,2,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}
+  // hover highlight when painting
+  if(App.paintMode!=="off"&&App.hover2d!=null&&App.hover2d<proj.length){const hp=proj[App.hover2d];
+    ctx.save();ctx.strokeStyle=App.paintColor;ctx.lineWidth=2;ctx.globalAlpha=.9;ctx.beginPath();ctx.arc(hp.sx,hp.sy-hp.h*0.5,hp.half*0.9,0,Math.PI*2);ctx.stroke();ctx.restore();}
   const ball={x:50,y:App.H-38};
   if(complete<proj.length){const p=proj[complete],t=Math.max(0.06,frac);
-    yarnStroke(stitchPath2D(p,t),width,settings.color,yt.fuzz,yt.twist);
+    yarnStroke(stitchPath2D(p,t),width,colorAt(complete),yt.fuzz,yt.twist);
     const tip=stitchPath2D(p,t).slice(-1)[0], wob=Math.sin(performance.now()/200)*2.5, hookX=tip.x+10+wob, hookY=tip.y-54;
     ctx.save();ctx.strokeStyle=settings.color;ctx.lineWidth=width*0.6;ctx.lineCap="round";
     ctx.beginPath();ctx.moveTo(ball.x,ball.y);ctx.bezierCurveTo(ball.x+50,ball.y-30,hookX-44,hookY+30+wob,hookX-3,hookY+6);
@@ -782,9 +990,11 @@ function buildStudioGeometry(){
   ["hook","ball","strand"].forEach(k=>{if(Studio[k]){Studio.group.remove(Studio[k]);Studio[k]=null;}});
   if(!App.parsed) return;
   const lay=App.lay3d, radius=yarnRadius()*0.55, pos=lay.positions;
-  pos.forEach(p=>{const{pts,closed}=stitchCurve3D(p);const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
+  pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p);const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
     const seg=Math.max(10,Math.round(pts.length*2.2));const geo=new THREE.TubeGeometry(curve,seg,radius,8,closed);
-    const mesh=new THREE.Mesh(geo,Studio.yarnMat);mesh.castShadow=true;mesh.receiveShadow=true;mesh.position.set(p.x,p.y,p.z);if(p.rotY)mesh.rotation.y=p.rotY;mesh.visible=false;
+    const useMat=App.paint[i]?matFor(App.paint[i]):Studio.yarnMat;
+    const mesh=new THREE.Mesh(geo,useMat);mesh.castShadow=true;mesh.receiveShadow=true;mesh.position.set(p.x,p.y,p.z);if(p.rotY)mesh.rotation.y=p.rotY;mesh.visible=false;
+    mesh.userData.stitchIndex=i;
     Studio.group.add(mesh);Studio.stitchMeshes.push(mesh);});
   const box=new THREE.Box3().setFromObject(Studio.group);const c=box.getCenter(new THREE.Vector3());const size=box.getSize(new THREE.Vector3());
   Studio.group.position.set(-c.x,-box.min.y,-c.z);
@@ -816,8 +1026,24 @@ function updateStudioProgress(){
 // ============================================================
 //  App + master loop
 // ============================================================
-const App={parsed:null,lay3d:null,proj2d:null,progress:0,playing:false,speed:1,lastT:0,view:"2d"};
+const App={parsed:null,lay3d:null,proj2d:null,progress:0,playing:false,speed:1,lastT:0,view:"2d",
+  paint:{},            // { globalStitchIndex: hex } colour overrides
+  paintMode:"off",     // off | row | stitch
+  paintColor:"#e0608a",
+  meta:{title:"",author:"",parentId:null}};
 function recomputeLayouts(){if(!App.parsed)return;App.lay3d=layout3D(App.parsed);App.proj2d=project2D();}
+// resolve a stitch's display colour: per-stitch paint override else base yarn
+function colorAt(i){ return App.paint[i] || settings.color; }
+// material cache so painted 3D stitches reuse materials by colour
+const matCache={};
+function matFor(hex){
+  if(matCache[hex]) return matCache[hex];
+  const t=YARN_TYPES[settings.type];
+  const tex=makeYarnTexture(hex,settings.type);
+  const m=new THREE.MeshStandardMaterial({color:new THREE.Color(hex),map:tex,bumpMap:tex,bumpScale:0.35*t.fuzz+0.12,roughness:t.roughness,metalness:t.metalness,envMapIntensity:t.env});
+  matCache[hex]=m; return m;
+}
+function clearMatCache(){ for(const k in matCache){matCache[k].map&&matCache[k].map.dispose();matCache[k].dispose();delete matCache[k];} }
 function masterLoop(t){
   requestAnimationFrame(masterLoop);
   if(App.playing&&App.parsed){if(!App.lastT)App.lastT=t;const dt=(t-App.lastT)/1000;App.lastT=t;App.progress+=dt*1.6*App.speed;if(App.progress>=App.parsed.flat.length){App.progress=App.parsed.flat.length;pause();}}else App.lastT=t;
@@ -875,7 +1101,7 @@ function loadPattern(text,keepProgress){
   if(App.view==="3d")buildStudioGeometry();
   setStatus(`${parsed.rows.length} rows · ${parsed.flat.length} stitches`,true);
 }
-function reStyle(){if(!App.parsed){updateGaugeReadout();return;}recomputeLayouts();updateGaugeReadout();if(App.view==="3d")buildStudioGeometry();else App.proj2d=project2D();}
+function reStyle(){if(!App.parsed){updateGaugeReadout();return;}clearMatCache();recomputeLayouts();updateGaugeReadout();if(App.view==="3d")buildStudioGeometry();else App.proj2d=project2D();}
 function setStatus(msg,ok){const el=document.getElementById("ppStatus");el.innerHTML=`<span class="dot"></span>${msg}`;el.classList.toggle("live",!!ok);}
 function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 
@@ -925,6 +1151,341 @@ function handleFile(file){if(!file)return;if(/\.pdf$/i.test(file.name)){toast("P
 document.getElementById("helpBtn").addEventListener("click",()=>toast("Edit the pattern, tune yarn & hook, then open the 3D Studio and orbit"));
 window.addEventListener("keydown",e=>{if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT")return;if(e.code==="Space"){e.preventDefault();App.playing?pause():play();}if(e.code==="ArrowRight")document.getElementById("next").click();if(e.code==="ArrowLeft")document.getElementById("prev").click();});
 window.addEventListener("resize",()=>{fit2D();if(App.view==="2d")App.proj2d=project2D();else resize3D();});
+
+// ============================================================
+//  Design painting (click a stitch to recolour by row / stitch)
+// ============================================================
+const paintSwWrap=document.getElementById("paintSwatches");
+SWATCH_COLORS.forEach(([name,hex])=>{const d=document.createElement("div");d.className="yc"+(hex===App.paintColor?" sel":"");d.style.background=hex;d.title=name;
+  d.addEventListener("click",()=>{App.paintColor=hex;document.getElementById("paintColor").value=hex;setText("paintName",name);[...paintSwWrap.children].forEach(c=>c.classList.remove("sel"));d.classList.add("sel");});paintSwWrap.appendChild(d);});
+document.getElementById("paintColor").addEventListener("input",e=>{App.paintColor=e.target.value;setText("paintName","Custom");[...paintSwWrap.children].forEach(c=>c.classList.remove("sel"));});
+function setPaintMode(mode){App.paintMode=mode;
+  ["off","row","stitch"].forEach(m=>document.getElementById("mode"+m[0].toUpperCase()+m.slice(1)).classList.toggle("active",m===mode));
+  document.getElementById("stage2dWrap").classList.toggle("painting",mode!=="off");
+  document.getElementById("stage3dWrap").classList.toggle("painting",mode!=="off");
+  setText("editHint", mode==="off" ? "Turn on a paint mode, then click the piece in either view."
+    : mode==="row" ? "Click any stitch to paint its whole row." : "Click individual stitches to paint them.");
+}
+document.getElementById("modeOff").addEventListener("click",()=>setPaintMode("off"));
+document.getElementById("modeRow").addEventListener("click",()=>setPaintMode("row"));
+document.getElementById("modeStitch").addEventListener("click",()=>setPaintMode("stitch"));
+function applyPaint(stitchIndex){
+  if(stitchIndex==null||!App.parsed) return;
+  const s=App.parsed.flat[stitchIndex]; if(!s) return;
+  if(App.paintMode==="row"){
+    App.parsed.flat.forEach((f,i)=>{ if(f.row===s.row) App.paint[i]=App.paintColor; });
+  } else { App.paint[stitchIndex]=App.paintColor; }
+  if(App.view==="3d"){ // recolour affected meshes in place
+    Studio.stitchMeshes.forEach(m=>{const i=m.userData.stitchIndex; if(App.paint[i]) m.material=matFor(App.paint[i]);});
+  }
+}
+// 2D hit-testing: nearest projected stitch to the click
+function pick2D(clientX,clientY){
+  const proj=App.proj2d; if(!proj) return null;
+  const rect=canvas.getBoundingClientRect();
+  const x=(clientX-rect.left)*(App.W/rect.width), y=(clientY-rect.top)*(App.H/rect.height);
+  let best=null,bd=Infinity;
+  proj.forEach((p,i)=>{const cy=p.sy-p.h*0.5;const d=Math.hypot(p.sx-x,cy-y);if(d<bd){bd=d;best=i;}});
+  return bd<70?best:null;
+}
+canvas.addEventListener("mousemove",e=>{ if(App.paintMode==="off"){App.hover2d=null;return;} App.hover2d=pick2D(e.clientX,e.clientY); });
+canvas.addEventListener("mouseleave",()=>App.hover2d=null);
+canvas.addEventListener("click",e=>{ if(App.paintMode==="off")return; const i=pick2D(e.clientX,e.clientY); if(i!=null){applyPaint(i);toast("Painted");} });
+// 3D picking via raycaster
+let ray=null,mouse=null;
+function pick3D(clientX,clientY){
+  if(!Studio.ready) return null;
+  ray=ray||new THREE.Raycaster(); mouse=mouse||new THREE.Vector2();
+  const rect=Studio.renderer.domElement.getBoundingClientRect();
+  mouse.x=((clientX-rect.left)/rect.width)*2-1; mouse.y=-((clientY-rect.top)/rect.height)*2+1;
+  ray.setFromCamera(mouse,Studio.camera);
+  const hits=ray.intersectObjects(Studio.stitchMeshes.filter(m=>m.visible),false);
+  return hits.length?hits[0].object.userData.stitchIndex:null;
+}
+document.getElementById("stage3d").addEventListener("click",e=>{ if(App.paintMode==="off")return; const i=pick3D(e.clientX,e.clientY); if(i!=null){applyPaint(i);toast("Painted");} });
+document.getElementById("stripeBtn").addEventListener("click",()=>{
+  if(!App.parsed)return; const cols=SWATCH_COLORS.map(c=>c[1]);
+  App.parsed.flat.forEach((f,i)=>{ App.paint[i] = (f.row%2===0)?App.paintColor:cols[(f.row)%cols.length]; });
+  if(App.view==="3d")buildStudioGeometry(); toast("Auto-striped");
+});
+document.getElementById("clearPaintBtn").addEventListener("click",()=>{ App.paint={}; if(App.view==="3d")buildStudioGeometry(); toast("Colours reset"); });
+
+// ============================================================
+//  Stitch glossary + "Learn this stitch" macro animation
+// ============================================================
+const glossaryModal=document.getElementById("glossaryModal");
+function openGlossary(){ buildGlossary(); glossaryModal.classList.add("open"); }
+function closeGlossary(){ glossaryModal.classList.remove("open"); }
+function buildGlossary(){
+  const grid=document.getElementById("glossaryGrid"); const q=(document.getElementById("glossarySearch").value||"").toLowerCase();
+  const fams={};
+  Object.keys(STITCHES).forEach(k=>{const st=STITCHES[k];const fam=STITCH_FAMILY[k]||"Other";
+    if(q && !(k.includes(q)||st.name.toLowerCase().includes(q)||st.desc.toLowerCase().includes(q))) return;
+    (fams[fam]=fams[fam]||[]).push(k);});
+  grid.innerHTML=Object.keys(fams).map(fam=>
+    `<div class="gloss-fam">${fam}</div><div class="gloss-cards">`+
+    fams[fam].map(k=>{const st=STITCHES[k];
+      return `<button class="gloss-card" data-k="${k}"><span class="gc-ab" style="color:${st.color}">${k.toUpperCase()}</span>
+      <span class="gc-name">${st.name}</span><span class="gc-desc">${st.desc}</span>
+      <span class="gc-learn">▶ Watch close-up</span></button>`;}).join("")+`</div>`).join("")
+    || `<div class="gloss-empty">No matches.</div>`;
+  grid.querySelectorAll(".gloss-card").forEach(b=>b.addEventListener("click",()=>openLearn(b.dataset.k)));
+}
+document.getElementById("glossarySearch").addEventListener("input",buildGlossary);
+document.getElementById("glossaryClose").addEventListener("click",closeGlossary);
+document.getElementById("glossaryBtn").addEventListener("click",openGlossary);
+document.getElementById("learnNowBtn").addEventListener("click",()=>{ if(!App.parsed)return; const idx=Math.min(Math.floor(App.progress),App.parsed.flat.length-1); const s=App.parsed.flat[Math.max(0,idx)]; openLearn(s.key); });
+glossaryModal.addEventListener("click",e=>{if(e.target===glossaryModal)closeGlossary();});
+
+// --- macro close-up animation of a single stitch on its own canvas ---
+const Learn={key:null,t:0,playing:false,raf:null};
+const lc=document.getElementById("learnCanvas"); const lctx=lc.getContext("2d");
+function openLearn(key){
+  Learn.key=key;Learn.t=0;Learn.playing=true;
+  document.getElementById("learnModal").classList.add("open");
+  setText("learnTitle",STITCHES[key].name+" ("+key.toUpperCase()+")");
+  setText("learnDesc",STITCHES[key].desc);
+  const steps=STITCH_STEPS[key]||["Work the stitch"];
+  document.getElementById("learnSteps").innerHTML=steps.map((s,i)=>`<li data-i="${i}">${s}</li>`).join("");
+  cancelAnimationFrame(Learn.raf); learnLoop();
+}
+function closeLearn(){Learn.playing=false;cancelAnimationFrame(Learn.raf);document.getElementById("learnModal").classList.remove("open");}
+document.getElementById("learnClose").addEventListener("click",closeLearn);
+document.getElementById("learnReplay").addEventListener("click",()=>{Learn.t=0;Learn.playing=true;learnLoop();});
+document.getElementById("learnModal").addEventListener("click",e=>{if(e.target.id==="learnModal")closeLearn();});
+function fitLearn(){const ratio=window.devicePixelRatio||1,w=lc.clientWidth||520,h=w*0.62;lc.width=w*ratio;lc.height=h*ratio;lctx.setTransform(ratio,0,0,ratio,0,0);Learn.W=w;Learn.H=h;}
+function learnLoop(){
+  fitLearn(); drawLearn();
+  const steps=(STITCH_STEPS[Learn.key]||[""]).length;
+  const stepDur=1.0; const total=steps*stepDur+0.6;
+  if(Learn.playing){ Learn.t+=1/60; if(Learn.t>total){Learn.t=total;Learn.playing=false;} }
+  // highlight current step
+  const cur=Math.min(steps-1,Math.floor(Learn.t/stepDur));
+  document.querySelectorAll("#learnSteps li").forEach(li=>li.classList.toggle("on",+li.dataset.i===cur));
+  Learn.raf=requestAnimationFrame(learnLoop);
+}
+// Draw a big single stitch with the hook physically moving through the loops.
+function drawLearn(){
+  const W=Learn.W,H=Learn.H; lctx.clearRect(0,0,W,H);
+  lctx.fillStyle="#0e0c09"; lctx.fillRect(0,0,W,H);
+  const key=Learn.key||"sc"; const steps=(STITCH_STEPS[key]||[""]).length; const stepDur=1.0;
+  const phase=Math.min(steps,Learn.t/stepDur);           // 0..steps
+  const baseY=H*0.74, cx=W*0.5, sw=Math.max(10,W*0.03);
+  const col=App.paintColor||settings.color, yt=YARN_TYPES[settings.type];
+  // foundation loops (the row below)
+  for(let i=-2;i<=2;i++){const x=cx+i*W*0.12;
+    learnYarn([{x:x-W*0.05,y:baseY},{x:x,y:baseY-22},{x:x+W*0.05,y:baseY}],sw,shade(col,-0.05),yt);}
+  // grown post height by phase
+  const targetH=(STITCHES[key].h)*H*0.16+24;
+  const grow=Math.min(1,phase/steps);
+  const postTop=baseY-targetH*grow;
+  // draw the developing stitch post
+  if(key==="ch"||key==="sl"||key==="mr"){
+    learnYarn(ovalPts(cx,baseY-20,W*0.05*grow+6,26*grow+6),sw,col,yt);
+  } else {
+    learnYarn([{x:cx-12,y:baseY},{x:cx+10,y:baseY-targetH*0.4*grow},{x:cx-10,y:baseY-targetH*0.75*grow},{x:cx+6,y:postTop}],sw,col,yt);
+    // top loops
+    learnYarn([{x:cx-22,y:postTop+6},{x:cx,y:postTop-10*grow},{x:cx+22,y:postTop+6}],sw,col,yt);
+  }
+  // loops currently "on the hook" — a count that rises then falls per stitch type
+  const loopsOnHook=hookLoopCount(key,phase);
+  // hook: moves down to insert (phase 0-1), then rides up the post as it grows
+  const insert=Math.min(1,phase);                 // 0..1 insert progress
+  const hookBaseX=cx+W*0.16, hookTipY = baseY-10 - (postTop-(baseY-10))*grow*0 ; // start near base
+  const tipY = baseY-6 - (targetH*grow)* (phase>1?1:phase);
+  const hx=cx+10 + Math.sin(Learn.t*3)*2;
+  const ty=baseY-6-(targetH*grow);
+  // yarn-over wraps shown as little loops near the hook tip
+  drawLearnHook(hx, ty-6, loopsOnHook, col, sw);
+  // working strand feeding the hook
+  lctx.save();lctx.strokeStyle=col;lctx.lineWidth=sw*0.6;lctx.lineCap="round";
+  lctx.beginPath();lctx.moveTo(W*0.06,H*0.9);lctx.quadraticCurveTo(W*0.3,H*0.6,hx-4,ty+4);lctx.stroke();lctx.restore();
+  // caption of current step
+  const cur=Math.min(steps-1,Math.floor(phase));
+  lctx.fillStyle="#f3eee6";lctx.font="600 15px system-ui";lctx.textAlign="center";
+  lctx.fillText((STITCH_STEPS[key]||[""])[cur]||"",W/2,H*0.12);
+  // loops-on-hook readout
+  lctx.fillStyle="#b6ad9d";lctx.font="500 12px system-ui";
+  lctx.fillText(loopsOnHook+" loop"+(loopsOnHook===1?"":"s")+" on hook",W/2,H*0.12+20);
+}
+function hookLoopCount(key,phase){
+  // approximate loops-on-hook through the life of the stitch
+  if(key==="sc"){ if(phase<2)return 1; if(phase<3)return 2; return 1; }
+  if(key==="hdc"){ if(phase<1)return 1; if(phase<3)return 3; return 1; }
+  if(key==="dc"){ if(phase<1)return 1; if(phase<3)return 3; if(phase<4)return 2; return 1; }
+  if(key==="tr"){ if(phase<1)return 1; if(phase<3)return 4; if(phase<4)return 3; if(phase<5)return 2; return 1; }
+  return 1;
+}
+function ovalPts(cx,cy,rx,ry){const p=[];for(let a=0;a<=Math.PI*2+0.01;a+=Math.PI/9)p.push({x:cx+Math.cos(a)*rx,y:cy+Math.sin(a)*ry});return p;}
+function learnYarn(pts,w,col,yt){ // reuse the plied-yarn stroke on the learn ctx
+  const old=window.ctx; // yarnStroke uses module-level ctx; temporarily point at lctx
+  drawPliedOn(lctx,pts,w,col,yt.fuzz||0.2,yt.twist||0.5);
+}
+// standalone plied-yarn stroke that takes an explicit context
+function drawPliedOn(c,pts,width,baseCol,fuzz,twist){
+  if(pts.length<2)return;const path=()=>{c.beginPath();c.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)c.lineTo(pts[i].x,pts[i].y);};
+  c.lineCap="round";c.lineJoin="round";
+  c.strokeStyle=shade(baseCol,-0.42);c.lineWidth=width;path();c.stroke();
+  c.strokeStyle=baseCol;c.lineWidth=width*0.82;path();c.stroke();
+  c.strokeStyle="rgba(255,255,255,.26)";c.lineWidth=Math.max(1,width*0.16);c.save();c.translate(-width*0.1,-width*0.1);path();c.stroke();c.restore();
+}
+function drawLearnHook(x,y,loops,col,sw){
+  lctx.save();lctx.translate(x,y);lctx.rotate(0.2);
+  const R=6,L=120;
+  const grad=lctx.createLinearGradient(-R,0,R,0);
+  grad.addColorStop(0,"#8b93a3");grad.addColorStop(.5,"#ffffff");grad.addColorStop(1,"#7e8696");
+  lctx.fillStyle="#b9657a";lctx.fillRect(-R*1.4,L*0.55,R*2.8,L*0.5);
+  lctx.fillStyle=grad;lctx.fillRect(-R,-2,R*2,L*0.6);
+  // head + lip
+  lctx.fillStyle=grad;lctx.beginPath();
+  lctx.moveTo(-R,2);lctx.quadraticCurveTo(-R*1.2,-R*2.4,-R*0.2,-R*3.2);
+  lctx.quadraticCurveTo(R*1.0,-R*3.8,R*1.2,-R*2.1);
+  lctx.quadraticCurveTo(R*1.3,-R*0.5,R*0.2,-R*0.9);
+  lctx.quadraticCurveTo(-R*0.2,-R*1.0,-R*0.1,2);lctx.closePath();lctx.fill();
+  lctx.strokeStyle="rgba(255,255,255,.85)";lctx.lineWidth=R*0.5;lctx.lineCap="round";
+  lctx.beginPath();lctx.moveTo(-R*0.25,-R*2.6);lctx.lineTo(-R*0.25,L*0.5);lctx.stroke();
+  lctx.restore();
+  // loops draped on the hook neck
+  for(let i=0;i<loops;i++){lctx.save();lctx.strokeStyle=col;lctx.lineWidth=sw*0.5;
+    lctx.beginPath();lctx.ellipse(x-2,y+6+i*7,9,5,0,0,Math.PI*2);lctx.stroke();lctx.restore();}
+}
+
+// ============================================================
+//  Serialise / share / export / import
+// ============================================================
+function currentState(){
+  return { v:1, pattern:document.getElementById("patternInput").value,
+    yarn:{color:settings.color,type:settings.type,weightIdx:settings.weightIdx,hook:settings.hook},
+    paint:App.paint, meta:App.meta };
+}
+function applyState(st){
+  if(!st) return;
+  if(st.yarn){ settings.color=st.yarn.color||settings.color; settings.type=st.yarn.type||settings.type;
+    settings.weightIdx=st.yarn.weightIdx??settings.weightIdx; settings.hook=st.yarn.hook??settings.hook;
+    document.getElementById("yarnColor").value=settings.color; document.getElementById("yarnType").value=settings.type;
+    document.getElementById("yarnWeight").value=settings.weightIdx; document.getElementById("hookSize").value=settings.hook;
+    setText("typeName",YARN_TYPES[settings.type].label); setText("weightName",WEIGHTS[settings.weightIdx].label);
+    setText("hookName",settings.hook.toFixed(1)+" mm"); setText("colorName","Custom"); }
+  App.paint=st.paint||{}; App.meta=st.meta||App.meta;
+  if(st.pattern){ document.getElementById("patternInput").value=st.pattern; loadPattern(st.pattern); }
+  updateGaugeReadout();
+}
+// compact URL encoding via base64 of JSON
+function encodeState(){ try{ return btoa(unescape(encodeURIComponent(JSON.stringify(currentState())))); }catch(e){return"";} }
+function decodeState(s){ try{ return JSON.parse(decodeURIComponent(escape(atob(s)))); }catch(e){return null;} }
+function shareLink(){ const base=location.href.split("#")[0].split("?")[0]; return base+"#d="+encodeState(); }
+async function copyText(txt){ try{ await navigator.clipboard.writeText(txt); return true; }catch(e){
+  const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");}catch(_){}document.body.removeChild(ta);return true; } }
+document.getElementById("shareBtn").addEventListener("click",async()=>{ const l=shareLink(); await copyText(l); toast("Share link copied to clipboard"); });
+
+const exportMenu=document.getElementById("exportMenu");
+document.getElementById("exportBtn").addEventListener("click",e=>{e.stopPropagation();exportMenu.classList.toggle("open");});
+document.addEventListener("click",()=>exportMenu.classList.remove("open"));
+exportMenu.addEventListener("click",e=>{e.stopPropagation();});
+exportMenu.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+  const act=b.dataset.act; exportMenu.classList.remove("open");
+  if(act==="png"){ const cv=App.view==="3d"?Studio.renderer.domElement:canvas;
+    if(App.view==="3d")Studio.renderer.render(Studio.scene,Studio.camera);
+    const url=cv.toDataURL("image/png"); const a=document.createElement("a");a.href=url;a.download="yarnflow.png";a.click(); toast("Image saved"); }
+  else if(act==="embed"){ const code=`<iframe src="${shareLink().replace("#","?embed=1#")}" width="640" height="420" style="border:0;border-radius:12px" title="YarnFlow"></iframe>`; copyText(code); toast("Embed code copied"); }
+  else if(act==="json"){ const blob=new Blob([JSON.stringify(currentState(),null,2)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="pattern.crochet";a.click(); toast(".crochet file downloaded"); }
+}));
+
+// Import by URL: try to fetch & extract readable pattern text. Cross-origin
+// fetches may be blocked by the site's CORS — we fall back to a public reader.
+document.getElementById("importBtn").addEventListener("click",importFromUrl);
+document.getElementById("importUrl").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();importFromUrl();}});
+async function importFromUrl(){
+  const url=document.getElementById("importUrl").value.trim(); if(!url){toast("Paste a URL first");return;}
+  if(/\.json$|\.crochet$/i.test(url)){ try{const r=await fetch(url);const j=await r.json();applyState(j);toast("Imported design");return;}catch(e){} }
+  setStatus("fetching…",false);
+  let html=null;
+  try{ const r=await fetch(url); html=await r.text(); }
+  catch(e){ try{ const r=await fetch("https://r.jina.ai/"+url); html=await r.text(); }catch(e2){ html=null; } }
+  if(!html){ toast("Couldn't fetch — site blocked it. Paste the text instead."); setStatus("fetch blocked",false); return; }
+  const text=extractPattern(html);
+  if(!text){ toast("Fetched, but found no recognizable rows. Paste the text instead."); setStatus("no rows found",false); return; }
+  document.getElementById("patternInput").value=text; loadPattern(text);
+}
+// pull out lines that look like crochet rows from arbitrary HTML/markdown
+function extractPattern(src){
+  let txt=src.replace(/<script[\s\S]*?<\/script>/gi,"").replace(/<style[\s\S]*?<\/style>/gi,"");
+  txt=txt.replace(/<\/(p|div|li|br|h[1-6])>/gi,"\n").replace(/<[^>]+>/g," ");
+  txt=txt.replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&#?[a-z0-9]+;/gi," ");
+  const lines=txt.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  const rowRe=/^(row|rnd|round|r)\s*\d+\s*[:.\-]/i;
+  const stitchRe=/\b(ch|sc|hdc|dc|tr|sl\s*st|inc|dec|mr)\b/i;
+  const keep=lines.filter(l=> (rowRe.test(l)||stitchRe.test(l)) && l.length<160 );
+  return keep.length>=2 ? keep.join("\n") : "";
+}
+
+// ============================================================
+//  Community (client-side MVP: localStorage threads & variations)
+//  NOTE: this is a local demo of the social layer — posts live in this
+//  browser only. A real multi-user platform needs a backend (see notes).
+// ============================================================
+const STORE_KEY="yarnflow_community_v1";
+function loadCommunity(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{posts:[]}; }catch(e){ return {posts:[]}; } }
+function saveCommunity(db){ localStorage.setItem(STORE_KEY,JSON.stringify(db)); }
+function seedCommunityIfEmpty(){
+  const db=loadCommunity(); if(db.posts.length) return;
+  db.posts.push({ id:"p1", parentId:null, title:"Cozy ridged scarf", author:"maker_mae", ts:Date.now()-86400000,
+    state:{v:1,pattern:SAMPLES["Scarf swatch"],yarn:{color:"#e0608a",type:"wool",weightIdx:4,hook:5},paint:{},meta:{}}, likes:6 });
+  db.posts.push({ id:"p2", parentId:"p1", title:"↳ Striped variation", author:"yarnpunk", ts:Date.now()-3600000,
+    state:{v:1,pattern:SAMPLES["Scarf swatch"],yarn:{color:"#3fb0a8",type:"acrylic",weightIdx:4,hook:5.5},paint:{},meta:{}}, likes:3 });
+  saveCommunity(db);
+}
+const communityModal=document.getElementById("communityModal");
+document.getElementById("communityBtn").addEventListener("click",openCommunity);
+document.getElementById("communityClose").addEventListener("click",()=>communityModal.classList.remove("open"));
+communityModal.addEventListener("click",e=>{if(e.target===communityModal)communityModal.classList.remove("open");});
+function openCommunity(){ seedCommunityIfEmpty(); renderCommunity(); communityModal.classList.add("open"); }
+function renderCommunity(){
+  const db=loadCommunity(); const list=document.getElementById("threadList");
+  const byParent={}; db.posts.forEach(p=>{(byParent[p.parentId||"root"]=byParent[p.parentId||"root"]||[]).push(p);});
+  function node(p,depth){
+    const kids=(byParent[p.id]||[]);
+    return `<div class="thread" style="margin-left:${depth*18}px">
+      <div class="thread-row">
+        <div class="th-main">
+          <div class="th-title">${escapeHtml(p.title)}</div>
+          <div class="th-meta">by ${escapeHtml(p.author)} · ${timeAgo(p.ts)} · ${kids.length} variation${kids.length===1?"":"s"}</div>
+        </div>
+        <div class="th-actions">
+          <button class="mini-btn" data-open="${p.id}">Open</button>
+          <button class="mini-btn" data-fork="${p.id}">Post variation</button>
+        </div>
+      </div></div>` + kids.map(k=>node(k,depth+1)).join("");
+  }
+  list.innerHTML=(byParent["root"]||[]).map(p=>node(p,0)).join("") || `<div class="gloss-empty">No posts yet — be the first.</div>`;
+  list.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",()=>{ const p=db.posts.find(x=>x.id===b.dataset.open); applyState(p.state); communityModal.classList.remove("open"); toast("Loaded “"+p.title+"”"); }));
+  list.querySelectorAll("[data-fork]").forEach(b=>b.addEventListener("click",()=>{ App.meta.parentId=b.dataset.fork; openPublish(b.dataset.fork); }));
+}
+function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function timeAgo(ts){const s=(Date.now()-ts)/1000;if(s<3600)return Math.floor(s/60)+"m ago";if(s<86400)return Math.floor(s/3600)+"h ago";return Math.floor(s/86400)+"d ago";}
+function openPublish(parentId){
+  document.getElementById("publishParent").textContent = parentId? "Posting as a variation of an existing pattern" : "Posting a new pattern";
+  App.meta.parentId=parentId||null;
+  document.getElementById("publishModal").classList.add("open");
+}
+document.getElementById("publishBtn").addEventListener("click",()=>openPublish(null));
+document.getElementById("publishCancel").addEventListener("click",()=>document.getElementById("publishModal").classList.remove("open"));
+document.getElementById("publishSave").addEventListener("click",()=>{
+  const title=document.getElementById("publishTitle").value.trim()||"Untitled make";
+  const author=document.getElementById("publishAuthor").value.trim()||"anon";
+  const db=loadCommunity();
+  db.posts.push({ id:"p"+Date.now(), parentId:App.meta.parentId||null, title, author, ts:Date.now(), state:currentState(), likes:0 });
+  saveCommunity(db); document.getElementById("publishModal").classList.remove("open");
+  toast("Published"); openCommunity();
+});
+
+// load shared design from URL hash (#d=...) and handle embed mode
+(function initFromUrl(){
+  if(/[?&]embed=1/.test(location.search)) document.body.classList.add("embed");
+  const m=location.hash.match(/d=([^&]+)/);
+  if(m){ const st=decodeState(m[1]); if(st){ setTimeout(()=>applyState(st),60); } }
+})();
 
 // ---- gate --------------------------------------------------------------
 const GATE_USER="admin",GATE_PASS="password";

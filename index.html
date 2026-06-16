@@ -1540,58 +1540,137 @@ function learnLoop(){
   document.querySelectorAll("#learnSteps li").forEach(li=>li.classList.toggle("on",+li.dataset.i===cur));
   Learn.raf=requestAnimationFrame(learnLoop);
 }
-// Draw a big single stitch with the hook physically moving through the loops.
+// Classify a written step into the real hand motion it represents.
+function classifyMove(text){
+  const t=text.toLowerCase();
+  if(/through/.test(t)) return (/\ball\b|both/.test(t))?"through":(/\b2\b|two/.test(t))?"through2":"through";
+  if(/pull up|up a loop|draw up/.test(t)) return "pullup";
+  if(/insert/.test(t)) return "insert";
+  if(/yarn over|yarn-over|\byo\b/.test(t)) return "yarnover";
+  return "through";
+}
+// loops-on-hook by walking the moves (uses any "(N on hook)" the text states).
+function loopTimeline(steps,moves,isChain){
+  const out=[]; let loops=1;
+  steps.forEach((s,i)=>{ const m=moves[i];
+    const stated=s.match(/(\d+)\s*(?:loops?\s*)?on hook/i);
+    if(isChain) loops=1;                       // a chain only ever holds one loop
+    else if(stated) loops=+stated[1];
+    else if(m==="pullup") loops+=1;            // yarn-over isn't a separate loop until pulled up
+    else if(m==="through2") loops=Math.max(1,loops-1);
+    else if(m==="through") loops=1;
+    out.push(loops);
+  });
+  return out;
+}
+const easeIO=t=>t<0?0:t>1?1:(t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2);
+function lerp(a,b,t){return a+(b-a)*t;}
+
+// Draw a big single stitch with the hook performing the real motion:
+// insert (plunge into the stitch below) → yarn over (wrap over the hook)
+// → pull up / pull through (withdraw, dragging a loop through).
 function drawLearn(){
   const W=Learn.W,H=Learn.H; lctx.clearRect(0,0,W,H);
   lctx.fillStyle="#0e0c09"; lctx.fillRect(0,0,W,H);
-  const key=Learn.key||"sc"; const steps=(STITCH_STEPS[key]||[""]).length; const stepDur=1.0;
-  const phase=Math.min(steps,Learn.t/stepDur);           // 0..steps
-  const baseY=H*0.74, cx=W*0.5, sw=Math.max(10,W*0.03);
+  const key=Learn.key||"sc";
+  const steps=STITCH_STEPS[key]||["Work the stitch"]; const N=steps.length, stepDur=1.0;
+  const phase=Math.min(N,Learn.t/stepDur);               // 0..N
+  const mi=Math.min(N-1,Math.floor(phase)), f=easeIO(phase-Math.floor(phase));
+  const baseY=H*0.66, cx=W*0.52, insertX=cx, sw=Math.max(9,W*0.028);
   const col=App.paintColor||settings.color, yt=YARN_TYPES[settings.type];
-  // foundation loops (the row below)
-  for(let i=-2;i<=2;i++){const x=cx+i*W*0.12;
-    learnYarn([{x:x-W*0.05,y:baseY},{x:x,y:baseY-22},{x:x+W*0.05,y:baseY}],sw,shade(col,-0.05),yt);}
-  // grown post height by phase
-  const targetH=(STITCHES[key].h)*H*0.16+24;
-  const grow=Math.min(1,phase/steps);
-  const postTop=baseY-targetH*grow;
-  // draw the developing stitch post
-  if(key==="ch"||key==="sl"||key==="mr"){
-    learnYarn(ovalPts(cx,baseY-20,W*0.05*grow+6,26*grow+6),sw,col,yt);
-  } else {
-    learnYarn([{x:cx-12,y:baseY},{x:cx+10,y:baseY-targetH*0.4*grow},{x:cx-10,y:baseY-targetH*0.75*grow},{x:cx+6,y:postTop}],sw,col,yt);
-    // top loops
-    learnYarn([{x:cx-22,y:postTop+6},{x:cx,y:postTop-10*grow},{x:cx+22,y:postTop+6}],sw,col,yt);
+  const isChain=(key==="ch"||key==="sl"||key==="mr");
+  const moves=steps.map(classifyMove);
+  const loops=loopTimeline(steps,moves,isChain);
+
+  // ---- foundation (the row below) with a clear stitch we work INTO ----
+  // (chains have no row below — they ARE the foundation — so skip it)
+  if(!isChain){
+    for(let i=-2;i<=2;i++){const x=cx+i*W*0.13;
+      learnYarn([{x:x-W*0.055,y:baseY},{x:x,y:baseY-20},{x:x+W*0.055,y:baseY}],sw,shade(col,-0.06),yt);}
+    // highlight the target stitch's V (the one being worked / counted)
+    lctx.save();lctx.strokeStyle="rgba(255,255,255,.5)";lctx.lineWidth=2;lctx.setLineDash([4,4]);
+    lctx.beginPath();lctx.moveTo(insertX-W*0.05,baseY-2);lctx.lineTo(insertX,baseY-20);lctx.lineTo(insertX+W*0.05,baseY-2);lctx.stroke();lctx.restore();
   }
-  // loops currently "on the hook" — a count that rises then falls per stitch type
-  const loopsOnHook=hookLoopCount(key,phase);
-  // hook: moves down to insert (phase 0-1), then rides up the post as it grows
-  const insert=Math.min(1,phase);                 // 0..1 insert progress
-  const hookBaseX=cx+W*0.16, hookTipY = baseY-10 - (postTop-(baseY-10))*grow*0 ; // start near base
-  const tipY = baseY-6 - (targetH*grow)* (phase>1?1:phase);
-  const hx=cx+10 + Math.sin(Learn.t*3)*2;
-  const ty=baseY-6-(targetH*grow);
-  // yarn-over wraps shown as little loops near the hook tip
-  drawLearnHook(hx, ty-6, loopsOnHook, col, sw);
-  // working strand feeding the hook
-  lctx.save();lctx.strokeStyle=col;lctx.lineWidth=sw*0.6;lctx.lineCap="round";
-  lctx.beginPath();lctx.moveTo(W*0.06,H*0.9);lctx.quadraticCurveTo(W*0.3,H*0.6,hx-4,ty+4);lctx.stroke();lctx.restore();
-  // caption of current step
-  const cur=Math.min(steps-1,Math.floor(phase));
+
+  // ---- post grows as the stitch is completed ----
+  const targetH=STITCHES[key].h*H*0.17+26;
+  const grow=easeIO(Math.min(1,phase/N));
+  const postTop=baseY-targetH*grow;
+
+  // ---- hook "stations" and the path between them per move ----
+  const STATION={
+    rest:  {x:insertX+W*0.13, y:baseY-Math.max(36,targetH*grow*0.6), rot:-0.28},
+    fabric:{x:insertX,        y:baseY+H*0.06,                         rot:0.10},
+    top:   {x:insertX+8,      y:postTop-14,                           rot:-0.20},
+  };
+  // walk stations across the move list to know where each move starts/ends
+  let st="rest"; const startSt=[]; const endSt=[];
+  for(let i=0;i<N;i++){ startSt[i]=st;
+    const m=moves[i];
+    if(m==="insert") st="fabric";
+    else if(m==="pullup") st="top";
+    else if(m==="through"||m==="through2") st=isChain?"rest":"top";
+    endSt[i]=st;
+  }
+  const A=STATION[startSt[mi]], B=STATION[endSt[mi]];
+  const curMove=moves[mi];
+  // small scoop while doing a yarn-over (hook dips & rotates to catch yarn)
+  const scoop = curMove==="yarnover" ? Math.sin(f*Math.PI) : 0;
+  const hx=lerp(A.x,B.x,f), hy=lerp(A.y,B.y,f)+ (curMove==="through"?Math.sin(f*Math.PI)*8:0);
+  const hrot=lerp(A.rot,B.rot,f) + scoop*0.5;
+  const tipX=hx, tipY=hy;
+
+  // ---- draw the developing stitch / chain ----
+  if(isChain){
+    // a short run of chain V's that grows by one as we "pull through"
+    const made=Math.min(1,(mi+ (curMove==="through"?f:0))/Math.max(1,N));
+    const nV=2+Math.round(made*1.5);
+    for(let i=0;i<nV;i++){ const x=cx-W*0.16+i*W*0.09;
+      learnYarn(ovalPts(x,baseY-26,W*0.035+5,15),sw,col,yt); }
+  } else {
+    learnYarn([{x:cx-12,y:baseY},{x:cx+10,y:baseY-targetH*0.4*grow},{x:cx-10,y:baseY-targetH*0.74*grow},{x:cx+6,y:postTop+6}],sw,col,yt);
+    if(grow>0.15) learnYarn([{x:cx-20,y:postTop+8},{x:cx,y:postTop-8*grow},{x:cx+20,y:postTop+8}],sw,col,yt); // top V
+  }
+
+  // ---- the loop currently held in the hook throat ----
+  lctx.save();lctx.strokeStyle=shade(col,0.05);lctx.lineWidth=sw*0.62;
+  lctx.beginPath();lctx.ellipse(tipX-2,tipY+10,10,7,0,0,Math.PI*2);lctx.stroke();lctx.restore();
+
+  // ---- working strand from the ball, up to the hook ----
+  const ballX=W*0.07, ballY=H*0.92;
+  // yarn-over wrap: a travelling point arcs from behind the hook, over the
+  // top, and into the throat — the real "yarn over" motion.
+  let feedX=tipX-6, feedY=tipY+2;
+  if(curMove==="yarnover"){
+    const a=lerp(-0.5*Math.PI, 1.15*Math.PI, f);            // sweep over the hook
+    const wr=15;
+    feedX=tipX+Math.cos(a)*wr; feedY=tipY-6+Math.sin(a)*wr*0.8;
+    // draw the wrap arc already laid over the hook
+    lctx.save();lctx.strokeStyle=col;lctx.lineWidth=sw*0.5;lctx.lineCap="round";
+    lctx.beginPath();lctx.arc(tipX,tipY-6,wr,-0.5*Math.PI,a);lctx.stroke();lctx.restore();
+  }
+  lctx.save();lctx.strokeStyle=col;lctx.lineWidth=sw*0.55;lctx.lineCap="round";
+  lctx.beginPath();lctx.moveTo(ballX,ballY);lctx.quadraticCurveTo(W*0.28,H*0.62,feedX,feedY);lctx.stroke();lctx.restore();
+
+  // ---- a loop being dragged up/through during pull-up & pull-through ----
+  if(curMove==="pullup"||curMove==="through"||curMove==="through2"){
+    lctx.save();lctx.strokeStyle=shade(col,0.1);lctx.lineWidth=sw*0.5;lctx.lineCap="round";
+    const fromY=curMove==="pullup"?baseY:postTop+6;
+    lctx.beginPath();lctx.moveTo(tipX-9,tipY+12);lctx.quadraticCurveTo(insertX-4,(tipY+fromY)/2,insertX,fromY);lctx.stroke();lctx.restore();
+  }
+
+  // ---- the hook itself, last so it sits on top ----
+  drawLearnHook(tipX, tipY, hrot, col, sw);
+
+  // ---- captions ----
+  const cur=Math.min(N-1,Math.floor(phase));
   lctx.fillStyle="#f3eee6";lctx.font="600 15px system-ui";lctx.textAlign="center";
-  lctx.fillText((STITCH_STEPS[key]||[""])[cur]||"",W/2,H*0.12);
-  // loops-on-hook readout
+  lctx.fillText(steps[cur]||"",W/2,H*0.11);
   lctx.fillStyle="#b6ad9d";lctx.font="500 12px system-ui";
-  lctx.fillText(loopsOnHook+" loop"+(loopsOnHook===1?"":"s")+" on hook",W/2,H*0.12+20);
+  const lc=loops[cur]||1;
+  lctx.fillText(lc+" loop"+(lc===1?"":"s")+" on hook · "+MOVE_LABEL[moves[cur]],W/2,H*0.11+20);
 }
-function hookLoopCount(key,phase){
-  // approximate loops-on-hook through the life of the stitch
-  if(key==="sc"){ if(phase<2)return 1; if(phase<3)return 2; return 1; }
-  if(key==="hdc"){ if(phase<1)return 1; if(phase<3)return 3; return 1; }
-  if(key==="dc"){ if(phase<1)return 1; if(phase<3)return 3; if(phase<4)return 2; return 1; }
-  if(key==="tr"){ if(phase<1)return 1; if(phase<3)return 4; if(phase<4)return 3; if(phase<5)return 2; return 1; }
-  return 1;
-}
+const MOVE_LABEL={insert:"insert hook into the stitch",yarnover:"yarn over the hook",pullup:"pull a loop up",through:"pull through",through2:"pull through two"};
 function ovalPts(cx,cy,rx,ry){const p=[];for(let a=0;a<=Math.PI*2+0.01;a+=Math.PI/9)p.push({x:cx+Math.cos(a)*rx,y:cy+Math.sin(a)*ry});return p;}
 function learnYarn(pts,w,col,yt){ // reuse the plied-yarn stroke on the learn ctx
   const old=window.ctx; // yarnStroke uses module-level ctx; temporarily point at lctx
@@ -1605,8 +1684,8 @@ function drawPliedOn(c,pts,width,baseCol,fuzz,twist){
   c.strokeStyle=baseCol;c.lineWidth=width*0.82;path();c.stroke();
   c.strokeStyle="rgba(255,255,255,.26)";c.lineWidth=Math.max(1,width*0.16);c.save();c.translate(-width*0.1,-width*0.1);path();c.stroke();c.restore();
 }
-function drawLearnHook(x,y,loops,col,sw){
-  lctx.save();lctx.translate(x,y);lctx.rotate(0.2);
+function drawLearnHook(x,y,rot,col,sw){
+  lctx.save();lctx.translate(x,y);lctx.rotate(rot==null?0.2:rot);
   const R=6,L=120;
   const grad=lctx.createLinearGradient(-R,0,R,0);
   grad.addColorStop(0,"#8b93a3");grad.addColorStop(.5,"#ffffff");grad.addColorStop(1,"#7e8696");
@@ -1621,9 +1700,6 @@ function drawLearnHook(x,y,loops,col,sw){
   lctx.strokeStyle="rgba(255,255,255,.85)";lctx.lineWidth=R*0.5;lctx.lineCap="round";
   lctx.beginPath();lctx.moveTo(-R*0.25,-R*2.6);lctx.lineTo(-R*0.25,L*0.5);lctx.stroke();
   lctx.restore();
-  // loops draped on the hook neck
-  for(let i=0;i<loops;i++){lctx.save();lctx.strokeStyle=col;lctx.lineWidth=sw*0.5;
-    lctx.beginPath();lctx.ellipse(x-2,y+6+i*7,9,5,0,0,Math.PI*2);lctx.stroke();lctx.restore();}
 }
 
 // ============================================================

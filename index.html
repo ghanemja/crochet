@@ -237,6 +237,7 @@
   /* ---------- Steps ---------- */
   .steps { max-height: 252px; overflow: auto; }
   .steps::-webkit-scrollbar { width: 8px; } .steps::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 99px; }
+  .step-head { padding: 10px 18px 6px; font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--surface-2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
   .step { display: flex; gap: 12px; align-items: center; padding: 11px 18px; border-bottom: 1px solid var(--border); cursor: pointer; transition: .12s var(--ease); }
   .step:last-child { border-bottom: none; }
   .step:hover { background: var(--surface-2); }
@@ -436,14 +437,14 @@
       <div class="card-body">
         <label class="dropzone" id="dropzone" for="fileInput">
           <svg class="dz-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 18v-6M9 15l3-3 3 3"/></svg>
-          <div class="dz-t"><b>Drop a .txt file</b> or click to browse<br><span>plain-text crochet pattern</span></div>
-          <input type="file" id="fileInput" accept=".txt,.md" hidden />
+          <div class="dz-t"><b>Drop a .txt or .pdf</b> or click to browse<br><span>plain-text or PDF crochet pattern</span></div>
+          <input type="file" id="fileInput" accept=".txt,.md,.pdf" hidden />
         </label>
         <div class="import-url">
-          <input type="text" id="importUrl" placeholder="Paste a pattern URL (blog, free pattern…)" spellcheck="false" />
+          <input type="text" id="importUrl" placeholder="Paste a pattern URL or PDF link" spellcheck="false" />
           <button id="importBtn" title="Fetch & parse">Import</button>
         </div>
-        <textarea id="patternInput" spellcheck="false" placeholder="Row 1: ch 12&#10;Row 2: sc across (12)"></textarea>
+        <textarea id="patternInput" spellcheck="false" placeholder="Tip: name your sections so they assemble in 3D —&#10;&#10;HEAD&#10;Rnd 1: mr, 6 sc in ring (6)&#10;Rnd 2: inc x6 (12)&#10;&#10;BODY&#10;Rnd 1: mr, 6 sc in ring (6)…&#10;&#10;ARMS (make 2)&#10;Rnd 1: mr, 6 sc in ring (6)…"></textarea>
         <div class="edit-row">
           <span class="pp-status" id="ppStatus"><span class="dot"></span>—</span>
           <label class="switch"><input type="checkbox" id="liveEdit" checked /> Live</label>
@@ -730,40 +731,118 @@ Rnd 5: sc across (24)`,
   "Mesh row":`Row 1: ch 20
 Row 2: ch 4, turn, dc, ch 1, skip 1, dc across
 Row 3: ch 4, turn, dc, ch 1, dc across`,
+  "Teddy (multi-part)":`HEAD
+Rnd 1: mr, 6 sc in ring (6)
+Rnd 2: inc x6 (12)
+Rnd 3: (sc, inc) x6 (18)
+Rnd 4: (sc 2, inc) x6 (24)
+Rnd 5-8: sc around (24)
+Rnd 9: (sc 2, dec) x6 (18)
+Rnd 10: (sc, dec) x6 (12)
+Rnd 11: dec x6 (6)
+
+BODY
+Rnd 1: mr, 6 sc in ring (6)
+Rnd 2: inc x6 (12)
+Rnd 3: (sc, inc) x6 (18)
+Rnd 4-7: sc around (18)
+Rnd 8: (sc, dec) x6 (12)
+
+ARMS (make 2)
+Rnd 1: mr, 6 sc in ring (6)
+Rnd 2: inc x6 (12)
+Rnd 3-6: sc around (12)
+
+LEGS (make 2)
+Rnd 1: mr, 6 sc in ring (6)
+Rnd 2: inc x6 (12)
+Rnd 3-5: sc around (12)
+
+EARS (make 2)
+Rnd 1: mr, 6 sc in ring (6)
+Rnd 2: inc x6 (12)
+
+Sew head to body. Attach arms, legs and ears. Stuff firmly.`,
 };
 
-// ---- Parser (proven) ---------------------------------------------------
-function parsePattern(text){
-  const lines=text.split(/\n+/).map(l=>l.trim()).filter(Boolean); const rows=[]; let rowCount=0;
-  for(let line of lines){
-    rowCount++; let label="Row "+rowCount;
-    const m=line.match(/^(row|rnd|round|r)\s*([0-9]+)\s*[:.\-]?\s*/i);
-    if(m){ label=(/rnd|round/i.test(m[1])?"Rnd ":"Row ")+m[2]; line=line.slice(m[0].length); }
-    const countMatch=line.match(/\(\s*(\d+)\s*\)\s*$/); const targetCount=countMatch?parseInt(countMatch[1],10):null;
-    line=line.replace(/\(\s*\d+\s*\)\s*$/,"").trim();
-    const stitches=[]; const clauses=line.split(/,|;/).map(s=>s.trim()).filter(Boolean);
-    for(let clause of clauses){
-      const repeatMatch=clause.match(/x\s*(\d+)/i); const repeatN=repeatMatch?parseInt(repeatMatch[1],10):1;
-      if(repeatMatch) clause=clause.replace(repeatMatch[0],"").trim();
-      let found=null,count=1;
-      const a=clause.match(/(\d+)\s+([a-z ]+?)(?:\b)/i), b=clause.match(/([a-z]+(?:\s*st)?)\s+(\d+)/i),
-            c=clause.match(/\b(ch|sc|hdc|dc|tr|trc|sl\s*st|slst|ss|inc|dec|mr|magic ring|magic circle|chain|single|double|treble|ring)\b/i);
-      const resolve=raw=>{ if(!raw)return null; const norm=raw.toLowerCase().replace(/\s+/g," ").trim(); return ALIAS[norm]||ALIAS[norm.replace(/ st$/,"")]||null; };
-      if(a&&resolve(a[2])){count=parseInt(a[1],10);found=resolve(a[2]);}
-      else if(b&&resolve(b[1])){count=parseInt(b[2],10);found=resolve(b[1]);}
-      else if(c){found=resolve(c[1]);count=1;}
-      if(!found) continue;
-      const isFill=/\b(across|in each|in every|around)\b/i.test(clause)&&count===1&&!repeatMatch;
-      if(isFill){ const prevWidth=rows.length?rows[rows.length-1].stitches.length:0; const goal=targetCount||prevWidth||1;
-        const remaining=Math.max(1,goal-stitches.length); for(let i=0;i<remaining;i++) stitches.push({key:found,abbr:found}); continue; }
-      const total=count*repeatN; for(let i=0;i<total;i++) stitches.push({key:found,abbr:found});
-    }
-    if(targetCount&&stitches.length&&stitches.length<targetCount){ const base=stitches.slice(); let i=0;
-      while(stitches.length<targetCount){ stitches.push({...base[i%base.length]}); i++; } }
-    if(stitches.length) rows.push({label,stitches}); else rowCount--;
+// ---- Parser: section-aware (Head / Body / Arms…) -----------------------
+// Real patterns (esp. amigurumi) split into named parts worked separately
+// then assembled. We detect part headers, expand round ranges (Rnd 6-9),
+// and group rows into parts so each can be laid out & assembled in 3D.
+const PART_WORDS=/\b(head|body|torso|arm|leg|foot|feet|hand|ear|tail|nose|muzzle|snout|horn|wing|eye|cheek|paw|belly|tummy|base|side|panel|square|motif|strap|handle|brim|sleeve|hood|flap|petal|leaf|beak|fin|mane|hair|bow|button|spike|spot|antenna|whisker|tooth|tongue|collar|scarf|hat|skirt|shell)\b/i;
+// lines that are pure finishing/section noise → never a stitch row, never a part
+const NOISE_LINE=/^(finishing|assembly|notes?|materials?|gauge|tension|abbreviations?|instructions?|you will need|stuff|sew|fasten off|fo\b|weave in|attach|embroider|cut |using the|with [a-z ]+sew|join |continue|repeat rnd|rep rnd|do not|turn\.?$)/i;
+const STITCH_TOKEN=/\b(ch|sc|hdc|dc|tr|trc|sl\s*st|slst|ss|inc|dec|mr|magic ring|magic circle|chain|single|double|treble|ring|loop|hook)\b/i;
+
+function detectMake(line){ const m=line.match(/make\s*(\d+)/i)||line.match(/\bx\s*(\d+)\b/i)||line.match(/\(\s*make\s*(\d+)\s*\)/i); return m?Math.max(1,parseInt(m[1],10)):1; }
+function cleanPartName(line){
+  let n=line.replace(/\(.*?\)/g,"").replace(/[:.\-–]+\s*$/,"").replace(/\bmake\s*\d+\b/i,"").replace(/\bx\s*\d+\b/i,"").trim();
+  if(!n) return "Part";
+  return n.replace(/\w\S*/g,w=>w[0].toUpperCase()+w.slice(1).toLowerCase());
+}
+function looksLikeHeader(line){
+  const words=line.replace(/\(.*?\)/g," ").trim();
+  if(!words||words.length>46) return false;
+  if(STITCH_TOKEN.test(words)) return false;                 // a stitch row, not a header
+  if(/^(row|rnd|round|r)\s*\d/i.test(words)) return false;
+  if(NOISE_LINE.test(words)) return false;
+  if(!/[a-z]/i.test(words)) return false;
+  if(/\d/.test(words.replace(/make\s*\d+/i,"").replace(/x\s*\d+/i,""))) return false; // stray numbers ⇒ not a clean header
+  if(PART_WORDS.test(words)) return true;
+  const wc=words.split(/\s+/).length;
+  const isUpper=words===words.toUpperCase() && /[A-Z]/.test(words);
+  return (isUpper && wc<=5) || (wc<=4 && /^[A-Z]/.test(words));  // short Title/UPPER line
+}
+// parse one source line → array of row objects (round ranges expand to many)
+function parseRow(rawLine, prevRows, seqNo){
+  let line=rawLine, label=null, isRnd=false, reps=1;
+  const m=line.match(/^(row|rnd|round|r)\s*(\d+)\s*(?:[-–]\s*(\d+))?\s*[:.\-]?\s*/i);
+  if(m){ isRnd=/rnd|round/i.test(m[1]); const a=+m[2], b=m[3]?+m[3]:a; reps=Math.max(1,b-a+1);
+    label=(isRnd?"Rnd ":"Row ")+(m[3]?(a+"–"+b):a); line=line.slice(m[0].length); }
+  const countMatch=line.match(/\(\s*(\d+)\s*\)\s*$/); const targetCount=countMatch?parseInt(countMatch[1],10):null;
+  line=line.replace(/\(\s*\d+\s*\)\s*$/,"").trim();
+  const stitches=[]; const clauses=line.split(/,|;/).map(s=>s.trim()).filter(Boolean);
+  for(let clause of clauses){
+    const repeatMatch=clause.match(/x\s*(\d+)/i); const repeatN=repeatMatch?parseInt(repeatMatch[1],10):1;
+    if(repeatMatch) clause=clause.replace(repeatMatch[0],"").trim();
+    let found=null,count=1;
+    const a=clause.match(/(\d+)\s+([a-z ]+?)(?:\b)/i), b=clause.match(/([a-z]+(?:\s*st)?)\s+(\d+)/i),
+          c=clause.match(/\b(ch|sc|hdc|dc|tr|trc|sl\s*st|slst|ss|inc|dec|mr|magic ring|magic circle|chain|single|double|treble|ring)\b/i);
+    const resolve=raw=>{ if(!raw)return null; const norm=raw.toLowerCase().replace(/\s+/g," ").trim(); return ALIAS[norm]||ALIAS[norm.replace(/ st$/,"")]||null; };
+    if(a&&resolve(a[2])){count=parseInt(a[1],10);found=resolve(a[2]);}
+    else if(b&&resolve(b[1])){count=parseInt(b[2],10);found=resolve(b[1]);}
+    else if(c){found=resolve(c[1]);count=1;}
+    if(!found) continue;
+    const isFill=/\b(across|in each|in every|around|in next|to end|to last)\b/i.test(clause)&&count===1&&!repeatMatch;
+    if(isFill){ const prevWidth=prevRows.length?prevRows[prevRows.length-1].stitches.length:0; const goal=targetCount||prevWidth||1;
+      const remaining=Math.max(1,goal-stitches.length); for(let i=0;i<remaining;i++) stitches.push({key:found,abbr:found}); continue; }
+    const total=count*repeatN; for(let i=0;i<total;i++) stitches.push({key:found,abbr:found});
   }
-  const flat=[]; rows.forEach((r,ri)=>r.stitches.forEach((s,si)=>flat.push({...s,row:ri,idxInRow:si})));
-  return {rows,flat};
+  if(targetCount&&stitches.length&&stitches.length<targetCount){ const base=stitches.slice(); let i=0;
+    while(stitches.length<targetCount){ stitches.push({...base[i%base.length]}); i++; } }
+  if(!stitches.length) return [];
+  const result=[];
+  for(let k=0;k<reps;k++){ const lab=label?(reps>1?label.replace(/–.*/,"")+(m&&m[3]?" #"+(k+1):""):label):("Row "+(seqNo+k));
+    result.push({label:reps>1?(isRnd?"Rnd ":"Row ")+((m?+m[2]:seqNo)+k):lab,stitches:stitches.map(s=>({...s})),round:isRnd}); }
+  return result;
+}
+function parsePattern(text){
+  const lines=text.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  const parts=[]; let cur=null, seq=0;
+  const newPart=(name,count)=>{ cur={name:name||null,count:count||1,rows:[]}; parts.push(cur); seq=0; };
+  for(let raw of lines){
+    const rowObjs=parseRow(raw, cur?cur.rows:[], seq+1);
+    if(rowObjs.length){ if(!cur) newPart(null,1); rowObjs.forEach(r=>{cur.rows.push(r);seq++;}); continue; }
+    if(looksLikeHeader(raw)) newPart(cleanPartName(raw), detectMake(raw));
+    // otherwise: notes / finishing — ignored
+  }
+  let realParts=parts.filter(p=>p.rows.length);
+  if(!realParts.length) realParts=[{name:null,count:1,rows:[]}];
+  const rows=[], flat=[];
+  realParts.forEach((p,pi)=>{ p.index=pi; p.flat=[];
+    p.rows.forEach(r=>{ const ri=rows.length; r.part=pi; rows.push(r);
+      r.stitches.forEach((s,si)=>{ const f={...s,row:ri,idxInRow:si,part:pi,partName:p.name}; flat.push(f); p.flat.push(f); }); }); });
+  return {parts:realParts, rows, flat, multi:realParts.length>1};
 }
 
 // ---- colour helpers ----------------------------------------------------
@@ -774,40 +853,91 @@ function shade(hex,amt){const{r,g,b}=hexToRgb(hex);const f=amt<0?0:255,p=Math.ab
 // ============================================================
 //  Shared 3D layout (flat w/ fabric drape, or in-the-round)
 // ============================================================
-function isWorkedInRound(parsed){
-  const rnd=parsed.rows.filter(r=>/^Rnd/i.test(r.label)).length;
-  return parsed.flat.some(s=>s.key==="mr") || rnd>=Math.ceil(parsed.rows.length*0.6);
+function isWorkedInRound(part){
+  const rnd=part.rows.filter(r=>r.round||/^Rnd/i.test(r.label)).length;
+  return part.flat?part.flat.some(s=>s.key==="mr"):false || part.rows.some(r=>r.stitches.some(s=>s.key==="mr")) || rnd>=Math.ceil(part.rows.length*0.6);
 }
-function layout3D(parsed){
-  const sp=2.4*hookGauge(), unit=sp*0.95, rows=parsed.rows, positions=[]; let yCursor=0;
-  if(isWorkedInRound(parsed)){
+// lay a single part out at the origin (centred in x/z, growing up in y)
+function layoutPart(part,sp,unit){
+  const rows=part.rows, positions=[]; let yCursor=0, maxR=0;
+  const round=isWorkedInRound(part);
+  if(round){
     rows.forEach((r,ri)=>{
       const stitchN=r.stitches.filter(s=>s.key!=="ch"&&s.key!=="mr").length||r.stitches.length;
-      const radius=Math.max(stitchN,3)*sp/(2*Math.PI);
+      const radius=Math.max(stitchN,3)*sp/(2*Math.PI); maxR=Math.max(maxR,radius);
       const maxH=Math.max(...r.stitches.map(s=>STITCHES[s.key].h)); const n=r.stitches.length;
       r.stitches.forEach((s,si)=>{ const a=(si/n)*Math.PI*2; const h=STITCHES[s.key].h*unit;
-        positions.push({x:Math.cos(a)*radius,y:yCursor,z:Math.sin(a)*radius,h,key:s.key,row:ri,rowLabel:r.label,half:sp*0.42,rotY:-a+Math.PI/2}); });
+        positions.push({x:Math.cos(a)*radius,y:yCursor,z:Math.sin(a)*radius,h,key:s.key,half:sp*0.42,rotY:-a+Math.PI/2}); });
       yCursor+=maxH*unit*0.7;
     });
-    return {positions,sp,unit,height:yCursor,round:true};
+    return {positions,height:yCursor,maxR,round:true};
   }
-  // flat with gentle fabric drape: edges curl toward viewer + droop, rows relax forward
-  const maxN=Math.max(...rows.map(r=>r.stitches.length),1);
+  // flat panel with gentle fabric drape
+  const maxN=Math.max(...rows.map(r=>r.stitches.length),1); maxR=maxN*sp/2;
   rows.forEach((r,ri)=>{
     const n=r.stitches.length, reverse=ri%2===1, rowWidth=(n-1)*sp;
     const maxH=Math.max(...r.stitches.map(s=>STITCHES[s.key].h));
     r.stitches.forEach((s,si)=>{
       const order=reverse?(n-1-si):si; const x=order*sp-rowWidth/2; const h=STITCHES[s.key].h*unit;
-      const tx=(maxN>1)?(x/(maxN*sp/2)):0;                 // -1..1 across width
-      const drape=tx*tx;                                    // 0 centre → 1 edges
-      const z=drape*sp*1.1 + Math.sin(order*1.3+ri)*sp*0.07 // edges curl forward + relief
-              + ri*sp*0.05;                                 // whole fabric leans forward as it grows
-      const yDrop=-drape*sp*0.5;                            // edges droop
-      positions.push({x,y:yCursor+yDrop,z,h,key:s.key,row:ri,rowLabel:r.label,half:sp*0.42,rotY:0});
+      const tx=(maxN>1)?(x/(maxN*sp/2)):0, drape=tx*tx;
+      const z=drape*sp*1.1+Math.sin(order*1.3+ri)*sp*0.07+ri*sp*0.05, yDrop=-drape*sp*0.5;
+      positions.push({x,y:yCursor+yDrop,z,h,key:s.key,half:sp*0.42,rotY:0});
     });
     yCursor+=maxH*unit*0.78;
   });
-  return {positions,sp,unit,height:yCursor,round:false};
+  return {positions,height:yCursor,maxR,round:false};
+}
+function partRole(name){
+  const n=(name||"").toLowerCase();
+  if(/head/.test(n)) return "head";
+  if(/\bear/.test(n)) return "ear";
+  if(/(horn|antenna|spike)/.test(n)) return "horn";
+  if(/\beye/.test(n)) return "eye";
+  if(/(nose|muzzle|snout|beak)/.test(n)) return "nose";
+  if(/(arm|hand|wing|paw|sleeve|fin)/.test(n)) return "arm";
+  if(/(leg|foot|feet)/.test(n)) return "leg";
+  if(/tail/.test(n)) return "tail";
+  if(/(body|torso|belly|tummy|base|shell)/.test(n)) return "body";
+  return "other";
+}
+// assemble parts into a figure: head on top of body, limbs to the sides, etc.
+function placeParts(parts,laid,sp){
+  const off=parts.map(()=>({x:0,y:0,z:0,mirror:false}));
+  // pick the main body: explicit body role, else the bulkiest part, else first
+  let bodyIdx=parts.findIndex(p=>partRole(p.name)==="body");
+  if(bodyIdx<0){ let best=-1,bv=-1; laid.forEach((l,i)=>{const v=l.maxR*l.maxR*l.height; if(v>bv){bv=v;best=i;}}); bodyIdx=Math.max(0,best); }
+  const B=laid[bodyIdx], bodyR=B.maxR, bodyTop=B.height;
+  let headIdx=-1, otherX=0; const otherDir=[1,-1]; let otherN=0;
+  parts.forEach((p,i)=>{ if(i===bodyIdx) return; const role=partRole(p.name), L=laid[i];
+    if(role==="head"){ headIdx=i; off[i]={x:0,y:bodyTop-L.maxR*0.25,z:0,mirror:false}; }
+  });
+  const head=headIdx>=0?{idx:headIdx,top:off[headIdx].y+laid[headIdx].height,r:laid[headIdx].maxR,y:off[headIdx].y}:null;
+  parts.forEach((p,i)=>{ if(i===bodyIdx||i===headIdx) return; const role=partRole(p.name), L=laid[i], mir=p.count>1;
+    switch(role){
+      case "ear":   off[i]={x:(head?head.r:bodyR)*0.7, y:(head?head.top:bodyTop)-L.height*0.4, z:0, mirror:mir}; break;
+      case "horn":  off[i]={x:(head?head.r:bodyR)*0.4, y:(head?head.top:bodyTop)-L.height*0.2, z:0, mirror:mir}; break;
+      case "eye":   off[i]={x:(head?head.r:bodyR)*0.42, y:head?head.y+head.r*0.9:bodyTop, z:(head?head.r:bodyR)*0.78, mirror:mir}; break;
+      case "nose":  off[i]={x:0, y:head?head.y+head.r*0.7:bodyTop*0.8, z:(head?head.r:bodyR)*0.92, mirror:false}; break;
+      case "arm":   off[i]={x:bodyR+L.maxR*0.5, y:bodyTop*0.55, z:0, mirror:mir}; break;
+      case "leg":   off[i]={x:bodyR*0.5, y:-L.height*0.9, z:bodyR*0.2, mirror:mir}; break;
+      case "tail":  off[i]={x:0, y:bodyTop*0.3, z:-(bodyR+L.maxR*0.5), mirror:false}; break;
+      default:      { const dir=otherDir[otherN%2]; otherX+=L.maxR*2+sp*2;
+                      off[i]={x:dir*(bodyR+otherX), y:0, z:bodyR+L.maxR+sp*3, mirror:false}; otherN++; }
+    }
+  });
+  return {off, bodyIdx};
+}
+function layout3D(parsed){
+  const sp=2.4*hookGauge(), unit=sp*0.95, parts=parsed.parts;
+  const laid=parts.map(p=>layoutPart(p,sp,unit));
+  if(parts.length===1){ const l=laid[0];
+    return {positions:l.positions.map(lp=>({...lp,part:0,mirror:false})), sp,unit,height:l.height,round:l.round,multi:false}; }
+  const {off}=placeParts(parts,laid,sp);
+  const positions=[];
+  parts.forEach((p,pi)=>{ const o=off[pi];
+    laid[pi].positions.forEach(lp=>positions.push({...lp, x:lp.x+o.x, y:lp.y+o.y, z:lp.z+o.z, part:pi, mirror:o.mirror, mirrorAxis:o.x})); });
+  const height=Math.max(...parts.map((p,i)=>off[i].y+laid[i].height),1);
+  return {positions,sp,unit,height,round:true,multi:true,laid,off};
 }
 
 // ============================================================
@@ -819,11 +949,21 @@ function fit2D(){ const ratio=window.devicePixelRatio||1, cssW=canvas.clientWidt
 
 function project2D(){
   if(!App.parsed) return null;
-  const rows=App.parsed.rows, pad=64, maxLen=Math.max(1,...rows.map(r=>r.stitches.length));
-  const gap=Math.min(44,(App.W-pad*2)/Math.max(maxLen,6)), unit=24, rowH=60, baseY=App.H-78, out=[];
-  rows.forEach((r,ri)=>{ const n=r.stitches.length, reverse=ri%2===1, rowWidth=(n-1)*gap, startX=(App.W-rowWidth)/2, y=baseY-ri*rowH;
-    r.stitches.forEach((s,si)=>{ const order=reverse?(n-1-si):si;
-      out.push({sx:startX+order*gap,sy:y,h:STITCHES[s.key].h*unit+8,half:gap*0.46,key:s.key,row:ri,rowLabel:r.label}); }); });
+  const parts=App.parsed.parts, P=parts.length, unit=24, out=[]; App.partLabels=[];
+  // single part: centred column (as before). multi-part: side-by-side slots.
+  const slotW=App.W/P, baseY=App.H-78;
+  parts.forEach((p,pi)=>{
+    const maxLen=Math.max(1,...p.rows.map(r=>r.stitches.length));
+    const innerW=(P>1?slotW:App.W)-(P>1?28:128);
+    const gap=Math.min(P>1?30:44, innerW/Math.max(maxLen,P>1?4:6));
+    const rowH=Math.min(60,(App.H-130)/Math.max(p.rows.length,4));
+    const slotCx=P>1?slotW*(pi+0.5):App.W/2;
+    const round=isWorkedInRound(p);
+    p.rows.forEach((r,li)=>{ const n=r.stitches.length, reverse=(!round)&&li%2===1, rowWidth=(n-1)*gap, startX=slotCx-rowWidth/2, y=baseY-li*rowH;
+      r.stitches.forEach((s,si)=>{ const order=reverse?(n-1-si):si;
+        out.push({sx:startX+order*gap,sy:y,h:STITCHES[s.key].h*unit+8,half:gap*0.46,key:s.key,row:r.part,rowLabel:r.label}); }); });
+    if(p.name) App.partLabels.push({x:slotCx,y:baseY-p.rows.length*rowH-18,name:p.name+(p.count>1?" ×"+p.count:"")});
+  });
   return out;
 }
 
@@ -856,6 +996,11 @@ function render2D(){
   if(!App.parsed){ctx.fillStyle="rgba(255,255,255,.22)";ctx.font="500 16px system-ui";ctx.textAlign="center";ctx.fillText("Load a pattern to watch it come to life",App.W/2,App.H/2);return;}
   const proj=App.proj2d||(App.proj2d=project2D()), prog=App.progress, complete=Math.floor(prog), frac=prog-complete;
   const yt=YARN_TYPES[settings.type], width=Math.max(4,yarnRadius()*6.5);
+  // section labels for multi-part patterns
+  if(App.partLabels&&App.partLabels.length){ ctx.save(); ctx.textAlign="center";
+    App.partLabels.forEach(l=>{ const ty=Math.max(20,l.y); ctx.font="700 13px system-ui"; const w=ctx.measureText(l.name).width;
+      ctx.fillStyle="rgba(255,255,255,.07)"; roundRect(l.x-w/2-9,ty-14,w+18,22,11); ctx.fill();
+      ctx.fillStyle="rgba(243,237,227,.92)"; ctx.fillText(l.name,l.x,ty+1); }); ctx.restore(); }
   for(let i=0;i<proj.length&&i<complete;i++){const p=proj[i];yarnStroke(stitchPath2D(p,1),width,colorAt(i),yt.fuzz,yt.twist);
     ctx.fillStyle=STITCHES[p.key].color;ctx.globalAlpha=.85;ctx.beginPath();ctx.arc(p.sx,p.sy+2,2,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}
   // hover highlight when painting
@@ -1038,18 +1183,45 @@ function makeCrochetHook(R){
   const knob=new THREE.Mesh(new THREE.SphereGeometry(r*1.5,16,12),handleMat);knob.position.y=r*2+shaftLen*1.05;g.add(knob);
   return g;
 }
+function makeLabelSprite(text){
+  const pad=10,fs=44,cv=document.createElement("canvas"),c=cv.getContext("2d");
+  c.font="700 "+fs+"px system-ui"; const w=c.measureText(text).width;
+  cv.width=w+pad*2; cv.height=fs+pad*2;
+  c.font="700 "+fs+"px system-ui"; c.textBaseline="middle";
+  c.fillStyle="rgba(20,17,14,.78)"; const r=14;
+  c.beginPath();c.moveTo(r,0);c.arcTo(cv.width,0,cv.width,cv.height,r);c.arcTo(cv.width,cv.height,0,cv.height,r);c.arcTo(0,cv.height,0,0,r);c.arcTo(0,0,cv.width,0,r);c.closePath();c.fill();
+  c.fillStyle="#f3ede3"; c.fillText(text,pad,cv.height/2+1);
+  const tex=new THREE.CanvasTexture(cv); if('SRGBColorSpace'in THREE) tex.colorSpace=THREE.SRGBColorSpace;
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true}));
+  spr.scale.set(cv.width/fs*1.7,cv.height/fs*1.7,1); spr.renderOrder=10;
+  return spr;
+}
 function buildStudioGeometry(){
   initStudio();buildYarnMaterial();
   Studio.stitchMeshes.forEach(m=>{Studio.group.remove(m);m.geometry.dispose();});Studio.stitchMeshes=[];
+  (Studio.cloneGroups||[]).forEach(cg=>Studio.group.remove(cg.group)); Studio.cloneGroups=[];
+  (Studio.labels||[]).forEach(l=>Studio.group.remove(l)); Studio.labels=[];
   ["hook","ball","strand"].forEach(k=>{if(Studio[k]){Studio.group.remove(Studio[k]);Studio[k]=null;}});
   if(!App.parsed) return;
   const lay=App.lay3d, radius=yarnRadius()*0.55, pos=lay.positions;
+  const byPart={};
   pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p);const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
     const seg=Math.max(10,Math.round(pts.length*2.2));const geo=new THREE.TubeGeometry(curve,seg,radius,8,closed);
     const useMat=App.paint[i]?matFor(App.paint[i]):Studio.yarnMat;
     const mesh=new THREE.Mesh(geo,useMat);mesh.castShadow=true;mesh.receiveShadow=true;mesh.position.set(p.x,p.y,p.z);if(p.rotY)mesh.rotation.y=p.rotY;mesh.visible=false;
     mesh.userData.stitchIndex=i;
-    Studio.group.add(mesh);Studio.stitchMeshes.push(mesh);});
+    Studio.group.add(mesh);Studio.stitchMeshes.push(mesh);
+    (byPart[p.part]=byPart[p.part]||[]).push({mesh,p,i});});
+  // mirrored clones for "make 2" parts (the other arm/leg/ear), revealed when that part is done
+  if(lay.multi){ Object.keys(byPart).forEach(pi=>{ const grp=byPart[pi]; if(!grp[0].p.mirror) return;
+    const cg=new THREE.Group(); let revealIdx=0;
+    grp.forEach(({mesh,i})=>{ const cl=new THREE.Mesh(mesh.geometry,mesh.material); cl.position.copy(mesh.position); cl.rotation.copy(mesh.rotation); cl.castShadow=true; cl.receiveShadow=true; cg.add(cl); revealIdx=Math.max(revealIdx,i); });
+    cg.scale.x=-1; cg.visible=false; Studio.group.add(cg); Studio.cloneGroups.push({group:cg,revealIdx}); }); }
+  // floating section labels above each part
+  if(lay.multi&&App.parsed.parts){ App.parsed.parts.forEach((part,pi)=>{ const grp=byPart[pi]; if(!grp||!part.name) return;
+    let cx=0,cz=0,top=-1e9; grp.forEach(({p})=>{cx+=p.x;cz+=p.z;top=Math.max(top,p.y+p.h);}); cx/=grp.length; cz/=grp.length;
+    const spr=makeLabelSprite(part.name+(part.count>1?" ×"+part.count:"")); spr.position.set(cx,top+lay.sp*1.4,cz);
+    spr.userData.partIndex=pi; spr.visible=false; Studio.group.add(spr); Studio.labels.push(spr); }); }
   const box=new THREE.Box3().setFromObject(Studio.group);const c=box.getCenter(new THREE.Vector3());const size=box.getSize(new THREE.Vector3());
   Studio.group.position.set(-c.x,-box.min.y,-c.z);
   // hook
@@ -1060,14 +1232,19 @@ function buildStudioGeometry(){
   // working strand
   const sg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
   Studio.strand=new THREE.Line(sg,new THREE.LineBasicMaterial({color:new THREE.Color(settings.color)}));Studio.group.add(Studio.strand);
-  // frame camera
-  const fitR=Math.max(size.x,size.y)*0.62+6;Studio.camera.position.set(fitR*0.25,size.y*0.55,fitR+8);
-  Studio.controls.target.set(0,size.y*0.45,0);Studio.controls.update();
+  // frame camera so the whole make fits (fov 40°, allow for figure height)
+  const distH=size.y*1.374, distW=size.x*0.793, dist=Math.max(distH,distW,8)*1.14+size.z*0.6;
+  Studio.camera.position.set(dist*0.28,size.y*0.52,dist);
+  Studio.controls.target.set(0,size.y*0.5,0);Studio.controls.update();
 }
 function updateStudioProgress(){
   if(!Studio.ready||!App.parsed) return;
   const prog=App.progress,complete=Math.floor(prog),frac=prog-complete,meshes=Studio.stitchMeshes;
   for(let i=0;i<meshes.length;i++){const m=meshes[i];if(i<complete){m.visible=true;m.scale.y=1;}else if(i===complete){m.visible=true;m.scale.y=Math.max(0.04,frac);}else m.visible=false;}
+  // mirrored "make 2" duplicates appear once their part is fully worked
+  (Studio.cloneGroups||[]).forEach(cg=>cg.group.visible = complete>cg.revealIdx);
+  // section labels show once anything is worked
+  (Studio.labels||[]).forEach(spr=>{ spr.visible = App.progress>0; });
   const idx=Math.min(complete,meshes.length-1),lay=App.lay3d;
   if(lay&&Studio.hook){const p=lay.positions[idx];const t=(complete<meshes.length)?Math.max(0.05,frac):1;const topY=p.y+p.h*t;const wob=Math.sin(performance.now()/220)*0.35;
     // sit the hook tip in the working loop, handle angled up toward the crocheter
@@ -1124,8 +1301,12 @@ function updateHUD(){
 function setText(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
 function buildStepList(){
   const wrap=document.getElementById("steps");wrap.innerHTML="";
+  let lastPart=-1;
   App.parsed.rows.forEach((r,ri)=>{const counts={};r.stitches.forEach(s=>counts[s.key]=(counts[s.key]||0)+1);
     const summary=Object.entries(counts).map(([k,v])=>`${v} ${k}`).join(", ");
+    if(App.parsed.multi && r.part!==lastPart){ lastPart=r.part; const part=App.parsed.parts[r.part];
+      const h=document.createElement("div");h.className="step-head";
+      h.textContent=(part.name||("Part "+(r.part+1)))+(part.count>1?" · make "+part.count:""); wrap.appendChild(h); }
     const el=document.createElement("div");el.className="step";el.dataset.row=ri;
     el.innerHTML=`<div class="num">${ri+1}</div><div class="txt"><div class="main">${r.label} · ${r.stitches.length} sts</div><div class="sub">${summary}</div></div><div class="ab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></div>`;
     el.addEventListener("click",()=>{let acc=0;for(let k=0;k<ri;k++)acc+=App.parsed.rows[k].stitches.length;App.progress=acc+0.001;pause();});
@@ -1200,7 +1381,48 @@ fi.addEventListener("change",e=>handleFile(e.target.files[0]));
 ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add("drag");}));
 ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove("drag");}));
 dz.addEventListener("drop",e=>handleFile(e.dataTransfer.files[0]));
-function handleFile(file){if(!file)return;if(/\.pdf$/i.test(file.name)){toast("PDF parsing is stubbed — paste the text");return;}const r=new FileReader();r.onload=()=>{document.getElementById("patternInput").value=r.result;loadPattern(r.result);};r.readAsText(file);}
+function handleFile(file){
+  if(!file)return;
+  if(/\.pdf$/i.test(file.name)||file.type==="application/pdf"){ readPdfFile(file); return; }
+  const r=new FileReader();r.onload=()=>{document.getElementById("patternInput").value=r.result;loadPattern(r.result);};r.readAsText(file);
+}
+// Lazy-load pdf.js (only when a PDF is dropped) and extract its text.
+let pdfjsPromise=null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(pdfjsPromise) return pdfjsPromise;
+  pdfjsPromise=new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(e){} res(window.pdfjsLib); };
+    s.onerror=()=>rej(new Error("blocked"));
+    document.head.appendChild(s);
+  });
+  return pdfjsPromise;
+}
+async function readPdfFile(file){
+  setStatus("reading PDF…",false); toast("Reading PDF…");
+  try{
+    const lib=await loadPdfJs();
+    const buf=await file.arrayBuffer();
+    const pdf=await lib.getDocument({data:buf}).promise;
+    let txt="";
+    for(let i=1;i<=pdf.numPages;i++){ const page=await pdf.getPage(i); const c=await page.getTextContent();
+      // group items into lines by their y position so rows stay intact
+      const lines={}; c.items.forEach(it=>{ const y=Math.round(it.transform[5]); (lines[y]=lines[y]||[]).push(it.str); });
+      Object.keys(lines).sort((a,b)=>b-a).forEach(y=>{ txt+=lines[y].join(" ").replace(/\s+/g," ").trim()+"\n"; });
+      txt+="\n";
+    }
+    const cleaned=extractPattern(txt)||txt;
+    document.getElementById("patternInput").value=cleaned;
+    loadPattern(cleaned);
+    if(!App.parsed||!App.parsed.flat.length){ toast("Read the PDF but found no recognizable rows — check the text box & tidy it up."); }
+    else toast("Imported from PDF — review the text & tweak if needed");
+  }catch(e){
+    setStatus("PDF blocked",false);
+    toast("Couldn't read the PDF here (network blocked). Open it, copy the pattern text, and paste it in the box.");
+  }
+}
 
 document.getElementById("helpBtn").addEventListener("click",()=>toast("Edit the pattern, tune yarn & hook, then open the 3D Studio and orbit"));
 window.addEventListener("keydown",e=>{if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT")return;if(e.code==="Space"){e.preventDefault();App.playing?pause():play();}if(e.code==="ArrowRight")document.getElementById("next").click();if(e.code==="ArrowLeft")document.getElementById("prev").click();});
@@ -1453,6 +1675,12 @@ document.getElementById("importUrl").addEventListener("keydown",e=>{if(e.key==="
 async function importFromUrl(){
   const url=document.getElementById("importUrl").value.trim(); if(!url){toast("Paste a URL first");return;}
   if(/\.json$|\.crochet$/i.test(url)){ try{const r=await fetch(url);const j=await r.json();applyState(j);toast("Imported design");return;}catch(e){} }
+  if(/\.pdf(\?|$)/i.test(url)){
+    // PDF links can't be fetched cross-origin from the browser. Try anyway, else guide the user.
+    setStatus("fetching PDF…",false);
+    try{ const r=await fetch(url); const buf=await r.arrayBuffer(); await readPdfFile(new File([buf],"pattern.pdf",{type:"application/pdf"})); return; }
+    catch(e){ toast("Can't open a PDF link directly (the site blocks it). Download the PDF, then drop the file here — or paste the text."); setStatus("PDF link blocked",false); return; }
+  }
   setStatus("fetching…",false);
   let html=null;
   try{ const r=await fetch(url); html=await r.text(); }

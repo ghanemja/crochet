@@ -328,16 +328,42 @@
   .learn-steps li { font-size: 13px; color: var(--text-3); padding: 3px 0; transition: .15s var(--ease); }
   .learn-steps li.on { color: var(--text); font-weight: 650; }
 
-  /* threads */
-  .thread-list { display: flex; flex-direction: column; gap: 8px; }
-  .thread-row { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 13px; }
-  .th-main { flex: 1; min-width: 0; }
-  .th-title { font-size: 13.5px; font-weight: 650; }
-  .th-num { font-size: 11px; color: var(--text-3); font-weight: 500; }
-  a.mini-btn { text-decoration: none; display: inline-flex; align-items: center; }
-  .th-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
-  .th-actions { display: flex; gap: 6px; flex: none; }
-  .th-actions .mini-btn { flex: none; padding: 7px 10px; }
+  /* ---------- Community feed (Instagram / Threads style) ---------- */
+  .feed { display: flex; flex-direction: column; gap: 18px; max-width: 468px; margin: 0 auto; }
+  .feed-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 40px 20px; line-height: 1.6; }
+  .post-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .pc-head { display: flex; align-items: center; gap: 10px; padding: 11px 13px; }
+  .pc-avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff; flex: none; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.18); }
+  .pc-who { flex: 1; min-width: 0; }
+  .pc-name { font-size: 13px; font-weight: 650; line-height: 1.2; }
+  .pc-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+  .pc-gh { font-size: 11px; color: var(--text-3); text-decoration: none; flex: none; padding: 4px 6px; border-radius: 6px; }
+  .pc-gh:hover { color: var(--text); background: var(--surface-3, rgba(255,255,255,.05)); }
+  .pc-media { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #1b1916; cursor: pointer; display: block; }
+  .pc-media canvas { width: 100%; height: 100%; display: block; }
+  .pc-media:hover .pc-open-ov { opacity: 1; }
+  .pc-open-ov { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(12,10,8,.32); opacity: 0; transition: .15s var(--ease); }
+  .pc-open-ov span { background: rgba(20,18,15,.85); border: 1px solid var(--border-2); color: #fff; font-size: 12px; font-weight: 650; padding: 8px 16px; border-radius: 30px; backdrop-filter: blur(6px); }
+  .pc-badge { position: absolute; top: 9px; right: 9px; background: rgba(0,0,0,.5); color: #fff; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 20px; backdrop-filter: blur(4px); }
+  .pc-actions { display: flex; align-items: center; gap: 16px; padding: 10px 13px 2px; }
+  .pc-act { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--text-2); background: none; border: none; cursor: pointer; padding: 0; text-decoration: none; }
+  .pc-act:hover { color: var(--text); }
+  .pc-act svg { width: 20px; height: 20px; }
+  .pc-act.liked { color: #ff5a7a; }
+  .pc-spacer { flex: 1; }
+  .pc-fork-btn { font-size: 12px; font-weight: 650; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0; }
+  .pc-caption { padding: 4px 13px 13px; font-size: 13px; line-height: 1.5; }
+  .pc-caption .pc-cname { font-weight: 700; }
+  .pc-caption .pc-cstats { color: var(--text-3); font-size: 12px; margin-top: 3px; }
+  /* nested variations */
+  .pc-vars { border-top: 1px solid var(--border); padding: 4px 13px 10px; }
+  .pc-vars-h { font-size: 11px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; padding: 8px 0 4px; }
+  .pc-var { display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer; }
+  .pc-var canvas { width: 52px; height: 40px; border-radius: 7px; flex: none; background: #1b1916; }
+  .pc-var-info { flex: 1; min-width: 0; }
+  .pc-var-title { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pc-var-sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+  .pc-var-fork { font-size: 11px; font-weight: 650; color: var(--accent); background: none; border: none; cursor: pointer; flex: none; }
 
   /* ---------- Gate ---------- */
   .gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
@@ -602,12 +628,14 @@
 <div class="modal" id="communityModal">
   <div class="modal-card lg">
     <div class="modal-head">
-      <h3>Community patterns &amp; variations</h3>
+      <h3>Community feed</h3>
+      <div class="modal-head-spacer" style="flex:1"></div>
+      <button class="mini-btn" id="feedRefresh" style="flex:none;padding:7px 12px;">↻ Refresh</button>
+      <button class="mini-btn" id="feedPublish" style="flex:none;padding:7px 12px;">＋ Publish</button>
       <button class="modal-x" id="communityClose">✕</button>
     </div>
     <div class="modal-body">
-      <p class="modal-note">Patterns published by the whole community, read live from GitHub. Open one to load it, or post a variation that branches from it — variations nest under the original as a family tree. <b>Publishing</b> opens a pre-filled GitHub issue you submit with your own login — no account here, no server.</p>
-      <div id="threadList" class="thread-list"></div>
+      <div id="threadList" class="feed"></div>
     </div>
   </div>
 </div>
@@ -1483,36 +1511,129 @@ async function fetchCommunity(){
 }
 function openCommunity(){
   communityModal.classList.add("open");
+  loadFeed();
+}
+function loadFeed(){
   const list=document.getElementById("threadList");
-  list.innerHTML=`<div class="gloss-empty">Loading patterns from GitHub…</div>`;
+  list.innerHTML=`<div class="feed-empty">Loading the feed…</div>`;
   fetchCommunity().then(posts=>renderCommunity(posts)).catch(err=>{
-    list.innerHTML=`<div class="gloss-empty">Couldn't reach GitHub (${escapeHtml(err.message)}).<br>
-      You can still <b>Publish</b> — it opens a GitHub issue you submit.</div>`;
+    list.innerHTML=`<div class="feed-empty">Couldn't reach GitHub (${escapeHtml(err.message)}).<br><br>
+      You can still tap <b>Publish</b> above — it opens a GitHub issue you submit with your own login.</div>`;
   });
 }
+document.getElementById("feedRefresh").addEventListener("click",loadFeed);
+document.getElementById("feedPublish").addEventListener("click",()=>openPublish(null));
+
+// --- avatar colour from a name (stable hash) ---
+function avatarColor(name){ let h=0; for(let i=0;i<(name||"x").length;i++) h=(h*31+name.charCodeAt(i))>>>0;
+  return `hsl(${h%360} 58% 48%)`; }
+function initials(name){ return (name||"?").slice(0,2).toUpperCase(); }
+function encodeStateObj(st){ try{ return btoa(unescape(encodeURIComponent(JSON.stringify(st)))); }catch(e){return"";} }
+function linkFor(st){ return location.href.split("#")[0].split("?")[0]+"#d="+encodeStateObj(st); }
+
+// little SVG icons for the action bar
+const ICON={
+  heart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.6-10-9.3C.6 8.3 2.2 5 5.5 5 7.7 5 9 6.3 12 9c3-2.7 4.3-4 6.5-4 3.3 0 4.9 3.3 3.5 6.7C19.5 16.4 12 21 12 21z"/></svg>',
+  heartFill:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-10-9.3C.6 8.3 2.2 5 5.5 5 7.7 5 9 6.3 12 9c3-2.7 4.3-4 6.5-4 3.3 0 4.9 3.3 3.5 6.7C19.5 16.4 12 21 12 21z"/></svg>',
+  fork:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="8" r="2.4"/><path d="M6 8.4v7.2M6 13c0-3 3-5 7-5"/></svg>',
+  comment:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11.5 7.2L4 20l1.3-4.5A8 8 0 1 1 21 11.5z"/></svg>',
+  share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>'
+};
+
 function renderCommunity(posts){
   const list=document.getElementById("threadList");
   const byParent={}; posts.forEach(p=>{(byParent[p.parent||"root"]=byParent[p.parent||"root"]||[]).push(p);});
-  function node(p,depth){
-    const kids=(byParent[p.number]||[]);
-    const canOpen=p.state?`<button class="mini-btn" data-open="${p.number}">Open</button>`:`<a class="mini-btn" href="${p.html_url}" target="_blank" rel="noopener">View</a>`;
-    return `<div class="thread" style="margin-left:${depth*18}px">
-      <div class="thread-row">
-        <div class="th-main">
-          <div class="th-title">${depth?"↳ ":""}${escapeHtml(p.title)} <span class="th-num">#${p.number}</span></div>
-          <div class="th-meta">by ${escapeHtml(p.author||"someone")} · ${timeAgo(p.ts)} · ♥ ${p.reactions} · ${kids.length} variation${kids.length===1?"":"s"}</div>
-        </div>
-        <div class="th-actions">
-          ${canOpen}
-          <button class="mini-btn" data-fork="${p.number}" data-ftitle="${escapeHtml(p.title)}">Post variation</button>
-        </div>
-      </div></div>` + kids.map(k=>node(k,depth+1)).join("");
+  const tops=byParent["root"]||[];
+  if(!tops.length){
+    list.innerHTML=`<div class="feed-empty">No makes in the feed yet —<br>tap <b>Publish</b> to share the first one.</div>`; return;
   }
-  list.innerHTML=(byParent["root"]||[]).map(p=>node(p,0)).join("")
-    || `<div class="gloss-empty">No published patterns yet — be the first to <b>Publish</b>.</div>`;
-  list.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",()=>{
-    const p=posts.find(x=>x.number==b.dataset.open); applyState(p.state); communityModal.classList.remove("open"); toast("Loaded “"+p.title+"”"); }));
-  list.querySelectorAll("[data-fork]").forEach(b=>b.addEventListener("click",()=>openPublish(+b.dataset.fork,b.dataset.ftitle)));
+  const thumbs=[]; // {sel, state}
+  function card(p){
+    const kids=byParent[p.number]||[];
+    const id="m"+p.number;
+    const varsHtml = kids.length ? `<div class="pc-vars">
+      <div class="pc-vars-h">${kids.length} variation${kids.length===1?"":"s"}</div>
+      ${kids.map(k=>{ const kid="m"+k.number; thumbs.push({sel:"#"+kid,state:k.state});
+        return `<div class="pc-var" data-open="${k.number}">
+          <canvas id="${kid}" width="156" height="120"></canvas>
+          <div class="pc-var-info"><div class="pc-var-title">${escapeHtml(k.title)}</div>
+            <div class="pc-var-sub">by ${escapeHtml(k.author||"someone")} · ${timeAgo(k.ts)}</div></div>
+          <button class="pc-var-fork" data-fork="${k.number}" data-ftitle="${escapeHtml(k.title)}">Remix</button>
+        </div>`; }).join("")}
+    </div>` : "";
+    thumbs.push({sel:"#"+id,state:p.state});
+    return `<div class="post-card">
+      <div class="pc-head">
+        <div class="pc-avatar" style="background:${avatarColor(p.author)}">${escapeHtml(initials(p.author))}</div>
+        <div class="pc-who"><div class="pc-name">${escapeHtml(p.author||"someone")}</div>
+          <div class="pc-sub">${timeAgo(p.ts)} · #${p.number}</div></div>
+        <a class="pc-gh" href="${p.html_url}" target="_blank" rel="noopener" title="View on GitHub">GitHub ↗</a>
+      </div>
+      <div class="pc-media" data-open="${p.number}">
+        <canvas id="${id}" width="468" height="351"></canvas>
+        <div class="pc-open-ov"><span>Open in YarnFlow</span></div>
+        <div class="pc-badge">${p.state?(p.state.pattern?(p.state.pattern.split(/\n+/).filter(Boolean).length+" rows"):"pattern"):"on GitHub"}</div>
+      </div>
+      <div class="pc-actions">
+        <a class="pc-act" href="${p.html_url}" target="_blank" rel="noopener" title="React on GitHub">${ICON.heart}<span>${p.reactions||0}</span></a>
+        <button class="pc-act" data-fork="${p.number}" data-ftitle="${escapeHtml(p.title)}" title="Post a variation">${ICON.fork}<span>${kids.length}</span></button>
+        <a class="pc-act" href="${p.html_url}#issue-comment-box" target="_blank" rel="noopener" title="Comment on GitHub">${ICON.comment}</a>
+        <button class="pc-act" data-share="${p.number}" title="Copy share link">${ICON.share}</button>
+        <span class="pc-spacer"></span>
+        <button class="pc-fork-btn" data-fork="${p.number}" data-ftitle="${escapeHtml(p.title)}">Remix</button>
+      </div>
+      <div class="pc-caption"><span class="pc-cname">${escapeHtml(p.author||"someone")}</span> ${escapeHtml(p.title)}
+        <div class="pc-cstats">${p.state&&p.state.yarn?escapeHtml((YARN_TYPES[p.state.yarn.type]?YARN_TYPES[p.state.yarn.type].label:"")+" · "+(p.state.yarn.hook?p.state.yarn.hook+"mm hook":"")):""}</div>
+      </div>
+      ${varsHtml}
+    </div>`;
+  }
+  list.innerHTML=tops.map(card).join("");
+  // paint thumbnails
+  thumbs.forEach(t=>{ const cv=list.querySelector(t.sel); if(cv) renderThumb(cv,t.state); });
+  // wire actions
+  const find=n=>posts.find(x=>x.number==n);
+  list.querySelectorAll("[data-open]").forEach(el=>el.addEventListener("click",e=>{
+    if(e.target.closest("[data-fork],[data-share],a")) return;
+    const p=find(el.dataset.open); if(!p||!p.state){ toast("This post has no embedded pattern"); return; }
+    applyState(p.state); communityModal.classList.remove("open"); toast("Loaded “"+p.title+"”"); }));
+  list.querySelectorAll("[data-fork]").forEach(b=>b.addEventListener("click",e=>{
+    e.stopPropagation(); openPublish(+b.dataset.fork,b.dataset.ftitle); }));
+  list.querySelectorAll("[data-share]").forEach(b=>b.addEventListener("click",async e=>{
+    e.stopPropagation(); const p=find(b.dataset.share);
+    await copyText(p&&p.state?linkFor(p.state):p.html_url); toast("Share link copied"); }));
+}
+
+// --- self-contained swatch thumbnail of a make (yarn-coloured stitch grid) ---
+function renderThumb(cv,state){
+  const c=cv.getContext("2d"), W=cv.width, H=cv.height;
+  const bg=c.createLinearGradient(0,0,0,H); bg.addColorStop(0,"#2b2723"); bg.addColorStop(1,"#1a1714");
+  c.fillStyle=bg; c.fillRect(0,0,W,H);
+  let parsed=null; try{ if(state&&state.pattern) parsed=parsePattern(state.pattern); }catch(e){}
+  if(!parsed||!parsed.rows.length){ c.fillStyle="rgba(255,255,255,.22)"; c.textAlign="center";
+    c.font="600 "+Math.round(W*0.045)+"px system-ui"; c.fillText("view on GitHub",W/2,H/2); return; }
+  const color=(state.yarn&&state.yarn.color)||"#e0608a", paint=state.paint||{}, rows=parsed.rows;
+  const maxN=Math.max(...rows.map(r=>r.stitches.length),1), pad=W*0.08;
+  const gap=Math.min(W*0.06,(W-pad*2)/Math.max(maxN-1,3));
+  const rowH=Math.min(gap*1.1,(H-pad*2)/Math.max(rows.length-1,2));
+  const gw=W*0.012, totalH=(rows.length-1)*rowH, baseY=H/2+totalH/2, cx=W/2;
+  let fi=0;
+  rows.forEach((r,ri)=>{ const n=r.stitches.length, reverse=ri%2===1, rw=(n-1)*gap, y=baseY-ri*rowH;
+    r.stitches.forEach((s,si)=>{ const order=reverse?(n-1-si):si, x=cx-rw/2+order*gap;
+      glyph(c,x,y,gap*0.46,rowH*0.92,paint[fi]||color,s.key,gw); fi++; }); });
+}
+function glyph(c,x,y,w,h,col,key,lw){
+  c.lineCap="round"; c.lineJoin="round";
+  const dark=shade(col,-0.45);
+  if(key==="ch"||key==="sl"||key==="mr"){
+    c.lineWidth=lw*1.5; c.strokeStyle=dark; c.beginPath(); c.ellipse(x,y-h*0.35,w*0.46,h*0.4,0,0,Math.PI*2); c.stroke();
+    c.lineWidth=lw*1.05; c.strokeStyle=col; c.beginPath(); c.ellipse(x,y-h*0.35,w*0.46,h*0.4,0,0,Math.PI*2); c.stroke(); return;
+  }
+  const top=y-h, w2=w; const V=(width,st)=>{ c.lineWidth=width; c.strokeStyle=st; c.beginPath();
+    c.moveTo(x-w2,top); c.lineTo(x,y); c.lineTo(x+w2,top); c.stroke(); };
+  V(lw*2.0,dark); V(lw*1.4,col);
+  c.lineWidth=lw*0.5; c.strokeStyle="rgba(255,255,255,.32)"; c.beginPath();
+  c.moveTo(x-w2,top); c.lineTo(x,y); c.stroke();
 }
 function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function timeAgo(ts){if(!ts)return"just now";const s=(Date.now()-ts)/1000;if(s<3600)return Math.floor(s/60)+"m ago";if(s<86400)return Math.floor(s/3600)+"h ago";return Math.floor(s/86400)+"d ago";}

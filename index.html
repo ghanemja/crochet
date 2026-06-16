@@ -333,6 +333,8 @@
   .thread-row { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 13px; }
   .th-main { flex: 1; min-width: 0; }
   .th-title { font-size: 13.5px; font-weight: 650; }
+  .th-num { font-size: 11px; color: var(--text-3); font-weight: 500; }
+  a.mini-btn { text-decoration: none; display: inline-flex; align-items: center; }
   .th-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
   .th-actions { display: flex; gap: 6px; flex: none; }
   .th-actions .mini-btn { flex: none; padding: 7px 10px; }
@@ -604,7 +606,7 @@
       <button class="modal-x" id="communityClose">✕</button>
     </div>
     <div class="modal-body">
-      <p class="modal-note">Open a pattern to load it, or post a variation that branches from it — variations nest under the original so you can see the whole family tree. <b>Demo:</b> posts are saved in your browser only.</p>
+      <p class="modal-note">Patterns published by the whole community, read live from GitHub. Open one to load it, or post a variation that branches from it — variations nest under the original as a family tree. <b>Publishing</b> opens a pre-filled GitHub issue you submit with your own login — no account here, no server.</p>
       <div id="threadList" class="thread-list"></div>
     </div>
   </div>
@@ -941,8 +943,32 @@ function buildYarnMaterial(){
 }
 function stitchCurve3D(p){
   const H=p.h,half=p.half,V=THREE.Vector3;
-  if(p.key==="ch"||p.key==="sl"||p.key==="mr"){const pts=[],rx=half*0.55,ry=Math.max(0.4,H*0.5);for(let a=0;a<=Math.PI*2+0.01;a+=Math.PI/7)pts.push(new V(Math.cos(a)*rx,ry+Math.sin(a)*ry,Math.sin(a*2)*0.1));return{pts,closed:true};}
-  return{pts:[new V(-half*0.18,0,0),new V(half*0.16,H*0.33,0.12),new V(-half*0.16,H*0.66,0.12),new V(half*0.1,H*0.9,0.05),new V(-half*0.7,H*0.8,0),new V(-half*0.34,H*1.0,0.18),new V(0,H*0.92,0.05),new V(half*0.34,H*1.0,0.18),new V(half*0.7,H*0.8,0)],closed:false};
+  // chains / slip / magic-ring: a real yarn ring
+  if(p.key==="ch"||p.key==="sl"||p.key==="mr"){
+    const pts=[],rx=half*0.6,ry=Math.max(0.4,H*0.55);
+    for(let a=0;a<=Math.PI*2+0.01;a+=Math.PI/8) pts.push(new V(Math.cos(a)*rx, ry+Math.sin(a)*ry*0.78, Math.sin(a)*0.18));
+    return {pts, closed:true, capW:half*0.55};
+  }
+  // posted stitches: a horseshoe of two legs joined by the top "V" loops.
+  // taller stitches (dc/tr) get a longer, gently bowed post.
+  const lw=half*0.42;                      // half-distance between the two legs
+  const bow=half*0.16;                     // outward bow of each leg
+  const top=H;                             // post height (scaled by progress via mesh.scale.y)
+  const z=p.key==="tr"?0.22:p.key==="dc"?0.16:0.1;
+  const pts=[
+    new V(-lw, 0,           0),            // base of left leg
+    new V(-lw-bow, top*0.30, z*0.4),       // left leg bows out
+    new V(-lw, top*0.62, z*0.8),
+    new V(-lw*0.7, top*0.88, z*0.5),       // top of left leg
+    new V(-lw*0.5, top*1.00, z),           // left bump of the top V
+    new V(0, top*0.90, z*1.3),             // notch between the two top loops
+    new V(lw*0.5, top*1.00, z),            // right bump of the top V
+    new V(lw*0.7, top*0.88, z*0.5),        // top of right leg
+    new V(lw, top*0.62, z*0.8),
+    new V(lw+bow, top*0.30, z*0.4),        // right leg bows out
+    new V(lw, 0,            0),            // base of right leg
+  ];
+  return {pts, closed:false, capW:lw};
 }
 // Accurate metal crochet hook. Local space: tip at origin, shaft up +Y.
 function makeCrochetHook(R){
@@ -1421,63 +1447,102 @@ function extractPattern(src){
 }
 
 // ============================================================
-//  Community (client-side MVP: localStorage threads & variations)
-//  NOTE: this is a local demo of the social layer — posts live in this
-//  browser only. A real multi-user platform needs a backend (see notes).
+//  Community via GitHub Issues (genuinely multi-user, no backend)
+//  - Each published make = a public GitHub issue labelled
+//    "yarnflow-pattern" whose body holds the .crochet JSON in a code
+//    fence. Variations record their parent issue # in meta.parentIssue,
+//    so they nest into threads.
+//  - Reading is the public Issues API (works unauthenticated). Posting
+//    opens a pre-filled "New issue" page the user submits with their own
+//    GitHub login — no server, no secrets.
 // ============================================================
-const STORE_KEY="yarnflow_community_v1";
-function loadCommunity(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||{posts:[]}; }catch(e){ return {posts:[]}; } }
-function saveCommunity(db){ localStorage.setItem(STORE_KEY,JSON.stringify(db)); }
-function seedCommunityIfEmpty(){
-  const db=loadCommunity(); if(db.posts.length) return;
-  db.posts.push({ id:"p1", parentId:null, title:"Cozy ridged scarf", author:"maker_mae", ts:Date.now()-86400000,
-    state:{v:1,pattern:SAMPLES["Scarf swatch"],yarn:{color:"#e0608a",type:"wool",weightIdx:4,hook:5},paint:{},meta:{}}, likes:6 });
-  db.posts.push({ id:"p2", parentId:"p1", title:"↳ Striped variation", author:"yarnpunk", ts:Date.now()-3600000,
-    state:{v:1,pattern:SAMPLES["Scarf swatch"],yarn:{color:"#3fb0a8",type:"acrylic",weightIdx:4,hook:5.5},paint:{},meta:{}}, likes:3 });
-  saveCommunity(db);
-}
+const GH_OWNER="ghanemja", GH_REPO="crochet", GH_LABEL="yarnflow-pattern";
 const communityModal=document.getElementById("communityModal");
 document.getElementById("communityBtn").addEventListener("click",openCommunity);
 document.getElementById("communityClose").addEventListener("click",()=>communityModal.classList.remove("open"));
 communityModal.addEventListener("click",e=>{if(e.target===communityModal)communityModal.classList.remove("open");});
-function openCommunity(){ seedCommunityIfEmpty(); renderCommunity(); communityModal.classList.add("open"); }
-function renderCommunity(){
-  const db=loadCommunity(); const list=document.getElementById("threadList");
-  const byParent={}; db.posts.forEach(p=>{(byParent[p.parentId||"root"]=byParent[p.parentId||"root"]||[]).push(p);});
+
+function parseIssueState(body){
+  // pull the ```json ... ``` block out of an issue body
+  const m=(body||"").match(/```json\s*([\s\S]*?)```/i);
+  if(!m) return null;
+  try{ return JSON.parse(m[1]); }catch(e){ return null; }
+}
+async function fetchCommunity(){
+  const url=`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/issues?labels=${GH_LABEL}&state=open&per_page=100&sort=created&direction=desc`;
+  const r=await fetch(url,{headers:{Accept:"application/vnd.github+json"}});
+  if(!r.ok) throw new Error("GitHub API "+r.status);
+  const issues=await r.json();
+  return issues.filter(i=>!i.pull_request).map(i=>{
+    const st=parseIssueState(i.body);
+    return { number:i.number, title:i.title.replace(/^\[YarnFlow\]\s*/i,""), author:i.user&&i.user.login,
+      ts:Date.parse(i.created_at), html_url:i.html_url, state:st,
+      parent: st&&st.meta&&st.meta.parentIssue ? +st.meta.parentIssue : null,
+      reactions:(i.reactions&&i.reactions["+1"])||0 };
+  });
+}
+function openCommunity(){
+  communityModal.classList.add("open");
+  const list=document.getElementById("threadList");
+  list.innerHTML=`<div class="gloss-empty">Loading patterns from GitHub…</div>`;
+  fetchCommunity().then(posts=>renderCommunity(posts)).catch(err=>{
+    list.innerHTML=`<div class="gloss-empty">Couldn't reach GitHub (${escapeHtml(err.message)}).<br>
+      You can still <b>Publish</b> — it opens a GitHub issue you submit.</div>`;
+  });
+}
+function renderCommunity(posts){
+  const list=document.getElementById("threadList");
+  const byParent={}; posts.forEach(p=>{(byParent[p.parent||"root"]=byParent[p.parent||"root"]||[]).push(p);});
   function node(p,depth){
-    const kids=(byParent[p.id]||[]);
+    const kids=(byParent[p.number]||[]);
+    const canOpen=p.state?`<button class="mini-btn" data-open="${p.number}">Open</button>`:`<a class="mini-btn" href="${p.html_url}" target="_blank" rel="noopener">View</a>`;
     return `<div class="thread" style="margin-left:${depth*18}px">
       <div class="thread-row">
         <div class="th-main">
-          <div class="th-title">${escapeHtml(p.title)}</div>
-          <div class="th-meta">by ${escapeHtml(p.author)} · ${timeAgo(p.ts)} · ${kids.length} variation${kids.length===1?"":"s"}</div>
+          <div class="th-title">${depth?"↳ ":""}${escapeHtml(p.title)} <span class="th-num">#${p.number}</span></div>
+          <div class="th-meta">by ${escapeHtml(p.author||"someone")} · ${timeAgo(p.ts)} · ♥ ${p.reactions} · ${kids.length} variation${kids.length===1?"":"s"}</div>
         </div>
         <div class="th-actions">
-          <button class="mini-btn" data-open="${p.id}">Open</button>
-          <button class="mini-btn" data-fork="${p.id}">Post variation</button>
+          ${canOpen}
+          <button class="mini-btn" data-fork="${p.number}" data-ftitle="${escapeHtml(p.title)}">Post variation</button>
         </div>
       </div></div>` + kids.map(k=>node(k,depth+1)).join("");
   }
-  list.innerHTML=(byParent["root"]||[]).map(p=>node(p,0)).join("") || `<div class="gloss-empty">No posts yet — be the first.</div>`;
-  list.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",()=>{ const p=db.posts.find(x=>x.id===b.dataset.open); applyState(p.state); communityModal.classList.remove("open"); toast("Loaded “"+p.title+"”"); }));
-  list.querySelectorAll("[data-fork]").forEach(b=>b.addEventListener("click",()=>{ App.meta.parentId=b.dataset.fork; openPublish(b.dataset.fork); }));
+  list.innerHTML=(byParent["root"]||[]).map(p=>node(p,0)).join("")
+    || `<div class="gloss-empty">No published patterns yet — be the first to <b>Publish</b>.</div>`;
+  list.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",()=>{
+    const p=posts.find(x=>x.number==b.dataset.open); applyState(p.state); communityModal.classList.remove("open"); toast("Loaded “"+p.title+"”"); }));
+  list.querySelectorAll("[data-fork]").forEach(b=>b.addEventListener("click",()=>openPublish(+b.dataset.fork,b.dataset.ftitle)));
 }
 function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
-function timeAgo(ts){const s=(Date.now()-ts)/1000;if(s<3600)return Math.floor(s/60)+"m ago";if(s<86400)return Math.floor(s/3600)+"h ago";return Math.floor(s/86400)+"d ago";}
-function openPublish(parentId){
-  document.getElementById("publishParent").textContent = parentId? "Posting as a variation of an existing pattern" : "Posting a new pattern";
-  App.meta.parentId=parentId||null;
+function timeAgo(ts){if(!ts)return"just now";const s=(Date.now()-ts)/1000;if(s<3600)return Math.floor(s/60)+"m ago";if(s<86400)return Math.floor(s/3600)+"h ago";return Math.floor(s/86400)+"d ago";}
+
+function openPublish(parentIssue,parentTitle){
+  App.meta.parentIssue=parentIssue||null;
+  document.getElementById("publishParent").textContent = parentIssue
+    ? `Posting a variation of “${parentTitle||("#"+parentIssue)}” (#${parentIssue})`
+    : "Posting a new pattern";
+  if(parentIssue && !document.getElementById("publishTitle").value) document.getElementById("publishTitle").value="Variation of "+(parentTitle||("#"+parentIssue));
   document.getElementById("publishModal").classList.add("open");
 }
 document.getElementById("publishBtn").addEventListener("click",()=>openPublish(null));
 document.getElementById("publishCancel").addEventListener("click",()=>document.getElementById("publishModal").classList.remove("open"));
 document.getElementById("publishSave").addEventListener("click",()=>{
   const title=document.getElementById("publishTitle").value.trim()||"Untitled make";
-  const author=document.getElementById("publishAuthor").value.trim()||"anon";
-  const db=loadCommunity();
-  db.posts.push({ id:"p"+Date.now(), parentId:App.meta.parentId||null, title, author, ts:Date.now(), state:currentState(), likes:0 });
-  saveCommunity(db); document.getElementById("publishModal").classList.remove("open");
-  toast("Published"); openCommunity();
+  const author=document.getElementById("publishAuthor").value.trim();
+  const state=currentState();
+  state.meta=Object.assign({},state.meta,{author,parentIssue:App.meta.parentIssue||null});
+  // build the GitHub issue body: human summary + a json fence the app reads back
+  const counts={}; (App.parsed?App.parsed.flat:[]).forEach(s=>counts[s.key]=(counts[s.key]||0)+1);
+  const summary=Object.entries(counts).map(([k,v])=>`${v} ${k}`).join(", ");
+  const link=shareLink();
+  let body=`**${title}**${author?` by ${author}`:""}\n\n`;
+  if(App.meta.parentIssue) body+=`Variation of #${App.meta.parentIssue}.\n\n`;
+  body+=`- Rows: ${App.parsed?App.parsed.rows.length:0} · Stitches: ${App.parsed?App.parsed.flat.length:0}\n- Yarn: ${YARN_TYPES[settings.type].label}, ${WEIGHTS[settings.weightIdx].label}, ${settings.hook.toFixed(1)}mm hook\n- Stitches: ${summary}\n\n[▶ Open this make in YarnFlow](${link})\n\n<!-- YarnFlow data — do not edit -->\n\`\`\`json\n${JSON.stringify(state)}\n\`\`\`\n`;
+  const issueUrl=`https://github.com/${GH_OWNER}/${GH_REPO}/issues/new?labels=${GH_LABEL}&title=${encodeURIComponent("[YarnFlow] "+title)}&body=${encodeURIComponent(body)}`;
+  window.open(issueUrl,"_blank","noopener");
+  document.getElementById("publishModal").classList.remove("open");
+  toast("Opening GitHub to publish…");
 });
 
 // load shared design from URL hash (#d=...) and handle embed mode

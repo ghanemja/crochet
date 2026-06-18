@@ -1528,15 +1528,59 @@ function initLearn3D(){
 function tubeFor(p,radius,seg){ const{pts,closed}=stitchCurve3D(p);
   const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
   return new THREE.TubeGeometry(curve,seg||Math.max(20,pts.length*3),radius,9,closed); }
+
+// ---- Verlet / position-based yarn (a real physical rope) ----------------
+// Nodes are point masses; we keep them a fixed distance apart (inextensible
+// yarn), add a little bending stiffness, gravity, and collide them against
+// the hook. The hook pins/drags nodes so loops are physically pulled.
+const Sim={loop:null,work:null,loopMesh:null,workMesh:null,hookTip:new THREE.Vector3(),hookUp:new THREE.Vector3(0,1,0),hookLen:11,hookRad:0.92};
+function Rope(n,seg,closed){ const p=[],q=[]; for(let i=0;i<n;i++){p.push(new THREE.Vector3());q.push(new THREE.Vector3());}
+  return {n,seg,closed:!!closed,p,q,radius:0.42}; }
+function ropeSeed(r,fn){ for(let i=0;i<r.n;i++){ const v=fn(i/(r.n-1),i); r.p[i].copy(v); r.q[i].copy(v); } }
+function ropeStep(r,pins,collide,dt){
+  const damp=0.94, g=-7.5;
+  for(let i=0;i<r.n;i++){ if(pins[i])continue; const c=r.p[i],pq=r.q[i];
+    const vx=(c.x-pq.x)*damp,vy=(c.y-pq.y)*damp,vz=(c.z-pq.z)*damp; pq.copy(c);
+    c.x+=vx; c.y+=vy+g*dt*dt; c.z+=vz; }
+  const L=r.closed?r.n:r.n-1;
+  for(let it=0;it<20;it++){
+    for(const k in pins){ const i=+k; r.p[i].copy(pins[k]); }
+    for(let i=0;i<L;i++){ const j=(i+1)%r.n, a=r.p[i],b=r.p[j];
+      let dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z, d=Math.hypot(dx,dy,dz)||1e-6, diff=(d-r.seg)/d;
+      const pa=!!pins[i],pb=!!pins[j]; if(pa&&pb)continue;
+      const wa=pa?0:(pb?1:0.5), wb=pb?0:(pa?1:0.5);
+      a.x+=dx*diff*wa; a.y+=dy*diff*wa; a.z+=dz*diff*wa;
+      b.x-=dx*diff*wb; b.y-=dy*diff*wb; b.z-=dz*diff*wb;
+    }
+    // light bending stiffness (i ↔ i+2)
+    const L2=r.closed?r.n:r.n-2;
+    for(let i=0;i<L2;i++){ const j=(i+2)%r.n, a=r.p[i],b=r.p[j];
+      let dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z, d=Math.hypot(dx,dy,dz)||1e-6, rest=r.seg*2, diff=(d-rest)/d*0.18;
+      const pa=!!pins[i],pb=!!pins[j]; if(pa&&pb)continue; const wa=pa?0:0.5,wb=pb?0:0.5;
+      a.x+=dx*diff*wa; a.y+=dy*diff*wa; a.z+=dz*diff*wa; b.x-=dx*diff*wb; b.y-=dy*diff*wb; b.z-=dz*diff*wb;
+    }
+    if(collide) for(let i=0;i<r.n;i++){ if(!pins[i]) collide(r.p[i]); }
+  }
+}
+// push a point outside the hook shaft (capsule) so yarn wraps over it
+function hookCollidePoint(P){
+  const T=Sim.hookTip,U=Sim.hookUp; let t=(P.x-T.x)*U.x+(P.y-T.y)*U.y+(P.z-T.z)*U.z; t=Math.max(0,Math.min(Sim.hookLen,t));
+  const cx=T.x+U.x*t,cy=T.y+U.y*t,cz=T.z+U.z*t; let ox=P.x-cx,oy=P.y-cy,oz=P.z-cz; let d=Math.hypot(ox,oy,oz);
+  if(d<Sim.hookRad){ if(d<1e-4){ox=1;oy=0;oz=0;d=1;} const s=Sim.hookRad/d; P.set(cx+ox*s,cy+oy*s,cz+oz*s); }
+}
+function ropeTube(rope,mesh){ const curve=new THREE.CatmullRomCurve3(rope.p,rope.closed,"catmullrom",0.5);
+  const g=new THREE.TubeGeometry(curve,rope.n*2,rope.radius,8,rope.closed);
+  if(mesh.geometry)mesh.geometry.dispose(); mesh.geometry=g; }
 function buildLearnScene(key){
   initLearn3D();
-  ["hook","working","base","ball","strand","chain"].forEach(k=>{ if(L3[k]){L3.scene.remove(L3[k]);L3[k]=null;} });
-  L3.loopRings.forEach(r=>L3.scene.remove(r)); L3.loopRings=[];
+  ["hook","working","base","ball","chain"].forEach(k=>{ if(L3[k]){L3.scene.remove(L3[k]);L3[k]=null;} });
+  ["loopMesh","workMesh"].forEach(k=>{ if(Sim[k]){L3.scene.remove(Sim[k]);Sim[k].geometry&&Sim[k].geometry.dispose();Sim[k]=null;} });
+  (L3.loopRings||[]).forEach(r=>L3.scene.remove(r)); L3.loopRings=[];
   const col=App.paintColor||settings.color, t=YARN_TYPES[settings.type];
   const tex=makeYarnTexture(col,settings.type);
   L3.yarnMat=new THREE.MeshStandardMaterial({color:new THREE.Color(col),map:tex,bumpMap:tex,bumpScale:0.3,roughness:t.roughness,metalness:t.metalness,envMapIntensity:t.env});
   const isChain=(key==="ch"||key==="sl"||key==="mr");
-  const half=1.7, H=STITCHES[key].h*3.0+1.4;
+  const half=1.7, H=2.2+STITCHES[key].h*0.95;   // compact teaching scale (not to size)
   Learn.H=H; Learn.half=half; Learn.isChain=isChain;
   if(!isChain){
     const base=new THREE.Group();
@@ -1546,24 +1590,25 @@ function buildLearnScene(key){
     const w=new THREE.Mesh(tubeFor({key,h:H,half},0.46),L3.yarnMat);
     w.castShadow=true;w.receiveShadow=true; L3.working=w; L3.scene.add(w);
   } else {
-    // a short chain of rings; the last one is the live loop the hook works
     const chain=new THREE.Group();
     for(let i=0;i<3;i++){ const m=new THREE.Mesh(tubeFor({key:"ch",h:1.6,half},0.42,40),L3.yarnMat);
       m.castShadow=true;m.position.set(-half*1.1+i*half*0.9,0,0); chain.add(m); }
     L3.chain=chain; L3.scene.add(chain);
   }
-  L3.hook=makeCrochetHook(0.5); L3.scene.add(L3.hook);
-  const ball=new THREE.Mesh(new THREE.SphereGeometry(1.15,26,18),L3.yarnMat);ball.castShadow=true;
-  ball.position.set(-6.8,-2.0,3.0); L3.ball=ball; L3.scene.add(ball);
-  L3.strand=new THREE.Mesh(new THREE.BufferGeometry(),L3.yarnMat); L3.scene.add(L3.strand);
-  for(let i=0;i<6;i++){ const r=new THREE.Mesh(new THREE.TorusGeometry(0.62,0.17,8,20),L3.yarnMat);
-    r.visible=false;r.castShadow=true;L3.loopRings.push(r);L3.scene.add(r); }
+  L3.hook=makeCrochetHook(0.5); L3.scene.add(L3.hook); Sim.hookRad=0.92; Sim.hookLen=8;
+  const ball=new THREE.Mesh(new THREE.SphereGeometry(1.05,26,18),L3.yarnMat);ball.castShadow=true;
+  ball.position.set(-5.6,-2.6,3.6); L3.ball=ball; L3.scene.add(ball);
+  // --- simulated yarn: the live loop on the hook + the working strand ---
+  Sim.loop=Rope(20,0.26,true); Sim.loop.radius=0.40;
+  ropeSeed(Sim.loop,(u)=>{ const a=u*Math.PI*2; return new THREE.Vector3(Math.cos(a)*0.75, H*0.5+1.2+Math.sin(a)*0.85, Math.sin(a)*0.28); });
+  Sim.loopMesh=new THREE.Mesh(new THREE.BufferGeometry(),L3.yarnMat); Sim.loopMesh.castShadow=true; L3.scene.add(Sim.loopMesh);
+  Sim.work=Rope(26,0.62,false); Sim.work.radius=0.36;   // thinner working strand, with drape
+  ropeSeed(Sim.work,(u)=>new THREE.Vector3(lerp(-5.6,half*0.9,u), lerp(-2.6,H*0.5+1,u)+Math.sin(u*3.14)*1.2, lerp(3.6,0.6,u)));
+  Sim.workMesh=new THREE.Mesh(new THREE.BufferGeometry(),L3.yarnMat); Sim.workMesh.castShadow=true; L3.scene.add(Sim.workMesh);
   if(isChain){ L3.camera.position.set(3.5,3.2,9); L3.controls.target.set(half*0.5,1.4,0); }
-  else { L3.camera.position.set(5.5,H*0.55+2.5,11); L3.controls.target.set(0,H*0.42,0); }
+  else { L3.camera.position.set(5,H*0.5+2.6,11); L3.controls.target.set(0.5,H*0.42,0); }
   L3.controls.update();
 }
-function rebuildStrand(a,mid,b){ const curve=new THREE.CatmullRomCurve3([a,mid,b]);
-  if(L3.strand.geometry)L3.strand.geometry.dispose(); L3.strand.geometry=new THREE.TubeGeometry(curve,22,0.22,7,false); }
 function animateLearn3D(){
   if(!L3.ready||!Learn.key) return;
   const key=Learn.key, steps=STITCH_STEPS[key]||["Work the stitch"], N=steps.length;
@@ -1573,9 +1618,9 @@ function animateLearn3D(){
   if(L3.working) L3.working.scale.y=Math.max(0.03,grow);
   // hook stations in 3D
   const V=THREE.Vector3, STA={
-    rest:  new V(half*1.5, H*0.85+2.6, 2.4),
-    fabric:new V(0, -1.4, 1.0),
-    top:   new V(half*0.4, H*grow+0.7, 0.8),
+    rest:  new V(half*1.2, H*0.7+1.0, 2.0),
+    fabric:new V(0, -1.2, 1.0),
+    top:   new V(half*0.4, H*grow+0.6, 0.8),
   };
   // a chain has no row below: the hook stays at the live loop and just
   // yarns over & pulls through, so anchor every station at the chain's end.
@@ -1589,17 +1634,26 @@ function animateLearn3D(){
   if(cur==="through"||cur==="through2") pos.y+=Math.sin(f*Math.PI)*0.7;   // draw-through dip
   L3.hook.position.copy(pos);
   const scoop=cur==="yarnover"?Math.sin(f*Math.PI):0;
-  L3.hook.rotation.set(0.34, -0.32 - scoop*0.7, 0.30 + scoop*0.35);
+  // lean the hook into frame (shaft up-right, head at the work)
+  L3.hook.rotation.set(0.32, -0.30 - scoop*0.6, 0.92 + scoop*0.3);
   const tip=L3.hook.position.clone();
-  // loops currently held on the hook neck
-  const lc=loops[mi]||1;
-  L3.loopRings.forEach((r,i)=>{ r.visible=i<lc; if(i<lc){ r.position.set(tip.x-0.1,tip.y+0.8+i*0.42,tip.z); r.rotation.set(Math.PI/2,0,0.2);} });
-  // working yarn: ball → (yarn-over arc when wrapping) → hook
-  const ball=L3.ball.position.clone();
-  let mid=new V((ball.x+tip.x)/2,(ball.y+tip.y)/2+1.2,(ball.z+tip.z)/2+1.4);
-  if(cur==="yarnover"){ const a=lerp(-0.4*Math.PI,1.25*Math.PI,f),wr=1.5;
-    mid=new V(tip.x+Math.cos(a)*wr, tip.y+0.7+Math.sin(a)*wr, tip.z+0.5); }
-  rebuildStrand(ball,mid,tip);
+
+  // ===== drive the physically-simulated yarn =====
+  const up=new V(0,1,0).applyEuler(L3.hook.rotation).normalize();
+  Sim.hookTip.copy(tip); Sim.hookUp.copy(up);
+  const throat=tip.clone().addScaledVector(up,0.7);
+  // the live loop hangs on the hook throat and is physically dragged with
+  // the hook — it sags, swings and is carried through the work on its own.
+  const loopPins={0:throat, 1:throat.clone().addScaledVector(up,0.34)};
+  // working strand: ball end fixed; feed end sits at the hook, and sweeps
+  // up and OVER the hook during a yarn over (collision wraps it on).
+  const wn=Sim.work.n-1, workPins={0:L3.ball.position.clone()};
+  if(cur==="yarnover"){ const a=lerp(-0.45*Math.PI,1.2*Math.PI,f), wr=1.4;
+    workPins[wn]=new V(tip.x+Math.cos(a)*wr, tip.y+0.6+Math.sin(a)*wr, tip.z+0.5);
+  } else { workPins[wn]=throat.clone().add(new V(0.25,-0.25,0.45)); }
+  for(let s=0;s<3;s++){ ropeStep(Sim.loop,loopPins,hookCollidePoint,1/120); ropeStep(Sim.work,workPins,hookCollidePoint,1/120); }
+  ropeTube(Sim.loop,Sim.loopMesh); ropeTube(Sim.work,Sim.workMesh);
+
   // readout
   const li=Math.min(N-1,Math.floor(phase));
   const ro=document.getElementById("learnReadout");

@@ -1568,9 +1568,50 @@ function hookCollidePoint(P){
   const cx=T.x+U.x*t,cy=T.y+U.y*t,cz=T.z+U.z*t; let ox=P.x-cx,oy=P.y-cy,oz=P.z-cz; let d=Math.hypot(ox,oy,oz);
   if(d<Sim.hookRad){ if(d<1e-4){ox=1;oy=0;oz=0;d=1;} const s=Sim.hookRad/d; P.set(cx+ox*s,cy+oy*s,cz+oz*s); }
 }
+// keep yarn out of the growing post (a vertical capsule at the centre)
+function postCollidePoint(P){
+  const top=Sim.postTop, rad=0.62; if(P.y< -0.4 || P.y>top+0.4) return;
+  let dx=P.x,dz=P.z, d=Math.hypot(dx,dz)||1e-6; if(d<rad){ const s=rad/d; P.x=dx*s; P.z=dz*s; }
+}
+// stop the simulated strands passing through each other / the hook / post
+function resolveCollisions(loopPins,workPins){
+  const list=[];
+  for(let i=0;i<Sim.loop.n;i++) list.push({r:Sim.loop,i,p:Sim.loop.p[i],rad:Sim.loop.radius,pin:!!loopPins[i]});
+  for(let i=0;i<Sim.work.n;i++) list.push({r:Sim.work,i,p:Sim.work.p[i],rad:Sim.work.radius,pin:!!workPins[i]});
+  for(let it=0;it<2;it++){
+    for(let a=0;a<list.length;a++) for(let b=a+1;b<list.length;b++){
+      const A=list[a],B=list[b];
+      if(A.r===B.r){ const dd=Math.abs(A.i-B.i); if(dd<=1||(A.r.closed&&dd>=A.r.n-1)) continue; }
+      const min=A.rad+B.rad; let dx=B.p.x-A.p.x,dy=B.p.y-A.p.y,dz=B.p.z-A.p.z, dist=Math.hypot(dx,dy,dz)||1e-6;
+      if(dist<min){ const push=(min-dist)/dist, wa=A.pin?0:(B.pin?1:0.5), wb=B.pin?0:(A.pin?1:0.5);
+        A.p.x-=dx*push*wa;A.p.y-=dy*push*wa;A.p.z-=dz*push*wa; B.p.x+=dx*push*wb;B.p.y+=dy*push*wb;B.p.z+=dz*push*wb; }
+    }
+    for(const N of list){ if(N.pin)continue; hookCollidePoint(N.p); if(Sim.postTop>0.3) postCollidePoint(N.p); }
+  }
+}
 function ropeTube(rope,mesh){ const curve=new THREE.CatmullRomCurve3(rope.p,rope.closed,"catmullrom",0.5);
   const g=new THREE.TubeGeometry(curve,rope.n*2,rope.radius,8,rope.closed);
   if(mesh.geometry)mesh.geometry.dispose(); mesh.geometry=g; }
+// a stylised hand holding the hook (pencil grip). Local +Y runs up the shaft.
+function makeHand(){
+  const g=new THREE.Group(), V=THREE.Vector3;
+  const skin=new THREE.MeshStandardMaterial({color:0xc07a45,roughness:0.92,metalness:0.0,envMapIntensity:0.22});
+  const back=new THREE.Mesh(new THREE.SphereGeometry(1.45,22,16),skin);   // back of hand
+  back.scale.set(1.25,1.65,0.7); back.position.set(0.15,-0.1,-1.05); back.castShadow=true; g.add(back);
+  const finger=(yy,reach,curl)=>{
+    const pts=[ new V(-0.15,yy,-0.95), new V(0.15,yy+0.05,0.15), new V(0.55*reach,yy-0.25,0.95), new V(0.35*reach,yy-0.55-curl,0.8) ];
+    const c=new THREE.CatmullRomCurve3(pts);
+    const m=new THREE.Mesh(new THREE.TubeGeometry(c,18,0.33,10,false),skin); m.castShadow=true; g.add(m);
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(0.33,12,10),skin); tip.position.copy(pts[3]); g.add(tip);
+  };
+  finger(1.45,0.92,0.05); finger(0.5,1.0,0.0); finger(-0.45,0.96,0.0); finger(-1.35,0.86,0.05);
+  // thumb pressing from the near side
+  const tp=[ new V(-0.35,-1.5,-0.5), new V(-0.05,-0.7,0.45), new V(0.5,-0.2,1.0) ];
+  const thumb=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(tp),16,0.4,10,false),skin); thumb.castShadow=true; g.add(thumb);
+  const tt=new THREE.Mesh(new THREE.SphereGeometry(0.4,12,10),skin); tt.position.copy(tp[2]); g.add(tt);
+  const wrist=new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.25,2.6,18),skin); wrist.position.set(0.15,2.5,-1.25); wrist.rotation.x=0.25; wrist.castShadow=true; g.add(wrist);
+  return g;
+}
 function buildLearnScene(key){
   initLearn3D();
   ["hook","working","base","ball","chain"].forEach(k=>{ if(L3[k]){L3.scene.remove(L3[k]);L3[k]=null;} });
@@ -1595,7 +1636,9 @@ function buildLearnScene(key){
       m.castShadow=true;m.position.set(-half*1.1+i*half*0.9,0,0); chain.add(m); }
     L3.chain=chain; L3.scene.add(chain);
   }
-  L3.hook=makeCrochetHook(0.5); L3.scene.add(L3.hook); Sim.hookRad=0.92; Sim.hookLen=8;
+  L3.hook=makeCrochetHook(0.5); Sim.hookRad=0.92; Sim.hookLen=12;
+  const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,3.1,0); L3.hook.add(hand); // pencil grip
+  L3.scene.add(L3.hook);
   const ball=new THREE.Mesh(new THREE.SphereGeometry(1.05,26,18),L3.yarnMat);ball.castShadow=true;
   ball.position.set(-5.6,-2.6,3.6); L3.ball=ball; L3.scene.add(ball);
   // --- simulated yarn: the live loop on the hook + the working strand ---
@@ -1651,7 +1694,8 @@ function animateLearn3D(){
   if(cur==="yarnover"){ const a=lerp(-0.45*Math.PI,1.2*Math.PI,f), wr=1.4;
     workPins[wn]=new V(tip.x+Math.cos(a)*wr, tip.y+0.6+Math.sin(a)*wr, tip.z+0.5);
   } else { workPins[wn]=throat.clone().add(new V(0.25,-0.25,0.45)); }
-  for(let s=0;s<3;s++){ ropeStep(Sim.loop,loopPins,hookCollidePoint,1/120); ropeStep(Sim.work,workPins,hookCollidePoint,1/120); }
+  Sim.postTop = (!isChain && L3.working) ? H*grow : 0;
+  for(let s=0;s<4;s++){ ropeStep(Sim.loop,loopPins,hookCollidePoint,1/120); ropeStep(Sim.work,workPins,hookCollidePoint,1/120); resolveCollisions(loopPins,workPins); }
   ropeTube(Sim.loop,Sim.loopMesh); ropeTube(Sim.work,Sim.workMesh);
 
   // readout

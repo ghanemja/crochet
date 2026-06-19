@@ -1791,12 +1791,26 @@ function loadChainModel(cb){
     cb(g.scene,ChainModel.anims);
   },undefined,e=>{ ChainModel.loading=false; console.warn("chain glb load failed",e); cb(null); });
 }
+// Blender-baked twisted-yarn row fabric (foundation + completed posts + drape),
+// one per stitch type, loaded on demand and cached.
+const RowModels={};
+const ROW_STITCHES={sc:1,hdc:1,dc:1,tr:1};
+function loadRowModel(key,cb){
+  const slot=RowModels[key]||(RowModels[key]={scene:null,anims:null,loading:false});
+  if(slot.scene){ cb(slot.scene,slot.anims); return; }
+  if(slot.loading){ setTimeout(()=>loadRowModel(key,cb),100); return; }
+  slot.loading=true;
+  new THREE.GLTFLoader().load("assets/baked/row_"+key+".glb",g=>{
+    slot.scene=g.scene; slot.anims=g.animations||[]; slot.loading=false; cb(g.scene,slot.anims);
+  },undefined,e=>{ slot.loading=false; console.warn("row glb load failed",key,e); cb(null); });
+}
 
 function buildLearnScene(key){
   initLearn3D();
   ["hook","ball"].forEach(k=>{ if(L3[k]){L3.scene.remove(L3[k]);L3[k]=null;} });
   if(L3.chainModel){ L3.scene.remove(L3.chainModel); L3.chainModel=null; }   // clone shares cached geometry: remove, don't dispose
-  L3.chainMixer=null;
+  if(L3.rowModel){ L3.scene.remove(L3.rowModel); L3.rowModel=null; }
+  L3.chainMixer=null; L3.rowMixer=null;
   (L3.managed||[]).forEach(m=>{ L3.scene.remove(m); m.geometry&&m.geometry.dispose(); });
   L3.managed=[]; L3.rings=[]; L3.fabric=[]; L3.work=null;
   ["loopMesh","workMesh"].forEach(k=>{ if(Sim[k]){L3.scene.remove(Sim[k]);Sim[k].geometry&&Sim[k].geometry.dispose();Sim[k]=null;} });
@@ -1831,6 +1845,18 @@ function buildLearnScene(key){
       m.position.copy(LEARN_TIP).addScaledVector(B.U,0.55).addScaledVector(WDOWN,2.1);
       L3.chainModel=m; L3.scene.add(m);
       if(anims&&anims.length){ L3.chainMixer=new THREE.AnimationMixer(m); L3.chainMixer.clipAction(anims[0]).play(); }
+    });
+  } else if(ROW_STITCHES[key]){
+    loadRowModel(key,(root,anims)=>{
+      if(!root || Learn.key!==key) return;
+      const m=root.clone(true);
+      const cmat=L3.yarnMat.clone(); cmat.morphTargets=true; cmat.needsUpdate=true;
+      m.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.material=cmat; } });
+      m.scale.setScalar(2.0);
+      const postLen=STITCHES[key].h+1.7;                         // foundation row sits below the work
+      m.position.copy(LEARN_TIP).addScaledVector(B.U,0.55).addScaledVector(WDOWN,postLen+0.9);
+      L3.rowModel=m; L3.scene.add(m);
+      if(anims&&anims.length){ L3.rowMixer=new THREE.AnimationMixer(m); L3.rowMixer.clipAction(anims[0]).play(); }
     });
   }
   const focus=new THREE.Vector3(0.3,-0.3,0);
@@ -1910,15 +1936,17 @@ function animateLearn3D(){
     // row stitches: a foundation row sits BELOW; posts stand on it up to the
     // hook. The hook plunges into the row, then lifts to draw the loop up.
     const rowC=LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,postLen+0.9);
-    for(let i=-3;i<=3;i++){ const m=learnGetFab(fi++);
-      const c=rowC.clone().addScaledVector(WX,i*0.95);
-      setTube(m, ovalRing(c,WX,WZ,0.62,0.4), true, YR); }
-    for(let s=1;s<=2;s++){ const baseP=rowC.clone().addScaledVector(WX,-s*1.3);
-      const topP=baseP.clone().addScaledVector(WDOWN,-postLen);
-      const m=learnGetFab(fi++);
-      setTube(m,[baseP, baseP.clone().addScaledVector(WDOWN,-postLen*0.5).addScaledVector(B.nrm,0.3), topP],false,YR);
-      const m2=learnGetFab(fi++);
-      setTube(m2, ovalRing(topP.clone().addScaledVector(WDOWN,-0.05),WX,WZ,0.5,0.32), true, YR); }
+    if(!L3.rowModel){   // Blender-baked fabric covers the foundation + completed posts when present
+      for(let i=-3;i<=3;i++){ const m=learnGetFab(fi++);
+        const c=rowC.clone().addScaledVector(WX,i*0.95);
+        setTube(m, ovalRing(c,WX,WZ,0.62,0.4), true, YR); }
+      for(let s=1;s<=2;s++){ const baseP=rowC.clone().addScaledVector(WX,-s*1.3);
+        const topP=baseP.clone().addScaledVector(WDOWN,-postLen);
+        const m=learnGetFab(fi++);
+        setTube(m,[baseP, baseP.clone().addScaledVector(WDOWN,-postLen*0.5).addScaledVector(B.nrm,0.3), topP],false,YR);
+        const m2=learnGetFab(fi++);
+        setTube(m2, ovalRing(topP.clone().addScaledVector(WDOWN,-0.05),WX,WZ,0.5,0.32), true, YR); }
+    }
     // the post currently being made: insertion point up to the live loop
     const insPt=rowC.clone();
     const topCur=anchor.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,0.35);
@@ -1965,6 +1993,7 @@ function learnLoop(ts){
   const dt=Math.min(0.05,((ts||performance.now())-Learn._last)/1000); Learn._last=ts||performance.now();
   if(Learn.playing){ Learn.t+=dt; if(Learn.t>total+1.6) Learn.t=0; }   // gentle hold, then loop
   if(L3.chainMixer) L3.chainMixer.update(dt);                          // baked chain drape (idle sway)
+  if(L3.rowMixer) L3.rowMixer.update(dt);                              // baked row-fabric drape
   animateLearn3D(); L3.controls.update(); L3.renderer.render(L3.scene,L3.camera);
   const cur=Math.min(N-1,Math.floor(Learn.t/STEP_DUR));
   document.querySelectorAll("#learnSteps li").forEach(li=>li.classList.toggle("on",+li.dataset.i===cur));

@@ -1502,6 +1502,7 @@ glossaryModal.addEventListener("click",e=>{if(e.target===glossaryModal)closeGlos
 
 // --- "Learn this stitch": a real 3D close-up of the hook forming a stitch ---
 const Learn={key:null,t:0,playing:false,raf:null,H:6,half:1.7,isChain:false};
+const STEP_DUR=2.6;   // seconds per move — slow & readable
 const L3={ready:false,renderer:null,scene:null,camera:null,controls:null,hook:null,working:null,base:null,ball:null,strand:null,loopRings:[],chain:null,yarnMat:null,env:null};
 
 function initLearn3D(){
@@ -1581,7 +1582,9 @@ function resolveCollisions(loopPins,workPins){
   for(let it=0;it<2;it++){
     for(let a=0;a<list.length;a++) for(let b=a+1;b<list.length;b++){
       const A=list[a],B=list[b];
-      if(A.r===B.r){ const dd=Math.abs(A.i-B.i); if(dd<=1||(A.r.closed&&dd>=A.r.n-1)) continue; }
+      // skip pairs that are close ALONG the same strand (they belong near
+      // each other) — only resolve far self-crossings & the other strand
+      if(A.r===B.r){ let dd=Math.abs(A.i-B.i); if(A.r.closed) dd=Math.min(dd,A.r.n-dd); if(dd*A.r.seg < A.rad*2.2) continue; }
       const min=A.rad+B.rad; let dx=B.p.x-A.p.x,dy=B.p.y-A.p.y,dz=B.p.z-A.p.z, dist=Math.hypot(dx,dy,dz)||1e-6;
       if(dist<min){ const push=(min-dist)/dist, wa=A.pin?0:(B.pin?1:0.5), wb=B.pin?0:(A.pin?1:0.5);
         A.p.x-=dx*push*wa;A.p.y-=dy*push*wa;A.p.z-=dz*push*wa; B.p.x+=dx*push*wb;B.p.y+=dy*push*wb;B.p.z+=dz*push*wb; }
@@ -1590,26 +1593,36 @@ function resolveCollisions(loopPins,workPins){
   }
 }
 function ropeTube(rope,mesh){ const curve=new THREE.CatmullRomCurve3(rope.p,rope.closed,"catmullrom",0.5);
-  const g=new THREE.TubeGeometry(curve,rope.n*2,rope.radius,8,rope.closed);
+  const g=new THREE.TubeGeometry(curve,rope.n*3,rope.radius,12,rope.closed);
   if(mesh.geometry)mesh.geometry.dispose(); mesh.geometry=g; }
-// a stylised hand holding the hook (pencil grip). Local +Y runs up the shaft.
+// a hand holding the hook (pencil grip). Local +Y runs up the shaft; the
+// shaft sits at the origin, so fingers curl around radius ~0.8 to grip it.
 function makeHand(){
   const g=new THREE.Group(), V=THREE.Vector3;
-  const skin=new THREE.MeshStandardMaterial({color:0xc07a45,roughness:0.92,metalness:0.0,envMapIntensity:0.22});
-  const back=new THREE.Mesh(new THREE.SphereGeometry(1.45,22,16),skin);   // back of hand
-  back.scale.set(1.25,1.65,0.7); back.position.set(0.15,-0.1,-1.05); back.castShadow=true; g.add(back);
-  const finger=(yy,reach,curl)=>{
-    const pts=[ new V(-0.15,yy,-0.95), new V(0.15,yy+0.05,0.15), new V(0.55*reach,yy-0.25,0.95), new V(0.35*reach,yy-0.55-curl,0.8) ];
+  const skin=new THREE.MeshStandardMaterial({color:0xc98a5b,roughness:0.86,metalness:0.0,envMapIntensity:0.25});
+  // back of the hand: a flattened, slightly tapered block behind the shaft
+  const back=new THREE.Mesh(new THREE.SphereGeometry(1.0,28,20),skin);
+  back.scale.set(1.55,2.0,0.78); back.position.set(-0.45,0.0,-1.0); back.castShadow=true; g.add(back);
+  const palm=new THREE.Mesh(new THREE.SphereGeometry(1.0,24,18),skin);
+  palm.scale.set(1.2,1.7,0.6); palm.position.set(0.05,-0.05,-0.45); g.add(palm);
+  // a curling finger built from tapering phalanges + rounded joints
+  function finger(yy,reach,thick){
+    const pts=[ new V(-0.55,yy,-0.65), new V(0.45,yy+0.04,-0.35), new V(0.9*reach,yy-0.12,0.35),
+                new V(0.66*reach,yy-0.62,0.78), new V(0.2,yy-1.0,0.62) ];
     const c=new THREE.CatmullRomCurve3(pts);
-    const m=new THREE.Mesh(new THREE.TubeGeometry(c,18,0.33,10,false),skin); m.castShadow=true; g.add(m);
-    const tip=new THREE.Mesh(new THREE.SphereGeometry(0.33,12,10),skin); tip.position.copy(pts[3]); g.add(tip);
-  };
-  finger(1.45,0.92,0.05); finger(0.5,1.0,0.0); finger(-0.45,0.96,0.0); finger(-1.35,0.86,0.05);
-  // thumb pressing from the near side
-  const tp=[ new V(-0.35,-1.5,-0.5), new V(-0.05,-0.7,0.45), new V(0.5,-0.2,1.0) ];
-  const thumb=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(tp),16,0.4,10,false),skin); thumb.castShadow=true; g.add(thumb);
-  const tt=new THREE.Mesh(new THREE.SphereGeometry(0.4,12,10),skin); tt.position.copy(tp[2]); g.add(tt);
-  const wrist=new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.25,2.6,18),skin); wrist.position.set(0.15,2.5,-1.25); wrist.rotation.x=0.25; wrist.castShadow=true; g.add(wrist);
+    const m=new THREE.Mesh(new THREE.TubeGeometry(c,28,thick,12,false),skin); m.castShadow=true; m.receiveShadow=true; g.add(m);
+    [pts[1],pts[2],pts[3]].forEach((p,k)=>{ const kn=new THREE.Mesh(new THREE.SphereGeometry(thick*1.04,12,10),skin); kn.position.copy(p); g.add(kn); });
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(thick*0.92,12,10),skin); tip.position.copy(pts[4]); g.add(tip);
+  }
+  finger(1.4,0.94,0.28); finger(0.5,1.02,0.29); finger(-0.42,0.97,0.28); finger(-1.3,0.85,0.25);
+  // thumb pressing the shaft from the near/front side
+  const tp=[ new V(-0.75,-1.45,-0.15), new V(-0.2,-0.85,0.5), new V(0.4,-0.3,0.92), new V(0.55,0.22,0.72) ];
+  const thumb=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(tp),22,0.33,12,false),skin); thumb.castShadow=true; g.add(thumb);
+  const tk=new THREE.Mesh(new THREE.SphereGeometry(0.34,12,10),skin); tk.position.copy(tp[1]); g.add(tk);
+  const tt=new THREE.Mesh(new THREE.SphereGeometry(0.3,12,10),skin); tt.position.copy(tp[3]); g.add(tt);
+  // wrist / forearm receding out of frame
+  const wrist=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.35,3.4,22),skin);
+  wrist.position.set(-0.5,3.0,-1.15); wrist.rotation.x=0.32; wrist.castShadow=true; g.add(wrist);
   return g;
 }
 function buildLearnScene(key){
@@ -1642,12 +1655,14 @@ function buildLearnScene(key){
   const ball=new THREE.Mesh(new THREE.SphereGeometry(1.05,26,18),L3.yarnMat);ball.castShadow=true;
   ball.position.set(-5.6,-2.6,3.6); L3.ball=ball; L3.scene.add(ball);
   // --- simulated yarn: the live loop on the hook + the working strand ---
-  Sim.loop=Rope(20,0.26,true); Sim.loop.radius=0.40;
-  ropeSeed(Sim.loop,(u)=>{ const a=u*Math.PI*2; return new THREE.Vector3(Math.cos(a)*0.75, H*0.5+1.2+Math.sin(a)*0.85, Math.sin(a)*0.28); });
-  Sim.loopMesh=new THREE.Mesh(new THREE.BufferGeometry(),L3.yarnMat); Sim.loopMesh.castShadow=true; L3.scene.add(Sim.loopMesh);
-  Sim.work=Rope(26,0.62,false); Sim.work.radius=0.36;   // thinner working strand, with drape
+  // uniform gauge for both (real yarn is one thickness throughout)
+  const yr=0.40;
+  Sim.loop=Rope(26,0.20,true); Sim.loop.radius=yr;
+  ropeSeed(Sim.loop,(u)=>{ const a=u*Math.PI*2; return new THREE.Vector3(Math.cos(a)*0.62, H*0.5+1.1+Math.sin(a)*0.72, Math.sin(a)*0.24); });
+  Sim.loopMesh=new THREE.Mesh(new THREE.BufferGeometry(),L3.yarnMat); Sim.loopMesh.castShadow=true;Sim.loopMesh.receiveShadow=true; L3.scene.add(Sim.loopMesh);
+  Sim.work=Rope(40,0.42,false); Sim.work.radius=yr;
   ropeSeed(Sim.work,(u)=>new THREE.Vector3(lerp(-5.6,half*0.9,u), lerp(-2.6,H*0.5+1,u)+Math.sin(u*3.14)*1.2, lerp(3.6,0.6,u)));
-  Sim.workMesh=new THREE.Mesh(new THREE.BufferGeometry(),L3.yarnMat); Sim.workMesh.castShadow=true; L3.scene.add(Sim.workMesh);
+  Sim.workMesh=new THREE.Mesh(new THREE.BufferGeometry(),L3.yarnMat); Sim.workMesh.castShadow=true;Sim.workMesh.receiveShadow=true; L3.scene.add(Sim.workMesh);
   if(isChain){ L3.camera.position.set(3.5,3.2,9); L3.controls.target.set(half*0.5,1.4,0); }
   else { L3.camera.position.set(5,H*0.5+2.6,11); L3.controls.target.set(0.5,H*0.42,0); }
   L3.controls.update();
@@ -1656,7 +1671,7 @@ function animateLearn3D(){
   if(!L3.ready||!Learn.key) return;
   const key=Learn.key, steps=STITCH_STEPS[key]||["Work the stitch"], N=steps.length;
   const moves=steps.map(classifyMove), isChain=Learn.isChain, loops=loopTimeline(steps,moves,isChain);
-  const phase=Math.min(N,Learn.t/1.0), mi=Math.min(N-1,Math.floor(phase)), f=easeIO(phase-Math.floor(phase));
+  const phase=Math.min(N,Learn.t/STEP_DUR), mi=Math.min(N-1,Math.floor(phase)), f=easeIO(phase-Math.floor(phase));
   const grow=easeIO(Math.min(1,phase/N)), H=Learn.H, half=Learn.half;
   if(L3.working) L3.working.scale.y=Math.max(0.03,grow);
   // hook stations in 3D
@@ -1714,18 +1729,20 @@ function openLearn(key){
   const steps=STITCH_STEPS[key]||["Work the stitch"];
   document.getElementById("learnSteps").innerHTML=steps.map((s,i)=>`<li data-i="${i}">${s}</li>`).join("");
   initLearn3D(); buildLearnScene(key); fitLearn3D();
-  cancelAnimationFrame(Learn.raf); learnLoop();
+  Learn._last=null; cancelAnimationFrame(Learn.raf); learnLoop();
 }
 function closeLearn(){Learn.playing=false;cancelAnimationFrame(Learn.raf);document.getElementById("learnModal").classList.remove("open");}
 document.getElementById("learnClose").addEventListener("click",closeLearn);
-document.getElementById("learnReplay").addEventListener("click",()=>{Learn.t=0;Learn.playing=true;cancelAnimationFrame(Learn.raf);learnLoop();});
+document.getElementById("learnReplay").addEventListener("click",()=>{Learn.t=0;Learn.playing=true;Learn._last=null;cancelAnimationFrame(Learn.raf);learnLoop();});
 document.getElementById("learnModal").addEventListener("click",e=>{if(e.target.id==="learnModal")closeLearn();});
-function learnLoop(){
+function learnLoop(ts){
   if(!L3.ready)return;
-  const N=(STITCH_STEPS[Learn.key]||[""]).length, total=N*1.0+1.0;
-  if(Learn.playing){ Learn.t+=1/60; if(Learn.t>total){Learn.t=total;Learn.playing=false;} }
+  const N=(STITCH_STEPS[Learn.key]||[""]).length, total=N*STEP_DUR;
+  if(Learn._last==null)Learn._last=ts||performance.now();
+  const dt=Math.min(0.05,((ts||performance.now())-Learn._last)/1000); Learn._last=ts||performance.now();
+  if(Learn.playing){ Learn.t+=dt; if(Learn.t>total+1.6) Learn.t=0; }   // gentle hold, then loop
   animateLearn3D(); L3.controls.update(); L3.renderer.render(L3.scene,L3.camera);
-  const cur=Math.min(N-1,Math.floor(Learn.t/1.0));
+  const cur=Math.min(N-1,Math.floor(Learn.t/STEP_DUR));
   document.querySelectorAll("#learnSteps li").forEach(li=>li.classList.toggle("on",+li.dataset.i===cur));
   Learn.raf=requestAnimationFrame(learnLoop);
 }

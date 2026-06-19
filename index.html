@@ -1768,6 +1768,7 @@ function buildLearnScene(key){
   const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),B.U);
   const roll=new THREE.Quaternion().setFromAxisAngle(B.U,-0.6);
   L3.hook.quaternion.copy(roll.multiply(q));
+  Learn.baseQuat=L3.hook.quaternion.clone();
   L3.hook.position.copy(LEARN_TIP);
   const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,3.1,0); hand.name="proceduralHand"; L3.hook.add(hand);
   L3.scene.add(L3.hook);
@@ -1796,14 +1797,19 @@ function animateLearn3D(){
   const baseD=0.55, gap=0.74, rL=0.9;
   const postLen=isChain?0:(STITCHES[key].h*1.0+1.7);
   const insertDepth=isChain?1.5:postLen*0.78;
-  let dipAmt=0, overT=0.5;
+  let dipAmt=0, overT=0.5, pull=0, twist=0;
   if(move==="insert") dipAmt=insertDepth*Math.sin(f*Math.PI/2);                 // plunge & hold down
   else if(move==="pullup" && mi>0 && moves[mi-1]==="insert") dipAmt=insertDepth*Math.cos(f*Math.PI/2); // lift, drawing a loop up
-  if(move==="yarnover"||/yarn over/.test(stepTxt)) overT=f;
+  if(move==="yarnover"||/yarn over/.test(stepTxt)){ overT=f; twist=Math.sin(f*Math.PI)*0.35; } // wrist rolls to catch the yarn
   else if(mi>0 && moves[mi-1]==="yarnover") overT=1;
-  const anchor=LEARN_TIP.clone().addScaledVector(WDOWN,dipAmt);
+  if(move==="through"||move==="through2"){ pull=Math.sin(f*Math.PI); twist=Math.sin(f*Math.PI)*0.5; } // pull the loop back through
+  // the hook does the work: pull back up the shaft + a wrist twist; the hand,
+  // a child of the hook, follows so it visibly participates in the motion.
+  const anchor=LEARN_TIP.clone().addScaledVector(WDOWN,dipAmt).addScaledVector(B.U,pull*1.1);
   Learn.anchor=anchor;
   L3.hook.position.copy(anchor);
+  if(Learn.baseQuat){ const tw=new THREE.Quaternion().setFromAxisAngle(B.U,twist);
+    L3.hook.quaternion.copy(tw.multiply(Learn.baseQuat.clone())); }
 
   // ---- loops on the hook ----
   const shown=Math.max(loopStart,loopEnd), changing=(loopEnd!==loopStart);

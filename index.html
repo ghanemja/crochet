@@ -1714,10 +1714,39 @@ function learnMkMesh(){ const m=new THREE.Mesh(new THREE.BufferGeometry(),L3.yar
   m.castShadow=true;m.receiveShadow=true; L3.scene.add(m); L3.managed.push(m); return m; }
 function learnGetRing(i){ while(L3.rings.length<=i) L3.rings.push(learnMkMesh()); return L3.rings[i]; }
 function learnGetFab(i){ while(L3.fabric.length<=i) L3.fabric.push(learnMkMesh()); return L3.fabric[i]; }
+// Plied (twisted) yarn tube: a fluted cross-section whose bumps spiral along
+// the curve, matching the Blender-baked chain so all the yarn reads alike.
+function pliedTubeGeometry(curve,tubularSegments,R,closed){
+  const M=12, plies=3, amp=0.24, twistPerUnit=2.4;
+  const fr=curve.computeFrenetFrames(tubularSegments,closed);
+  const L=curve.getLength()||1;
+  const pos=[],idx=[];
+  for(let i=0;i<=tubularSegments;i++){
+    const P=curve.getPointAt(i/tubularSegments);
+    const N=fr.normals[i], B=fr.binormals[i];
+    const s=i/tubularSegments*L;
+    for(let j=0;j<=M;j++){
+      const th=j/M*Math.PI*2;
+      const rad=R*(1+amp*Math.cos(plies*th - twistPerUnit*s));
+      pos.push(P.x+rad*(Math.cos(th)*N.x+Math.sin(th)*B.x),
+               P.y+rad*(Math.cos(th)*N.y+Math.sin(th)*B.y),
+               P.z+rad*(Math.cos(th)*N.z+Math.sin(th)*B.z));
+    }
+  }
+  const st=M+1;
+  for(let i=0;i<tubularSegments;i++) for(let j=0;j<M;j++){
+    const a=i*st+j,b=(i+1)*st+j,c=(i+1)*st+j+1,d=i*st+j+1;
+    idx.push(a,b,d,b,c,d);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
 function setTube(mesh,pts,closed,radius){
   if(!pts||pts.length<3){ mesh.visible=false; return; }
   const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
-  const g=new THREE.TubeGeometry(curve,Math.max(28,pts.length*5),radius||YR,12,closed);
+  const g=pliedTubeGeometry(curve,Math.max(36,pts.length*6),radius||YR,closed);
   if(mesh.geometry) mesh.geometry.dispose(); mesh.geometry=g; mesh.visible=true;
 }
 // a loop of yarn threaded on the shaft at distance d, hanging below it.
@@ -1751,9 +1780,23 @@ function workYarnPts(B,overT,topShaftD){
   return [ball.clone(),feed,wrap,tail];
 }
 
+// Blender-baked twisted-yarn chain (multi-ply geometry + drape), loaded once.
+const ChainModel={scene:null,anims:null,loading:false};
+function loadChainModel(cb){
+  if(ChainModel.scene){ cb(ChainModel.scene,ChainModel.anims); return; }
+  if(ChainModel.loading){ setTimeout(()=>loadChainModel(cb),100); return; }
+  ChainModel.loading=true;
+  new THREE.GLTFLoader().load("assets/baked/chain.glb",g=>{
+    ChainModel.scene=g.scene; ChainModel.anims=g.animations||[]; ChainModel.loading=false;
+    cb(g.scene,ChainModel.anims);
+  },undefined,e=>{ ChainModel.loading=false; console.warn("chain glb load failed",e); cb(null); });
+}
+
 function buildLearnScene(key){
   initLearn3D();
   ["hook","ball"].forEach(k=>{ if(L3[k]){L3.scene.remove(L3[k]);L3[k]=null;} });
+  if(L3.chainModel){ L3.scene.remove(L3.chainModel); L3.chainModel=null; }   // clone shares cached geometry: remove, don't dispose
+  L3.chainMixer=null;
   (L3.managed||[]).forEach(m=>{ L3.scene.remove(m); m.geometry&&m.geometry.dispose(); });
   L3.managed=[]; L3.rings=[]; L3.fabric=[]; L3.work=null;
   ["loopMesh","workMesh"].forEach(k=>{ if(Sim[k]){L3.scene.remove(Sim[k]);Sim[k].geometry&&Sim[k].geometry.dispose();Sim[k]=null;} });
@@ -1777,6 +1820,18 @@ function buildLearnScene(key){
   ball.position.set(LEARN_TIP.x-6.0, LEARN_TIP.y-6.0, LEARN_TIP.z+2.4);
   L3.ball=ball; L3.scene.add(ball);
   L3.work=learnMkMesh();
+  if(Learn.isChain){
+    loadChainModel((root,anims)=>{
+      if(!root || Learn.key!==key) return;
+      const m=root.clone(true);
+      m.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.material=L3.yarnMat; } });
+      m.scale.setScalar(2.0);
+      // hangs from just below the live loop
+      m.position.copy(LEARN_TIP).addScaledVector(B.U,0.55).addScaledVector(WDOWN,2.1);
+      L3.chainModel=m; L3.scene.add(m);
+      if(anims&&anims.length){ L3.chainMixer=new THREE.AnimationMixer(m); L3.chainMixer.clipAction(anims[0]).play(); }
+    });
+  }
   const focus=new THREE.Vector3(0.3,-0.3,0);
   L3.camera.position.set(focus.x+1.4, focus.y+2.6, focus.z+21);
   L3.controls.target.copy(focus); L3.controls.update();
@@ -1842,7 +1897,9 @@ function animateLearn3D(){
   // ---- formed stitches below (anchored to the fixed work point) ----
   let fi=0;
   const colTop=LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN, 1.7);
-  if(isChain){
+  if(isChain && L3.chainModel){
+    // formed chain is the Blender-baked twisted-yarn model; nothing to draw here
+  } else if(isChain){
     let c=colTop.clone();
     for(let i=0;i<6;i++){ const m=learnGetFab(fi++);
       const shortAxis=(i%2===0)?WZ:WX;
@@ -1906,6 +1963,7 @@ function learnLoop(ts){
   if(Learn._last==null)Learn._last=ts||performance.now();
   const dt=Math.min(0.05,((ts||performance.now())-Learn._last)/1000); Learn._last=ts||performance.now();
   if(Learn.playing){ Learn.t+=dt; if(Learn.t>total+1.6) Learn.t=0; }   // gentle hold, then loop
+  if(L3.chainMixer) L3.chainMixer.update(dt);                          // baked chain drape (idle sway)
   animateLearn3D(); L3.controls.update(); L3.renderer.render(L3.scene,L3.camera);
   const cur=Math.min(N-1,Math.floor(Learn.t/STEP_DUR));
   document.querySelectorAll("#learnSteps li").forEach(li=>li.classList.toggle("on",+li.dataset.i===cur));

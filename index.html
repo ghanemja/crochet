@@ -1627,7 +1627,10 @@ function makeHand(){
   return g;
 }
 // ---- real rigged hand model (WebXR generic hand), posed into a grip ----
-const HAND_CFG={ scale:24, pos:[-2.0,5.3,-0.2], rot:[-Math.PI/2,0.35,0],
+// metaball hand: grip is baked into the mesh, so curl/thumb pose params are unused.
+// hand is a child of the hook (shaft = hook local +Y); grip opening = model local +X,
+// so rot.z=PI/2 lays the shaft through the grip.
+const HAND_CFG={ scale:24, pos:[0,3.4,0], rot:[0,0,Math.PI/2],
   curl:1.0, axis:"x", sign:1, thumb:0.85, thumbAxis:"z", thumbSign:1, skin:0xc98a5c };
 const HandModel={ scene:null, loading:false };
 function loadHandModel(cb){

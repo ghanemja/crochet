@@ -1,26 +1,33 @@
 # tools
 
-## make_hand_blender.py — high-fidelity grip hand
+Both scripts generate `assets/hand-right.glb` — the organic right hand, posed in
+a crochet grip, that `index.html` loads at runtime (`loadHandModel`). The grip is
+baked into the mesh, so the model needs no armature and the app's bone-posing is
+a harmless no-op. Placement on the hook is controlled by `HAND_CFG` in
+`index.html` (the grip opens along the model's local +X; `rot.z = PI/2` lays the
+hook shaft through it).
 
-Generates the hand model the app loads at `assets/hand-right.glb`. It builds a
-smooth, organic hand (Skin modifier + Subdivision Surface) with the crochet
-grip **baked into the mesh**, so it needs no armature.
+## make_hand.mjs  (used to build the committed asset)
 
-Run locally (Blender is **not** available in the cloud session):
+Pure Node — no Blender required. Builds the hand as a marching-cubes isosurface
+over metaball "capsules" laid along a finger skeleton.
+
+```bash
+npm install three          # creates ./node_modules (git-ignored)
+node tools/make_hand.mjs   # writes assets/hand-right.glb (~25k tris)
+```
+
+Tune the hand by editing the skeleton near the top: `fingers` (x offset, length,
+radius), `dAngs` (per-joint curl), the thumb block, and `SUB` (higher = fingers
+stay more separate). Re-run, then re-check placement with `HAND_CFG`.
+
+## make_hand_blender.py  (alternative)
+
+If you'd rather sculpt in Blender, this builds an equivalent hand with the Skin +
+Subdivision modifiers and exports the same `assets/hand-right.glb`:
 
 ```bash
 blender --background --python tools/make_hand_blender.py
 ```
 
-This writes `assets/hand-right.glb`. Commit and push that file:
-
-```bash
-git add assets/hand-right.glb && git commit -m "Add Blender-built grip hand" && git push
-```
-
-The app loads it automatically (see `loadHandModel` in `index.html`). After you
-push the `.glb`, the placement/scale (`HAND_CFG`) may need a small tune to seat
-it on the hook — that part can be done in a cloud session.
-
-To tweak the hand itself, edit the skeleton/curl section near the top of the
-script (finger `curl_angles`, `seg_radii`, `fingers` offsets, thumb nodes).
+After regenerating with either script, commit `assets/hand-right.glb`.

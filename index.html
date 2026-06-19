@@ -657,6 +657,7 @@
 <!-- Vendored Three.js (classic global build; works from file:// and offline) -->
 <script src="vendor/three/three.min.js"></script>
 <script src="vendor/three/js/OrbitControls.js"></script>
+<script src="vendor/three/js/GLTFLoader.js"></script>
 <script>
 /* ============================================================
    YarnFlow — crochet animator + 3D yarn studio
@@ -1625,6 +1626,47 @@ function makeHand(){
   wrist.position.set(-0.5,3.0,-1.15); wrist.rotation.x=0.32; wrist.castShadow=true; g.add(wrist);
   return g;
 }
+// ---- real rigged hand model (WebXR generic hand), posed into a grip ----
+const HAND_CFG={ scale:24, pos:[-2.0,5.3,-0.2], rot:[-Math.PI/2,0.35,0],
+  curl:1.15, axis:"x", sign:1, thumb:0.9, thumbAxis:"z", thumbSign:1, skin:0xc8895c };
+const HandModel={ scene:null, loading:false };
+function loadHandModel(cb){
+  if(HandModel.scene){ cb(HandModel.scene); return; }
+  if(HandModel.loading){ setTimeout(()=>loadHandModel(cb),120); return; }
+  HandModel.loading=true;
+  try{
+    new THREE.GLTFLoader().load("assets/hand-right.glb", g=>{
+      const root=g.scene; root.traverse(o=>{ if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true; if(o.material){o.material.color&&o.material.color.set(HAND_CFG.skin);o.material.metalness=0;o.material.envMapIntensity=0.45;o.material.roughness=Math.max(0.6,o.material.roughness||0.7);}}
+        if(o.rotation)o.userData.rest=o.rotation.clone(); });
+      HandModel.scene=root; HandModel.loading=false; cb(root);
+    }, undefined, e=>{ HandModel.loading=false; console.warn("hand model load failed",e); cb(null); });
+  }catch(e){ HandModel.loading=false; cb(null); }
+}
+function poseHandGrip(root,cfg){
+  root.traverse(b=>{ if(b.userData.rest) b.rotation.copy(b.userData.rest); });
+  const add=(name,axis,ang)=>{ const b=root.getObjectByName(name); if(b) b.rotation[axis]+=ang; };
+  ["index","middle","ring","pinky"].forEach((fg,i)=>{ const k=cfg.sign*cfg.curl*(1-i*0.06);
+    add(fg+"-finger-phalanx-proximal",cfg.axis,k*0.85);
+    add(fg+"-finger-phalanx-intermediate",cfg.axis,k*1.25);
+    add(fg+"-finger-phalanx-distal",cfg.axis,k*0.75); });
+  add("thumb-phalanx-proximal",cfg.thumbAxis,cfg.thumbSign*cfg.thumb*0.8);
+  add("thumb-phalanx-distal",cfg.thumbAxis,cfg.thumbSign*cfg.thumb*0.7);
+}
+function applyHandTransform(root,cfg){
+  root.scale.setScalar(cfg.scale);
+  root.position.set(cfg.pos[0],cfg.pos[1],cfg.pos[2]);
+  root.rotation.set(cfg.rot[0],cfg.rot[1],cfg.rot[2]);
+}
+function attachRealHand(){
+  loadHandModel(root=>{
+    if(!root||!L3.hook) return;
+    const ph=L3.hook.getObjectByName("proceduralHand"); if(ph) L3.hook.remove(ph);
+    if(root.parent) root.parent.remove(root);
+    poseHandGrip(root,HAND_CFG); applyHandTransform(root,HAND_CFG); L3.hook.add(root);
+  });
+}
+// live-tweak helper used while tuning the grip
+function refreshLearnHand(){ if(HandModel.scene){ poseHandGrip(HandModel.scene,HAND_CFG); applyHandTransform(HandModel.scene,HAND_CFG); } }
 function buildLearnScene(key){
   initLearn3D();
   ["hook","working","base","ball","chain"].forEach(k=>{ if(L3[k]){L3.scene.remove(L3[k]);L3[k]=null;} });
@@ -1650,8 +1692,9 @@ function buildLearnScene(key){
     L3.chain=chain; L3.scene.add(chain);
   }
   L3.hook=makeCrochetHook(0.5); Sim.hookRad=0.92; Sim.hookLen=12;
-  const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,3.1,0); L3.hook.add(hand); // pencil grip
+  const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,3.1,0); hand.name="proceduralHand"; L3.hook.add(hand); // fallback
   L3.scene.add(L3.hook);
+  attachRealHand();   // swap in the real rigged-hand model once loaded
   const ball=new THREE.Mesh(new THREE.SphereGeometry(1.05,26,18),L3.yarnMat);ball.castShadow=true;
   ball.position.set(-5.6,-2.6,3.6); L3.ball=ball; L3.scene.add(ball);
   // --- simulated yarn: the live loop on the hook + the working strand ---
@@ -1663,15 +1706,16 @@ function buildLearnScene(key){
   Sim.work=Rope(40,0.42,false); Sim.work.radius=yr;
   ropeSeed(Sim.work,(u)=>new THREE.Vector3(lerp(-5.6,half*0.9,u), lerp(-2.6,H*0.5+1,u)+Math.sin(u*3.14)*1.2, lerp(3.6,0.6,u)));
   Sim.workMesh=new THREE.Mesh(new THREE.BufferGeometry(),L3.yarnMat); Sim.workMesh.castShadow=true;Sim.workMesh.receiveShadow=true; L3.scene.add(Sim.workMesh);
-  if(isChain){ L3.camera.position.set(3.5,3.2,9); L3.controls.target.set(half*0.5,1.4,0); }
-  else { L3.camera.position.set(5,H*0.5+2.6,11); L3.controls.target.set(0.5,H*0.42,0); }
+  // frame both the work (at the tip) and the hand (gripping up the shaft)
+  if(isChain){ L3.camera.position.set(5,5,13); L3.controls.target.set(0,3,0); }
+  else { L3.camera.position.set(6,6,15); L3.controls.target.set(0,3.2,0); }
   L3.controls.update();
 }
 function animateLearn3D(){
   if(!L3.ready||!Learn.key) return;
   const key=Learn.key, steps=STITCH_STEPS[key]||["Work the stitch"], N=steps.length;
   const moves=steps.map(classifyMove), isChain=Learn.isChain, loops=loopTimeline(steps,moves,isChain);
-  const phase=Math.min(N,Learn.t/STEP_DUR), mi=Math.min(N-1,Math.floor(phase)), f=easeIO(phase-Math.floor(phase));
+  const phase=Math.min(N,Learn.t/STEP_DUR), mi=Math.max(0,Math.min(N-1,Math.floor(phase))), f=easeIO(phase-Math.floor(phase));
   const grow=easeIO(Math.min(1,phase/N)), H=Learn.H, half=Learn.half;
   if(L3.working) L3.working.scale.y=Math.max(0.03,grow);
   // hook stations in 3D
@@ -1687,7 +1731,7 @@ function animateLearn3D(){
   for(let i=0;i<N;i++){ sS[i]=st; const m=moves[i];
     if(m==="insert")st="fabric"; else if(m==="pullup")st="top";
     else if(m==="through"||m==="through2")st=isChain?"rest":"top"; eS[i]=st; }
-  const cur=moves[mi], A=STA[sS[mi]], B=STA[eS[mi]];
+  const cur=moves[mi], A=STA[sS[mi]]||STA.rest, B=STA[eS[mi]]||STA.rest;
   const pos=A.clone().lerp(B,f);
   if(cur==="through"||cur==="through2") pos.y+=Math.sin(f*Math.PI)*0.7;   // draw-through dip
   L3.hook.position.copy(pos);

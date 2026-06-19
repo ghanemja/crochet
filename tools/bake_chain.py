@@ -1,7 +1,7 @@
 import bpy, numpy as np, os, math
 V=np.array
 
-def plied_ring(center, ulong, ushort, rL, rS, baseR=0.135, plies=3, amp=0.26, twists=4, M=14, nseg=56):
+def plied_ring(center, ulong, ushort, rL, rS, baseR=0.135, plies=3, amp=0.26, twists=4, M=12, nseg=44):
     """Closed plied (twisted) yarn tube around a planar oval. Seam-matched twist."""
     center=V(center,float); ulong=V(ulong,float); ushort=V(ushort,float)
     pn=np.cross(ulong,ushort); pn/=np.linalg.norm(pn)+1e-12
@@ -70,43 +70,49 @@ def main():
     setup_render(sc)
     if mode=="bake":
         # gentle pendulum sway of the whole chain (node anim, loops) + softbody
-        # secondary jiggle baked to shape keys for natural lag.
-        n=len(verts)//(14)            # rings; goal: top firm, bottom loose
-        vg=ob.vertex_groups.new(name="goal"); M=14
-        per=56  # nseg per ring
-        # weight by height (z): higher = firmer
-        zs=[verts[i][2] for i in range(len(verts))]
-        zmin=min(zs); zmax=max(zs)
-        for i in range(len(verts)):
-            w=0.3+0.7*((verts[i][2]-zmin)/(zmax-zmin+1e-9))
+        # secondary motion baked to shape keys: a goal-based softbody keeps the
+        # chain's shape while a gently tilting gravity makes it sway like a
+        # hanging cord. Stepped sequentially so the sim actually solves; one
+        # full sine period so the morph clip loops seamlessly.
+        n=len(verts)
+        vg=ob.vertex_groups.new(name="goal")
+        zs=[verts[i][2] for i in range(n)]; zmin=min(zs); zmax=max(zs)
+        for i in range(n):
+            w=0.35+0.65*((verts[i][2]-zmin)/(zmax-zmin+1e-9))   # top firm, bottom loose
             vg.add([i], float(w), 'REPLACE')
         md=ob.modifiers.new("soft","SOFT_BODY"); sb=md.settings
         sb.use_goal=True; sb.vertex_group_goal="goal"
-        sb.goal_default=0.7; sb.goal_spring=0.9; sb.goal_friction=6
-        sb.goal_min=0.25; sb.goal_max=1.0; sb.pull=0.9; sb.push=0.9; sb.bend=5; sb.mass=0.5
-        # pendulum: rotate about the top (object origin at top link)
-        sc.frame_start=1; sc.frame_end=72
-        for fr,ang in [(1,0.0),(18,0.05),(36,0.0),(54,-0.05),(72,0.0)]:
-            ob.rotation_euler=(0.0,ang,0.0); ob.keyframe_insert("rotation_euler",frame=fr)
-        # bake softbody response to shape keys (flipbook morph)
-        ob.shape_key_add(name="Basis",from_mix=False)
-        frames=list(range(1,73,4))
-        keys=[]
-        for fr in frames:
+        sb.goal_default=0.55; sb.goal_spring=0.7; sb.goal_friction=5
+        sb.goal_min=0.3; sb.goal_max=1.0; sb.mass=0.6; sb.bend=6; sb.pull=0.95; sb.push=0.95
+        end=60; sc.frame_start=1; sc.frame_end=end
+        cap=list(range(1,end+1,4)); poses=[]
+        for fr in range(1,end+1):                                 # SEQUENTIAL steps -> sim solves
+            ang=0.13*math.sin(2*math.pi*(fr-1)/end)               # tilt gravity left/right
+            sc.gravity=(9.8*math.sin(ang),0.0,-9.8*math.cos(ang))
             sc.frame_set(fr)
-            dg=bpy.context.evaluated_depsgraph_get(); ev=ob.evaluated_get(dg); ms=ev.to_mesh()
-            kb=ob.shape_key_add(name=f"f{fr}",from_mix=False)
-            for i,v in enumerate(ms.vertices): kb.data[i].co=v.co.copy()
-            keys.append(kb); ev.to_mesh_clear()
-        for idx,fr in enumerate(frames):
-            for jdx,fr2 in enumerate(frames):
-                keys[idx].value=1.0 if idx==jdx else 0.0
-                keys[idx].keyframe_insert("value",frame=fr2)
-        ob.modifiers.remove(md)   # baked; drop sim modifier
+            if fr in cap:
+                dg=bpy.context.evaluated_depsgraph_get(); ev=ob.evaluated_get(dg); ms=ev.to_mesh()
+                poses.append([(v.co.x,v.co.y,v.co.z) for v in ms.vertices]); ev.to_mesh_clear()
+        ob.modifiers.remove(md)                                   # baked -> drop the sim
+        # report motion so we know the sim actually moved
+        import numpy as _np
+        disp=float(_np.max(_np.linalg.norm(_np.array(poses[len(poses)//4])-_np.array(poses[0]),axis=1)))
+        print("max sway displacement:",round(disp,3))
+        ob.shape_key_add(name="Basis",from_mix=False)
+        kbs=[]
+        for idx,fr in enumerate(cap):
+            kb=ob.shape_key_add(name=f"f{fr}",from_mix=False); P=poses[idx]
+            for i in range(n): kb.data[i].co=P[i]
+            kbs.append(kb)
+        for idx,fr in enumerate(cap):
+            for jdx,fr2 in enumerate(cap):
+                kbs[idx].value=1.0 if idx==jdx else 0.0
+                kbs[idx].keyframe_insert("value",frame=fr2)
+        sc.frame_start=cap[0]; sc.frame_end=cap[-1]
         os.makedirs('/home/user/crochet/assets/baked',exist_ok=True)
         out='/home/user/crochet/assets/baked/chain.glb'
         bpy.ops.export_scene.gltf(filepath=out,export_format='GLB',export_animations=True,export_morph=True,use_selection=False)
-        print("baked+exported",os.path.getsize(out),"bytes verts",len(verts))
+        print("baked+exported",os.path.getsize(out),"bytes verts",n)
     elif mode=="export":
         os.makedirs('/home/user/crochet/assets/baked',exist_ok=True)
         out='/home/user/crochet/assets/baked/chain.glb'

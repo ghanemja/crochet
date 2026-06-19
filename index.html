@@ -1824,7 +1824,8 @@ function buildLearnScene(key){
     loadChainModel((root,anims)=>{
       if(!root || Learn.key!==key) return;
       const m=root.clone(true);
-      m.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.material=L3.yarnMat; } });
+      const cmat=L3.yarnMat.clone(); cmat.morphTargets=true; cmat.needsUpdate=true;   // r128: shader must opt into morphs
+      m.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.material=cmat; } });
       m.scale.setScalar(2.0);
       // hangs from just below the live loop
       m.position.copy(LEARN_TIP).addScaledVector(B.U,0.55).addScaledVector(WDOWN,2.1);

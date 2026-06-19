@@ -1628,7 +1628,7 @@ function makeHand(){
 }
 // ---- real rigged hand model (WebXR generic hand), posed into a grip ----
 const HAND_CFG={ scale:24, pos:[-2.0,5.3,-0.2], rot:[-Math.PI/2,0.35,0],
-  curl:1.15, axis:"x", sign:1, thumb:0.9, thumbAxis:"z", thumbSign:1, skin:0xc8895c };
+  curl:1.0, axis:"x", sign:1, thumb:0.85, thumbAxis:"z", thumbSign:1, skin:0xc98a5c };
 const HandModel={ scene:null, loading:false };
 function loadHandModel(cb){
   if(HandModel.scene){ cb(HandModel.scene); return; }
@@ -1636,7 +1636,11 @@ function loadHandModel(cb){
   HandModel.loading=true;
   try{
     new THREE.GLTFLoader().load("assets/hand-right.glb", g=>{
-      const root=g.scene; root.traverse(o=>{ if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true; if(o.material){o.material.color&&o.material.color.set(HAND_CFG.skin);o.material.metalness=0;o.material.envMapIntensity=0.45;o.material.roughness=Math.max(0.6,o.material.roughness||0.7);}}
+      const root=g.scene; root.traverse(o=>{ if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true; if(o.material){
+          o.material.color&&o.material.color.set(HAND_CFG.skin);
+          o.material.metalness=0; o.material.envMapIntensity=0.4; o.material.roughness=0.62;
+          o.material.emissive&&o.material.emissive.set(0x5a2c18); o.material.emissiveIntensity=0.16; // faint warmth = skin SSS feel
+        }}
         if(o.rotation)o.userData.rest=o.rotation.clone(); });
       HandModel.scene=root; HandModel.loading=false; cb(root);
     }, undefined, e=>{ HandModel.loading=false; console.warn("hand model load failed",e); cb(null); });
@@ -1645,12 +1649,13 @@ function loadHandModel(cb){
 function poseHandGrip(root,cfg){
   root.traverse(b=>{ if(b.userData.rest) b.rotation.copy(b.userData.rest); });
   const add=(name,axis,ang)=>{ const b=root.getObjectByName(name); if(b) b.rotation[axis]+=ang; };
-  ["index","middle","ring","pinky"].forEach((fg,i)=>{ const k=cfg.sign*cfg.curl*(1-i*0.06);
-    add(fg+"-finger-phalanx-proximal",cfg.axis,k*0.85);
-    add(fg+"-finger-phalanx-intermediate",cfg.axis,k*1.25);
-    add(fg+"-finger-phalanx-distal",cfg.axis,k*0.75); });
-  add("thumb-phalanx-proximal",cfg.thumbAxis,cfg.thumbSign*cfg.thumb*0.8);
-  add("thumb-phalanx-distal",cfg.thumbAxis,cfg.thumbSign*cfg.thumb*0.7);
+  // natural relaxed grip: most bend at the base knuckles, less at the tips
+  ["index","middle","ring","pinky"].forEach((fg,i)=>{ const k=cfg.sign*cfg.curl*(1-i*0.05);
+    add(fg+"-finger-phalanx-proximal",cfg.axis,k*0.95);
+    add(fg+"-finger-phalanx-intermediate",cfg.axis,k*0.7);
+    add(fg+"-finger-phalanx-distal",cfg.axis,k*0.4); });
+  add("thumb-phalanx-proximal",cfg.thumbAxis,cfg.thumbSign*cfg.thumb*0.7);
+  add("thumb-phalanx-distal",cfg.thumbAxis,cfg.thumbSign*cfg.thumb*0.5);
 }
 function applyHandTransform(root,cfg){
   root.scale.setScalar(cfg.scale);

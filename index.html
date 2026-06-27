@@ -1641,18 +1641,21 @@ function makeHand(){
 }
 // ---- real rigged hand model (WebXR generic hand), posed into a grip ----
 // metaball hand: grip is baked into the mesh, so curl/thumb pose params are unused.
-// hand is a child of the hook (shaft = hook local +Y); grip opening = model local +X,
-// so rot.z=PI/2 lays the shaft through the grip.
+// hand is a child of the hook (shaft = hook local +Y); grip opening = model local +X.
+// In the model the thumb/index sit at the +X end of the grip axis, so rot.z=-PI/2
+// turns that end toward the hook head (-Y, the work) — i.e. the fingers face the
+// yarn the way a real hand holds a hook, not backwards toward the handle.
 // Centre of the grip pocket in the hand model's own local space (measured from the
 // make_hand.mjs skeleton: midway between the curled fingertips and the thumb pad,
 // with the held shaft running along local +X through this point). We anchor the
 // hand by mapping THIS point onto the hook shaft, so the fingers/thumb actually
 // close on the metal instead of the hand floating beside it.
 const HAND_GRIP_LOCAL=new THREE.Vector3(0,0.041,0.017);
-// Shaft-centre Y of the hook's thumb-rest band, in hook-local space (matches the
-// `rest` mesh in makeCrochetHook). This is where a real grip sits.
-function hookThumbRestY(R){ const r=Math.max(0.22,R); const shaftLen=14+R*2; return r*2+shaftLen*0.5; }
-const HAND_CFG={ scale:16, grip:null, rot:[0,0,Math.PI/2],
+// Where the hand grips along the hook shaft (hook-local Y). Set close to the head
+// so the hand sits right at the live loops — reads as the hand working the yarn,
+// not parked far up the handle.
+const LEARN_GRIP_Y=5.0;
+const HAND_CFG={ scale:18, grip:[0,LEARN_GRIP_Y,0], rot:[0,0,-Math.PI/2],
   curl:1.0, axis:"x", sign:1, thumb:0.85, thumbAxis:"z", thumbSign:1, skin:0xc98a5c };
 const HandModel={ scene:null, loading:false };
 function loadHandModel(cb){
@@ -1685,10 +1688,10 @@ function poseHandGrip(root,cfg){
 function applyHandTransform(root,cfg){
   root.scale.setScalar(cfg.scale);
   root.rotation.set(cfg.rot[0],cfg.rot[1],cfg.rot[2]);
-  // Place the hand so its grip pocket lands on the hook shaft at the thumb rest.
+  // Place the hand so its grip pocket lands on the hook shaft at the grip point.
   // pos = gripTarget - R(rot)*(gripLocal*scale), so the fingers/thumb stay on the
   // metal even if scale or rot are retuned.
-  const grip=cfg.grip||[0,hookThumbRestY(HOOK_HALF),0];
+  const grip=cfg.grip||[0,LEARN_GRIP_Y,0];
   const off=HAND_GRIP_LOCAL.clone().multiplyScalar(cfg.scale)
     .applyEuler(new THREE.Euler(cfg.rot[0],cfg.rot[1],cfg.rot[2]));
   root.position.set(grip[0]-off.x, grip[1]-off.y, grip[2]-off.z);
@@ -1712,7 +1715,7 @@ function refreshLearnHand(){ if(HandModel.scene){ poseHandGrip(HandModel.scene,H
 // ============================================================
 const YR=0.40;                                              // yarn radius (uniform gauge)
 const HOOK_HALF=0.42;                                       // hook shaft radius
-const HOOK_DIR=new THREE.Vector3(0.42,1,-0.10).normalize();// up-right lean of the shaft
+const HOOK_DIR=new THREE.Vector3(0.66,1,-0.12).normalize();// natural diagonal lean of the shaft
 const LEARN_TIP=new THREE.Vector3(0,0.4,0);                 // hook tip / working point
 const WDOWN=new THREE.Vector3(0,-1,0), WX=new THREE.Vector3(1,0,0), WZ=new THREE.Vector3(0,0,1);
 function learnFrame(){
@@ -1780,15 +1783,15 @@ function buildLearnScene(key){
   const roll=new THREE.Quaternion().setFromAxisAngle(B.U,-0.6);
   L3.hook.quaternion.copy(roll.multiply(q));
   L3.hook.position.copy(LEARN_TIP);
-  const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,hookThumbRestY(HOOK_HALF),0); hand.name="proceduralHand"; L3.hook.add(hand);
+  const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,LEARN_GRIP_Y,0); hand.name="proceduralHand"; L3.hook.add(hand);
   L3.scene.add(L3.hook);
   attachRealHand();
   const ball=new THREE.Mesh(new THREE.SphereGeometry(1.4,30,22),L3.yarnMat); ball.castShadow=true;
   ball.position.set(LEARN_TIP.x-6.0, LEARN_TIP.y-6.0, LEARN_TIP.z+2.4);
   L3.ball=ball; L3.scene.add(ball);
   L3.work=learnMkMesh();
-  const focus=new THREE.Vector3(0.3,-0.3,0);
-  L3.camera.position.set(focus.x+1.4, focus.y+2.6, focus.z+21);
+  const focus=new THREE.Vector3(0.5,2.1,0);   // frame the live loops AND the gripping hand
+  L3.camera.position.set(focus.x+1.6, focus.y+1.0, focus.z+20);
   L3.controls.target.copy(focus); L3.controls.update();
 }
 

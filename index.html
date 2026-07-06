@@ -116,6 +116,20 @@
   .dropzone .dz-t b { color: var(--text); font-weight: 600; }
   .dropzone .dz-t span { color: var(--text-3); }
 
+  /* ---------- Image → medium (recreate a photo in a craft medium) ---------- */
+  .img2plan { margin-top: 12px; }
+  .img2plan .dropzone { background-size: cover; background-position: center; min-height: 58px; }
+  .img2plan .dropzone.has-img { border-style: solid; border-color: var(--border-2); }
+  .img2plan .dropzone.has-img .dz-t { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
+  .img2plan .dropzone.has-img .dz-t b, .img2plan .dropzone.has-img .dz-t span { color: #fff; }
+  .plan-opts { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; margin-top: 10px; align-items: center; }
+  .plan-opts .genbtn { background: var(--accent); color: #fff; border: none; border-radius: var(--r-sm);
+    padding: 9px 14px; font-weight: 650; font-size: 13px; cursor: pointer; transition: .15s var(--ease); }
+  .plan-opts .genbtn:hover { background: var(--accent-press); }
+  .plan-res { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); grid-column: 1 / -1; }
+  .plan-res input { flex: 1; }
+  .plan-res b { color: var(--text); min-width: 2ch; text-align: right; }
+
   textarea#patternInput {
     width: 100%; min-height: 122px; resize: vertical; margin-top: 12px;
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
@@ -456,6 +470,18 @@
         <div class="import-url">
           <input type="text" id="importUrl" placeholder="Paste a pattern URL or PDF link" spellcheck="false" />
           <button id="importBtn" title="Fetch & parse">Import</button>
+        </div>
+        <div class="img2plan">
+          <label class="dropzone" id="imgDrop" for="imgInput">
+            <svg class="dz-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <div class="dz-t" id="imgDropTxt"><b>Or drop a photo</b> to recreate it<br><span>pick a medium below — crochet, LEGO…</span></div>
+            <input type="file" id="imgInput" accept="image/*" hidden />
+          </label>
+          <div class="plan-opts">
+            <select class="field" id="mediumSel"></select>
+            <button class="genbtn" id="genPlanBtn">Generate</button>
+            <label class="plan-res">Detail <input type="range" class="slider" id="planRes" min="8" max="48" step="2" value="22" /> <b id="planResVal">22</b></label>
+          </div>
         </div>
         <textarea id="patternInput" spellcheck="false" placeholder="Tip: name your sections so they assemble in 3D —&#10;&#10;HEAD&#10;Rnd 1: mr, 6 sc in ring (6)&#10;Rnd 2: inc x6 (12)&#10;&#10;BODY&#10;Rnd 1: mr, 6 sc in ring (6)…&#10;&#10;ARMS (make 2)&#10;Rnd 1: mr, 6 sc in ring (6)…"></textarea>
         <div class="edit-row">
@@ -1234,12 +1260,19 @@ function orientStitch(mesh,p){
     mesh.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(ax,p.tilt).multiply(faceY)); }
   else mesh.quaternion.copy(faceY);
 }
-function buildStudioGeometry(){
-  initStudio();buildYarnMaterial();
-  Studio.stitchMeshes.forEach(m=>{Studio.group.remove(m);m.geometry.dispose();});Studio.stitchMeshes=[];
+// remove every current "make" (stitch meshes, clones, labels, extras, props)
+// from the studio — shared by the pattern path and the medium-plan viewer.
+function clearStudioMakes(){
+  Studio.stitchMeshes.forEach(m=>{Studio.group.remove(m);m.traverse(o=>{if(o.geometry)o.geometry.dispose();});});Studio.stitchMeshes=[];
   (Studio.cloneGroups||[]).forEach(cg=>Studio.group.remove(cg.group)); Studio.cloneGroups=[];
   (Studio.labels||[]).forEach(l=>Studio.group.remove(l)); Studio.labels=[];
+  (Studio.extras||[]).forEach(e=>{Studio.group.remove(e);e.traverse(o=>{if(o.geometry)o.geometry.dispose();});}); Studio.extras=[];
   ["hook","ball","strand"].forEach(k=>{if(Studio[k]){Studio.group.remove(Studio[k]);Studio[k]=null;}});
+}
+function buildStudioGeometry(){
+  initStudio();buildYarnMaterial();
+  clearStudioMakes();
+  App.plan=null;               // a text pattern replaces any image-derived plan
   if(!App.parsed) return;
   const lay=App.lay3d, radius=yarnRadius()*0.55, pos=lay.positions;
   const byPart={};
@@ -1276,15 +1309,17 @@ function buildStudioGeometry(){
   Studio.controls.target.set(0,size.y*0.5,0);Studio.controls.update();
 }
 function updateStudioProgress(){
-  if(!Studio.ready||!App.parsed) return;
+  if(!Studio.ready||(!App.parsed&&!App.plan)) return;
   const prog=App.progress,complete=Math.floor(prog),frac=prog-complete,meshes=Studio.stitchMeshes;
-  for(let i=0;i<meshes.length;i++){const m=meshes[i];if(i<complete){m.visible=true;m.scale.y=1;}else if(i===complete){m.visible=true;m.scale.y=Math.max(0.04,frac);}else m.visible=false;}
+  for(let i=0;i<meshes.length;i++){const m=meshes[i];if(i<complete){m.visible=true;m.scale.y=1;}
+    else if(i===complete){m.visible=true;if(m.userData.grow!==false)m.scale.y=Math.max(0.04,frac);}
+    else m.visible=false;}
   // mirrored "make 2" duplicates appear once their part is fully worked
   (Studio.cloneGroups||[]).forEach(cg=>cg.group.visible = complete>cg.revealIdx);
   // section labels show once anything is worked
   (Studio.labels||[]).forEach(spr=>{ spr.visible = App.progress>0; });
   const idx=Math.min(complete,meshes.length-1),lay=App.lay3d;
-  if(lay&&Studio.hook){const p=lay.positions[idx];const t=(complete<meshes.length)?Math.max(0.05,frac):1;const topY=p.y+p.h*t;const wob=Math.sin(performance.now()/220)*0.35;
+  if(!App.plan&&lay&&Studio.hook){const p=lay.positions[idx];const t=(complete<meshes.length)?Math.max(0.05,frac):1;const topY=p.y+p.h*t;const wob=Math.sin(performance.now()/220)*0.35;
     // sit the hook tip in the working loop, handle angled up toward the crocheter
     Studio.hook.position.set(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6);
     Studio.hook.visible=complete<meshes.length;
@@ -1295,7 +1330,7 @@ function updateStudioProgress(){
 // ============================================================
 //  App + master loop
 // ============================================================
-const App={parsed:null,lay3d:null,proj2d:null,progress:0,playing:false,speed:1,lastT:0,view:"3d",
+const App={parsed:null,plan:null,lay3d:null,proj2d:null,progress:0,playing:false,speed:1,lastT:0,view:"3d",
   paint:{},            // { globalStitchIndex: hex } colour overrides
   paintMode:"off",     // off | row | stitch
   paintColor:"#e0608a",
@@ -1313,14 +1348,30 @@ function matFor(hex){
   matCache[hex]=m; return m;
 }
 function clearMatCache(){ for(const k in matCache){matCache[k].map&&matCache[k].map.dispose();matCache[k].dispose();delete matCache[k];} }
+// total buildable units of the current make — pattern stitches or plan pieces
+function totalUnits(){ return App.plan?Studio.stitchMeshes.length:(App.parsed?App.parsed.flat.length:0); }
 function masterLoop(t){
   requestAnimationFrame(masterLoop);
-  if(App.playing&&App.parsed){if(!App.lastT)App.lastT=t;const dt=(t-App.lastT)/1000;App.lastT=t;App.progress+=dt*1.6*App.speed;if(App.progress>=App.parsed.flat.length){App.progress=App.parsed.flat.length;pause();}}else App.lastT=t;
+  const T=totalUnits();
+  if(App.playing&&T){if(!App.lastT)App.lastT=t;const dt=(t-App.lastT)/1000;App.lastT=t;App.progress+=dt*1.6*App.speed;if(App.progress>=T){App.progress=T;pause();}}else App.lastT=t;
   if(Studio.ready){Studio.controls.update();updateStudioProgress();updateHUD();Studio.renderer.render(Studio.scene,Studio.camera);}
 }
 
 // ---- HUD / steps -------------------------------------------------------
 function updateHUD(){
+  if(App.plan){ // image-derived medium plan: step-based HUD
+    const total=totalUnits()||1;App.progress=Math.max(0,Math.min(App.progress,total));
+    const cur=Math.min(Math.ceil(App.progress),total),idx=Math.max(0,Math.min(Math.floor(App.progress),total-1));
+    const plan=App.plan.plan,si=plan._unitStep?plan._unitStep[idx]:0,st=plan.steps[si];
+    setText("curN",cur);setText("totN",total);
+    document.getElementById("rowPill3d").querySelector("b").textContent=si+1;
+    document.getElementById("progPill3d").querySelector("b").textContent=Math.round(App.progress/total*100);
+    setText("nowAbbr",App.plan.label||App.plan.adapterId);
+    setText("nowDesc",st?(st.title+" — "+(st.detail.length>90?st.detail.slice(0,87)+"…":st.detail)):"");
+    const scrub=document.getElementById("scrub");if(document.activeElement!==scrub)scrub.value=App.progress;
+    document.querySelectorAll(".step").forEach(el=>{const ri=+el.dataset.row;el.classList.toggle("active",ri===si);el.classList.toggle("done",ri<si);});
+    return;
+  }
   if(!App.parsed) return;
   const total=App.parsed.flat.length;App.progress=Math.max(0,Math.min(App.progress,total));
   const cur=Math.min(Math.ceil(App.progress),total),idx=Math.min(Math.floor(App.progress),total-1);
@@ -1358,7 +1409,7 @@ function updateGaugeReadout(){
 // ---- playback ----------------------------------------------------------
 const playIcon=document.getElementById("playIcon");
 function setPlayIcon(p){playIcon.innerHTML=p?'<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>':'<path d="M8 5v14l11-7z"/>';}
-function play(){if(!App.parsed){toast("Load a pattern first");return;}if(App.progress>=App.parsed.flat.length)App.progress=0;App.playing=true;App.lastT=0;setPlayIcon(true);}
+function play(){const T=totalUnits();if(!T){toast("Load a pattern first");return;}if(App.progress>=T)App.progress=0;App.playing=true;App.lastT=0;setPlayIcon(true);}
 function pause(){App.playing=false;setPlayIcon(false);}
 
 // ---- load / apply ------------------------------------------------------
@@ -1387,12 +1438,12 @@ document.getElementById("loadBtn").addEventListener("click",()=>loadPattern(docu
 let liveTimer=null;
 document.getElementById("patternInput").addEventListener("input",()=>{if(!document.getElementById("liveEdit").checked)return;clearTimeout(liveTimer);liveTimer=setTimeout(()=>loadPattern(document.getElementById("patternInput").value,true),400);});
 document.getElementById("play").addEventListener("click",()=>App.playing?pause():play());
-document.getElementById("next").addEventListener("click",()=>{if(!App.parsed)return;pause();App.progress=Math.min(App.parsed.flat.length,Math.floor(App.progress)+1);});
-document.getElementById("prev").addEventListener("click",()=>{if(!App.parsed)return;pause();App.progress=Math.max(0,Math.ceil(App.progress)-1);});
-document.getElementById("toStart").addEventListener("click",()=>{if(!App.parsed)return;pause();App.progress=0;});
-document.getElementById("scrub").addEventListener("input",e=>{if(!App.parsed)return;pause();App.progress=+e.target.value;});
+document.getElementById("next").addEventListener("click",()=>{const T=totalUnits();if(!T)return;pause();App.progress=Math.min(T,Math.floor(App.progress)+1);});
+document.getElementById("prev").addEventListener("click",()=>{if(!totalUnits())return;pause();App.progress=Math.max(0,Math.ceil(App.progress)-1);});
+document.getElementById("toStart").addEventListener("click",()=>{if(!totalUnits())return;pause();App.progress=0;});
+document.getElementById("scrub").addEventListener("input",e=>{if(!totalUnits())return;pause();App.progress=+e.target.value;});
 document.getElementById("speed").addEventListener("change",e=>App.speed=+e.target.value);
-document.getElementById("finishBtn").addEventListener("click",()=>{if(!App.parsed)return;pause();App.progress=App.parsed.flat.length;toast("Finished piece");});
+document.getElementById("finishBtn").addEventListener("click",()=>{const T=totalUnits();if(!T)return;pause();App.progress=T;toast("Finished piece");});
 
 const swWrap=document.getElementById("swatches");
 SWATCH_COLORS.forEach(([name,hex])=>{const d=document.createElement("div");d.className="yc"+(hex===settings.color?" sel":"");d.style.background=hex;d.title=name;
@@ -2242,6 +2293,267 @@ document.getElementById("publishSave").addEventListener("click",()=>{
   const m=location.hash.match(/d=([^&]+)/);
   if(m){ const st=decodeState(m[1]); if(st){ setTimeout(()=>applyState(st),60); } }
 })();
+
+// ============================================================
+//  Image → Medium pipeline (medium-agnostic)
+//
+//  Three layers, kept strictly separate:
+//   1) buildIR(source, opts)             image → IR (palette-quantized grid)
+//   2) adapter.generatePlan(ir, opts)    IR → medium plan (steps + preview)
+//   3) renderPlanPreview(adapter, plan)  plan preview → shared 3D viewer
+//
+//  The viewer knows only geometric primitives (box/cylinder/tube) — it has no
+//  idea whether it is drawing crochet stitches or LEGO bricks. See
+//  docs/MEDIUM_ADAPTERS.md for the full authoring guide.
+// ============================================================
+
+// ---- 1) Intermediate representation ------------------------------------
+// IR = { w, h, palette: [hex…], grid: Int16Array(w*h) of palette indices,
+//        -1 = transparent (skip this cell) }. Row 0 is the image's TOP row.
+function buildIR(source,{res=22,maxColors=8,cellAspect=1}={}){
+  // cellAspect = physical height/width of one medium cell (crochet sc rows are
+  // shorter than they are wide); IR rows compensate so the result isn't squashed
+  const iw=source.naturalWidth||source.width,ih=source.naturalHeight||source.height;
+  const w=Math.max(2,Math.round(res)),h=Math.max(2,Math.round(res*(ih/iw)/cellAspect));
+  const cv=document.createElement("canvas");cv.width=w;cv.height=h;
+  const c=cv.getContext("2d",{willReadFrequently:true});
+  c.imageSmoothingEnabled=true;c.imageSmoothingQuality="high";
+  c.drawImage(source,0,0,w,h);
+  const d=c.getImageData(0,0,w,h).data,px=[];
+  for(let i=0;i<w*h;i++){const a=d[i*4+3];px.push(a<128?null:[d[i*4],d[i*4+1],d[i*4+2]]);}
+  const opaque=px.filter(Boolean);
+  const pal=medianCut(opaque,Math.max(2,maxColors));
+  const grid=new Int16Array(w*h);
+  for(let i=0;i<w*h;i++) grid[i]=px[i]?nearestPalette(pal,px[i]):-1;
+  return {w,h,palette:pal.map(p=>rgbToHex(p[0],p[1],p[2])),grid};
+}
+// median-cut colour quantization: recursively split the pixel set along its
+// widest RGB channel, then average each box.
+function medianCut(pixels,n){
+  if(!pixels.length) return [[204,204,204]];
+  let boxes=[pixels];
+  const range=b=>{let mx=0;for(let k=0;k<3;k++){let lo=255,hi=0;for(const p of b){if(p[k]<lo)lo=p[k];if(p[k]>hi)hi=p[k];}mx=Math.max(mx,hi-lo);}return mx;};
+  while(boxes.length<n){
+    boxes.sort((A,B)=>range(B)-range(A));
+    const b=boxes[0]; if(b.length<2||range(b)===0) break;
+    boxes.shift();
+    let ch=0,best=0;
+    for(let k=0;k<3;k++){let lo=255,hi=0;for(const p of b){if(p[k]<lo)lo=p[k];if(p[k]>hi)hi=p[k];}if(hi-lo>best){best=hi-lo;ch=k;}}
+    b.sort((p,q)=>p[ch]-q[ch]);
+    const mid=b.length>>1;
+    boxes.push(b.slice(0,mid),b.slice(mid));
+  }
+  return boxes.map(b=>[0,1,2].map(k=>Math.round(b.reduce((s,p)=>s+p[k],0)/b.length)));
+}
+function nearestPalette(pal,rgb){
+  let bi=0,bd=1e9;
+  for(let i=0;i<pal.length;i++){const dr=pal[i][0]-rgb[0],dg=pal[i][1]-rgb[1],db=pal[i][2]-rgb[2];
+    const d=dr*dr*0.9+dg*dg*1.2+db*db*0.8; if(d<bd){bd=d;bi=i;}}
+  return bi;
+}
+
+// ---- 2) MediumAdapter interface -----------------------------------------
+/**
+ * MediumAdapter — implement one object per craft medium and register it with
+ * registerMediumAdapter(). Contract (also documented in docs/MEDIUM_ADAPTERS.md):
+ *
+ *   id      : string — unique key, e.g. "lego"
+ *   label   : string — shown in the medium picker and HUD
+ *   generatePlan(ir, options) → plan:
+ *     steps  : [{title, detail}]  human build instructions, in build order
+ *     EITHER text  : a crochet-style pattern string — the plan renders through
+ *                    the app's existing pattern pipeline (parse → layout →
+ *                    studio). Optional paint: {unitIndex: hex} colour map.
+ *     OR preview   : {units, ground?} for the generic viewer:
+ *       units  : [{ geom, geomPos?, children?, position:[x,y,z], rotY?,
+ *                   color:hex, step:stepIndex }] in build order (reveal order).
+ *         geom   : {type:"box",w,h,d} | {type:"cylinder",r,h}
+ *                | {type:"tube",pts:[[x,y,z]…],radius,closed}
+ *         children: [{geom, position}] extra primitives in the unit's frame
+ *       ground : {w,d,color?} optional base slab under the piece
+ *     meta   : {summary?} free-form info for toasts/telemetry
+ *
+ * The viewer handles reveal/scrub/HUD/steps for every adapter uniformly —
+ * an adapter never touches THREE or the DOM.
+ */
+const MediumAdapters={};
+function registerMediumAdapter(a){ MediumAdapters[a.id]=a; }
+
+// ---- CrochetAdapter: IR → tapestry-crochet chart ------------------------
+// Reuses the app's existing pattern pipeline end-to-end (parse → layout →
+// studio) by emitting a plain sc pattern plus a per-stitch colour map, so the
+// established crochet path is exercised, not duplicated.
+registerMediumAdapter({
+  id:"crochet", label:"Crochet (tapestry)",
+  cellAspect:0.74,          // an sc row is ~0.74 of the stitch width in the layout
+  generatePlan(ir){
+    const {w,h,palette,grid}=ir, bg="#f3ede3";
+    const colOf=(x,y)=>{const g=grid[y*w+x];return g<0?bg:palette[g];};
+    const lines=[],paint={},steps=[];
+    let idx=0;
+    for(let r=0;r<h;r++){
+      lines.push(`Row ${r+1}: sc ${w}`);
+      const imgRow=h-1-r;                    // crochet fabric builds bottom-up
+      const runs=[];let curC=null,runN=0;
+      for(let si=0;si<w;si++){
+        const col=(r%2===1)?(w-1-si):si;     // odd rows are worked back across
+        const cc=colOf(col,imgRow);
+        paint[idx++]=cc;
+        if(cc===curC)runN++;else{if(curC)runs.push(runN+" sc in "+curC);curC=cc;runN=1;}
+      }
+      runs.push(runN+" sc in "+curC);
+      steps.push({title:`Row ${r+1}`,detail:runs.join(", ")});
+    }
+    return {text:lines.join("\n"),paint,steps,
+            meta:{summary:`${w}×${h} chart · ${palette.length} colours`}};
+  }
+});
+
+// ---- LegoAdapter: IR → brick mosaic on a baseplate ----------------------
+// Each IR cell is one stud. Runs of same-coloured cells snap to the longest
+// available brick (1×8/6/4/3/2/1), greedily, row by row.
+registerMediumAdapter({
+  id:"lego", label:"LEGO mosaic",
+  generatePlan(ir){
+    const {w,h,palette,grid}=ir;
+    const U=1, BH=1.2*U, SR=0.3*U, SH=0.2*U, SIZES=[8,6,4,3,2,1];
+    const units=[],steps=[];
+    for(let y=0;y<h;y++){
+      let x=0; const rowSteps=[]; const stepIdx=steps.length;
+      while(x<w){
+        const g=grid[y*w+x];
+        if(g<0){x++;continue;}
+        let run=1; while(x+run<w&&grid[y*w+x+run]===g)run++;
+        let placed=0;
+        while(placed<run){
+          const len=SIZES.find(s=>s<=run-placed);
+          units.push({
+            color:palette[g],
+            position:[(x+placed+len/2-w/2)*U,0,(y+0.5-h/2)*U],
+            geom:{type:"box",w:len*U*0.98,h:BH,d:U*0.98},
+            geomPos:[0,BH/2,0],
+            children:Array.from({length:len},(_,k)=>({
+              geom:{type:"cylinder",r:SR,h:SH},
+              position:[(k-(len-1)/2)*U,BH+SH/2,0]})),
+            step:stepIdx});
+          rowSteps.push(`1×${len} ${palette[g]} @ col ${x+placed+1}`);
+          placed+=len;
+        }
+        x+=run;
+      }
+      if(rowSteps.length)steps.push({title:`Row ${y+1} of ${h}`,detail:rowSteps.join(" · ")});
+    }
+    return {preview:{units,ground:{w:w*U,d:h*U,color:"#3e9e57"}},steps,
+            meta:{summary:`${units.length} bricks · ${palette.length} colours`}};
+  }
+});
+
+// ---- 3) Generic plan viewer ---------------------------------------------
+// Builds meshes from primitive descriptors only — no medium branching.
+function geomFor(gm){
+  switch(gm.type){
+    case "box": return new THREE.BoxGeometry(gm.w,gm.h,gm.d);
+    case "cylinder": return new THREE.CylinderGeometry(gm.r,gm.r,gm.h,18);
+    case "tube": {const curve=new THREE.CatmullRomCurve3(gm.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2])),!!gm.closed,"catmullrom",0.5);
+      return new THREE.TubeGeometry(curve,Math.max(12,gm.pts.length*3),gm.radius,8,!!gm.closed);}
+    default: return new THREE.BoxGeometry(1,1,1);
+  }
+}
+const planMatCache={};
+function planMatFor(hex){
+  // hex palettes are sRGB; material colours are linear in this pipeline —
+  // convert or the pieces render washed-out under the sRGB output encoding
+  if(!planMatCache[hex]) planMatCache[hex]=new THREE.MeshStandardMaterial({color:new THREE.Color(hex).convertSRGBToLinear(),roughness:0.38,metalness:0.05,envMapIntensity:0.7});
+  return planMatCache[hex];
+}
+function buildUnitMesh(u){
+  const g=new THREE.Group(),mat=planMatFor(u.color||"#cccccc");
+  const add=(ge,pos)=>{const m=new THREE.Mesh(ge,mat);if(pos)m.position.set(pos[0],pos[1],pos[2]);m.castShadow=true;m.receiveShadow=true;g.add(m);};
+  add(geomFor(u.geom),u.geomPos);
+  (u.children||[]).forEach(ch=>add(geomFor(ch.geom),ch.position));
+  g.position.set(u.position[0],u.position[1],u.position[2]);
+  if(u.rotY)g.rotation.y=u.rotY;
+  return g;
+}
+function renderPlanPreview(adapter,plan){
+  initStudio();
+  clearStudioMakes();
+  App.parsed=null; App.lay3d=null;
+  App.plan={adapterId:adapter.id,label:adapter.label,plan};
+  const units=plan.preview.units;
+  // reveal metadata: unit → step, and each step's first unit (for step clicks)
+  plan._unitStep=units.map(u=>u.step||0);
+  plan._stepStart=[];
+  units.forEach((u,i)=>{const s=u.step||0;if(plan._stepStart[s]==null)plan._stepStart[s]=i;});
+  for(let i=0;i<plan.steps.length;i++) if(plan._stepStart[i]==null) plan._stepStart[i]=i?plan._stepStart[i-1]:0;
+  units.forEach((u,i)=>{const m=buildUnitMesh(u);m.visible=false;m.userData.grow=false;m.userData.stitchIndex=i;
+    Studio.group.add(m);Studio.stitchMeshes.push(m);});
+  if(plan.preview.ground){const gp=plan.preview.ground;
+    const base=new THREE.Mesh(new THREE.BoxGeometry(gp.w+2,0.4,gp.d+2),new THREE.MeshStandardMaterial({color:new THREE.Color(gp.color||"#3e9e57"),roughness:0.5,metalness:0.02}));
+    base.position.y=-0.2;base.receiveShadow=true;Studio.group.add(base);Studio.extras.push(base);}
+  const box=new THREE.Box3().setFromObject(Studio.group),c=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
+  Studio.group.position.set(-c.x,-box.min.y,-c.z);
+  const dist=Math.max(size.x*1.05,size.z*1.05,8)*1.25;
+  Studio.camera.position.set(dist*0.4,Math.max(size.z*0.9,size.y*1.4,7),dist);
+  Studio.controls.target.set(0,size.y*0.5,0);Studio.controls.update();
+  App.progress=units.length;
+  const scrub=document.getElementById("scrub");scrub.max=units.length;scrub.value=units.length;
+  buildPlanStepList(plan);
+  setStatus(`${plan.steps.length} build steps · ${units.length} pieces`,true);
+}
+function buildPlanStepList(plan){
+  const wrap=document.getElementById("steps");wrap.innerHTML="";
+  plan.steps.forEach((s,i)=>{
+    const el=document.createElement("div");el.className="step";el.dataset.row=i;
+    el.innerHTML=`<div class="num">${i+1}</div><div class="txt"><div class="main">${s.title}</div><div class="sub">${s.detail}</div></div>`;
+    el.addEventListener("click",()=>{App.progress=(plan._stepStart[i]||0)+0.001;pause();});
+    wrap.appendChild(el);});
+  document.getElementById("legend").innerHTML=(plan.preview&&plan.preview.units?[...new Set(plan.preview.units.map(u=>u.color))]:[])
+    .map(hx=>`<div class="li"><span class="sw" style="background:${hx}"></span>${hx}</div>`).join("");
+}
+
+// ---- image-drop UI wiring ------------------------------------------------
+const PlanUI={img:null};
+(function initPlanUI(){
+  const sel=document.getElementById("mediumSel");
+  Object.values(MediumAdapters).forEach(a=>{const o=document.createElement("option");o.value=a.id;o.textContent=a.label;sel.appendChild(o);});
+  const res=document.getElementById("planRes");
+  res.addEventListener("input",()=>setText("planResVal",res.value));
+  const idz=document.getElementById("imgDrop"),inp=document.getElementById("imgInput");
+  inp.addEventListener("change",e=>handleImageFile(e.target.files[0]));
+  ["dragenter","dragover"].forEach(ev=>idz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();idz.classList.add("drag");}));
+  ["dragleave","drop"].forEach(ev=>idz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();idz.classList.remove("drag");}));
+  idz.addEventListener("drop",e=>handleImageFile(e.dataTransfer.files[0]));
+  document.getElementById("genPlanBtn").addEventListener("click",()=>{
+    if(!PlanUI.img){toast("Drop an image first");return;}
+    generateFromImage(PlanUI.img,sel.value,+res.value);
+  });
+})();
+function handleImageFile(f){
+  if(!f||!/^image\//.test(f.type)){toast("Drop an image file");return;}
+  const url=URL.createObjectURL(f),im=new Image();
+  im.onload=()=>{PlanUI.img=im;
+    const idz=document.getElementById("imgDrop");
+    idz.style.backgroundImage=`linear-gradient(rgba(10,8,6,.45),rgba(10,8,6,.45)),url("${url}")`;
+    idz.classList.add("has-img");
+    document.getElementById("imgDropTxt").innerHTML=`<b>${f.name.replace(/[<>&]/g,"")}</b><br><span>ready — pick a medium & generate</span>`;};
+  im.src=url;
+}
+// image → IR → chosen adapter → viewer (or the classic pattern pipeline)
+function generateFromImage(source,mediumId,res){
+  const ad=MediumAdapters[mediumId]; if(!ad){toast("Unknown medium");return null;}
+  const ir=buildIR(source,{res:res||22,maxColors:8,cellAspect:ad.cellAspect||1});
+  const plan=ad.generatePlan(ir,{});
+  if(plan.text){                       // crochet route: existing pipeline
+    App.paint=plan.paint||{};
+    document.getElementById("patternInput").value=plan.text;
+    loadPattern(plan.text);
+  } else {                             // generic route: shared plan viewer
+    renderPlanPreview(ad,plan);
+  }
+  toast(ad.label+" — "+((plan.meta&&plan.meta.summary)||"plan ready"));
+  return plan;
+}
 
 // ---- gate --------------------------------------------------------------
 const GATE_USER="admin",GATE_PASS="password";

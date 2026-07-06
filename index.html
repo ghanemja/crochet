@@ -875,15 +875,29 @@ function layoutPart(part,sp,unit){
   const rows=part.rows, positions=[]; let yCursor=0, maxR=0;
   const round=isWorkedInRound(part);
   if(round){
-    rows.forEach((r,ri)=>{
+    // Per-round radius (from live stitch count) and stitch height.
+    const R=[],HH=[];
+    rows.forEach(r=>{
       const stitchN=r.stitches.filter(s=>s.key!=="ch"&&s.key!=="mr").length||r.stitches.length;
-      const radius=Math.max(stitchN,3)*sp/(2*Math.PI); maxR=Math.max(maxR,radius);
-      const maxH=Math.max(...r.stitches.map(s=>STITCHES[s.key].h)); const n=r.stitches.length;
-      r.stitches.forEach((s,si)=>{ const a=(si/n)*Math.PI*2; const h=STITCHES[s.key].h*unit;
-        positions.push({x:Math.cos(a)*radius,y:yCursor,z:Math.sin(a)*radius,h,key:s.key,half:sp*0.42,rotY:-a+Math.PI/2}); });
-      yCursor+=maxH*unit*0.7;
+      R.push(Math.max(stitchN,3)*sp/(2*Math.PI));
+      HH.push(Math.max(...r.stitches.map(s=>STITCHES[s.key].h)));
     });
-    return {positions,height:yCursor,maxR,round:true};
+    // Domed meridian: each round rises by Δy = √(L² − Δr²), where L is the stitch
+    // arc-length. Fast increases (Δr≈L) lean the wall almost flat (disc bottom);
+    // plain rounds (Δr=0) rise vertically; decreases (Δr<0) curve back inward — so
+    // the rounds trace a real surface of revolution instead of a straight cone.
+    const Y=[0];
+    for(let i=1;i<R.length;i++){ const L=Math.max(HH[i],0.3)*unit*0.92, dr=R[i]-R[i-1];
+      const dy=Math.sqrt(Math.max(L*L-dr*dr,(L*0.22)*(L*0.22))); Y.push(Y[i-1]+dy); }
+    // Outward post tilt = local wall slope (central difference of the meridian).
+    const tiltOf=i=>{ const dr=R[Math.min(i+1,R.length-1)]-R[Math.max(i-1,0)];
+      const dy=(Y[Math.min(i+1,Y.length-1)]-Y[Math.max(i-1,0)])||1e-3; return Math.atan2(dr,dy); };
+    rows.forEach((r,ri)=>{
+      const radius=R[ri]; maxR=Math.max(maxR,radius); const n=r.stitches.length; const tilt=tiltOf(ri);
+      r.stitches.forEach((s,si)=>{ const a=(si/n)*Math.PI*2; const h=STITCHES[s.key].h*unit;
+        positions.push({x:Math.cos(a)*radius,y:Y[ri],z:Math.sin(a)*radius,h,key:s.key,half:sp*0.42,rotY:-a+Math.PI/2,a,tilt}); });
+    });
+    return {positions,height:Y[Y.length-1]+maxR*0.15,maxR,round:true};
   }
   // flat panel with gentle fabric drape
   const maxN=Math.max(...rows.map(r=>r.stitches.length),1); maxR=maxN*sp/2;
@@ -1209,6 +1223,17 @@ function makeLabelSprite(text){
   spr.scale.set(cv.width/fs*1.7,cv.height/fs*1.7,1); spr.renderOrder=10;
   return spr;
 }
+// Orient a stitch mesh from pure layout data (renderer side of the model/geometry
+// split): p.rotY faces the post tangentially; p.tilt leans it along the wall slope,
+// about the ring's tangential axis derived from p.a. Local +Y is the post's growth
+// axis (progressive reveal scales scale.y), so tilting keeps reveal correct.
+const _STITCH_UP=new THREE.Vector3(0,1,0);
+function orientStitch(mesh,p){
+  const faceY=new THREE.Quaternion().setFromAxisAngle(_STITCH_UP,p.rotY||0);
+  if(p.tilt){ const ax=new THREE.Vector3(Math.sin(p.a),0,-Math.cos(p.a));
+    mesh.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(ax,p.tilt).multiply(faceY)); }
+  else mesh.quaternion.copy(faceY);
+}
 function buildStudioGeometry(){
   initStudio();buildYarnMaterial();
   Studio.stitchMeshes.forEach(m=>{Studio.group.remove(m);m.geometry.dispose();});Studio.stitchMeshes=[];
@@ -1221,7 +1246,7 @@ function buildStudioGeometry(){
   pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p);const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
     const seg=Math.max(10,Math.round(pts.length*2.2));const geo=new THREE.TubeGeometry(curve,seg,radius,8,closed);
     const useMat=App.paint[i]?matFor(App.paint[i]):Studio.yarnMat;
-    const mesh=new THREE.Mesh(geo,useMat);mesh.castShadow=true;mesh.receiveShadow=true;mesh.position.set(p.x,p.y,p.z);if(p.rotY)mesh.rotation.y=p.rotY;mesh.visible=false;
+    const mesh=new THREE.Mesh(geo,useMat);mesh.castShadow=true;mesh.receiveShadow=true;mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
     mesh.userData.stitchIndex=i;
     Studio.group.add(mesh);Studio.stitchMeshes.push(mesh);
     (byPart[p.part]=byPart[p.part]||[]).push({mesh,p,i});});
@@ -1341,8 +1366,11 @@ function loadPattern(text,keepProgress){
   const parsed=parsePattern(text);
   if(!parsed.flat.length){toast("No stitches recognized — try a sample");setStatus("nothing recognized",false);return;}
   App.parsed=parsed;recomputeLayouts();
-  if(!keepProgress)App.progress=0; else App.progress=Math.min(App.progress,parsed.flat.length);
-  buildStepList();document.getElementById("scrub").max=parsed.flat.length;
+  // Show the finished make on load (not an empty scene at progress 0). Play/scrub
+  // rewind from here — play() resets to 0 when at the end.
+  if(!keepProgress)App.progress=parsed.flat.length; else App.progress=Math.min(App.progress,parsed.flat.length);
+  buildStepList();
+  const scrub=document.getElementById("scrub");scrub.max=parsed.flat.length;scrub.value=App.progress;
   if(App.view==="3d")buildStudioGeometry();
   setStatus(`${parsed.rows.length} rows · ${parsed.flat.length} stitches`,true);
 }

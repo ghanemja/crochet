@@ -888,6 +888,9 @@ function parsePattern(text){
 function hexToRgb(hex){const h=hex.replace("#","");return{r:parseInt(h.substr(0,2),16),g:parseInt(h.substr(2,2),16),b:parseInt(h.substr(4,2),16)};}
 function rgbToHex(r,g,b){const c=v=>('0'+Math.max(0,Math.min(255,Math.round(v))).toString(16)).slice(-2);return"#"+c(r)+c(g)+c(b);}
 function shade(hex,amt){const{r,g,b}=hexToRgb(hex);const f=amt<0?0:255,p=Math.abs(amt);return rgbToHex(r+(f-r)*p,g+(f-g)*p,b+(f-b)*p);}
+// subtle alternating tint per row so same-colour rows still read as distinct
+// rows of stitches instead of blending into one continuous column
+function rowShadeHex(baseHex,ri){ return shade(baseHex, (ri%2===0)?-0.05:0.04); }
 
 // ============================================================
 //  Shared 3D layout (flat w/ fabric drape, or in-the-round)
@@ -921,7 +924,7 @@ function layoutPart(part,sp,unit){
     rows.forEach((r,ri)=>{
       const radius=R[ri]; maxR=Math.max(maxR,radius); const n=r.stitches.length; const tilt=tiltOf(ri);
       r.stitches.forEach((s,si)=>{ const a=(si/n)*Math.PI*2; const h=STITCHES[s.key].h*unit;
-        positions.push({x:Math.cos(a)*radius,y:Y[ri],z:Math.sin(a)*radius,h,key:s.key,half:sp*0.42,rotY:-a+Math.PI/2,a,tilt}); });
+        positions.push({x:Math.cos(a)*radius,y:Y[ri],z:Math.sin(a)*radius,h,key:s.key,half:sp*0.42,rotY:-a+Math.PI/2,a,tilt,row:ri}); });
     });
     return {positions,height:Y[Y.length-1]+maxR*0.15,maxR,round:true};
   }
@@ -934,7 +937,7 @@ function layoutPart(part,sp,unit){
       const order=reverse?(n-1-si):si; const x=order*sp-rowWidth/2; const h=STITCHES[s.key].h*unit;
       const tx=(maxN>1)?(x/(maxN*sp/2)):0, drape=tx*tx;
       const z=drape*sp*1.1+Math.sin(order*1.3+ri)*sp*0.07+ri*sp*0.05, yDrop=-drape*sp*0.5;
-      positions.push({x,y:yCursor+yDrop,z,h,key:s.key,half:sp*0.42,rotY:0});
+      positions.push({x,y:yCursor+yDrop,z,h,key:s.key,half:sp*0.42,rotY:0,row:ri});
     });
     yCursor+=maxH*unit*0.78;
   });
@@ -1278,7 +1281,7 @@ function buildStudioGeometry(){
   const byPart={};
   pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p);const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
     const seg=Math.max(10,Math.round(pts.length*2.2));const geo=new THREE.TubeGeometry(curve,seg,radius,8,closed);
-    const useMat=App.paint[i]?matFor(App.paint[i]):Studio.yarnMat;
+    const useMat=App.paint[i]?matFor(App.paint[i]):matFor(rowShadeHex(settings.color,p.row||0));
     const mesh=new THREE.Mesh(geo,useMat);mesh.castShadow=true;mesh.receiveShadow=true;mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
     mesh.userData.stitchIndex=i;
     Studio.group.add(mesh);Studio.stitchMeshes.push(mesh);
@@ -1323,6 +1326,9 @@ function updateStudioProgress(){
     // sit the hook tip in the working loop, handle angled up toward the crocheter
     Studio.hook.position.set(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6);
     Studio.hook.visible=complete<meshes.length;
+    // ball of yarn rests on the ground beside whichever column is currently being
+    // worked, instead of staying pinned at the piece's starting corner
+    if(Studio.ball) Studio.ball.position.set(p.x, Studio.ball.position.y, p.z+lay.sp*1.7);
     if(Studio.strand){const tip=new THREE.Vector3(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6);
       Studio.strand.geometry.setFromPoints([Studio.ball.position.clone(),new THREE.Vector3(p.x,topY,p.z+0.3),tip]);Studio.strand.visible=complete<meshes.length;}}
 }

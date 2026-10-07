@@ -888,60 +888,13 @@ function parsePattern(text){
 function hexToRgb(hex){const h=hex.replace("#","");return{r:parseInt(h.substr(0,2),16),g:parseInt(h.substr(2,2),16),b:parseInt(h.substr(4,2),16)};}
 function rgbToHex(r,g,b){const c=v=>('0'+Math.max(0,Math.min(255,Math.round(v))).toString(16)).slice(-2);return"#"+c(r)+c(g)+c(b);}
 function shade(hex,amt){const{r,g,b}=hexToRgb(hex);const f=amt<0?0:255,p=Math.abs(amt);return rgbToHex(r+(f-r)*p,g+(f-g)*p,b+(f-b)*p);}
-// subtle alternating tint per row so same-colour rows still read as distinct
-// rows of stitches instead of blending into one continuous column
-function rowShadeHex(baseHex,ri){ return shade(baseHex, (ri%2===0)?-0.05:0.04); }
 
 // ============================================================
 //  Shared 3D layout (flat w/ fabric drape, or in-the-round)
 // ============================================================
 function isWorkedInRound(part){
   const rnd=part.rows.filter(r=>r.round||/^Rnd/i.test(r.label)).length;
-  return part.flat?part.flat.some(s=>s.key==="mr"):false || part.rows.some(r=>r.stitches.some(s=>s.key==="mr")) || rnd>=Math.ceil(part.rows.length*0.6);
-}
-// lay a single part out at the origin (centred in x/z, growing up in y)
-function layoutPart(part,sp,unit){
-  const rows=part.rows, positions=[]; let yCursor=0, maxR=0;
-  const round=isWorkedInRound(part);
-  if(round){
-    // Per-round radius (from live stitch count) and stitch height.
-    const R=[],HH=[];
-    rows.forEach(r=>{
-      const stitchN=r.stitches.filter(s=>s.key!=="ch"&&s.key!=="mr").length||r.stitches.length;
-      R.push(Math.max(stitchN,3)*sp/(2*Math.PI));
-      HH.push(Math.max(...r.stitches.map(s=>STITCHES[s.key].h)));
-    });
-    // Domed meridian: each round rises by Δy = √(L² − Δr²), where L is the stitch
-    // arc-length. Fast increases (Δr≈L) lean the wall almost flat (disc bottom);
-    // plain rounds (Δr=0) rise vertically; decreases (Δr<0) curve back inward — so
-    // the rounds trace a real surface of revolution instead of a straight cone.
-    const Y=[0];
-    for(let i=1;i<R.length;i++){ const L=Math.max(HH[i],0.3)*unit*0.92, dr=R[i]-R[i-1];
-      const dy=Math.sqrt(Math.max(L*L-dr*dr,(L*0.22)*(L*0.22))); Y.push(Y[i-1]+dy); }
-    // Outward post tilt = local wall slope (central difference of the meridian).
-    const tiltOf=i=>{ const dr=R[Math.min(i+1,R.length-1)]-R[Math.max(i-1,0)];
-      const dy=(Y[Math.min(i+1,Y.length-1)]-Y[Math.max(i-1,0)])||1e-3; return Math.atan2(dr,dy); };
-    rows.forEach((r,ri)=>{
-      const radius=R[ri]; maxR=Math.max(maxR,radius); const n=r.stitches.length; const tilt=tiltOf(ri);
-      r.stitches.forEach((s,si)=>{ const a=(si/n)*Math.PI*2; const h=STITCHES[s.key].h*unit;
-        positions.push({x:Math.cos(a)*radius,y:Y[ri],z:Math.sin(a)*radius,h,key:s.key,half:sp*0.42,rotY:-a+Math.PI/2,a,tilt,row:ri}); });
-    });
-    return {positions,height:Y[Y.length-1]+maxR*0.15,maxR,round:true};
-  }
-  // flat panel with gentle fabric drape
-  const maxN=Math.max(...rows.map(r=>r.stitches.length),1); maxR=maxN*sp/2;
-  rows.forEach((r,ri)=>{
-    const n=r.stitches.length, reverse=ri%2===1, rowWidth=(n-1)*sp;
-    const maxH=Math.max(...r.stitches.map(s=>STITCHES[s.key].h));
-    r.stitches.forEach((s,si)=>{
-      const order=reverse?(n-1-si):si; const x=order*sp-rowWidth/2; const h=STITCHES[s.key].h*unit;
-      const tx=(maxN>1)?(x/(maxN*sp/2)):0, drape=tx*tx;
-      const z=drape*sp*1.1+Math.sin(order*1.3+ri)*sp*0.07+ri*sp*0.05, yDrop=-drape*sp*0.5;
-      positions.push({x,y:yCursor+yDrop,z,h,key:s.key,half:sp*0.42,rotY:0,row:ri});
-    });
-    yCursor+=maxH*unit*0.78;
-  });
-  return {positions,height:yCursor,maxR,round:false};
+  return part.rows.some(r=>r.stitches.some(s=>s.key==="mr")) || rnd>=Math.ceil(part.rows.length*0.6);
 }
 function partRole(name){
   const n=(name||"").toLowerCase();
@@ -956,44 +909,392 @@ function partRole(name){
   if(/(body|torso|belly|tummy|base|shell)/.test(n)) return "body";
   return "other";
 }
-// assemble parts into a figure: head on top of body, limbs to the sides, etc.
-function placeParts(parts,laid,sp){
-  const off=parts.map(()=>({x:0,y:0,z:0,mirror:false}));
-  // pick the main body: explicit body role, else the bulkiest part, else first
-  let bodyIdx=parts.findIndex(p=>partRole(p.name)==="body");
-  if(bodyIdx<0){ let best=-1,bv=-1; laid.forEach((l,i)=>{const v=l.maxR*l.maxR*l.height; if(v>bv){bv=v;best=i;}}); bodyIdx=Math.max(0,best); }
-  const B=laid[bodyIdx], bodyR=B.maxR, bodyTop=B.height;
-  let headIdx=-1, otherX=0; const otherDir=[1,-1]; let otherN=0;
-  parts.forEach((p,i)=>{ if(i===bodyIdx) return; const role=partRole(p.name), L=laid[i];
-    if(role==="head"){ headIdx=i; off[i]={x:0,y:bodyTop-L.maxR*0.25,z:0,mirror:false}; }
-  });
-  const head=headIdx>=0?{idx:headIdx,top:off[headIdx].y+laid[headIdx].height,r:laid[headIdx].maxR,y:off[headIdx].y}:null;
-  parts.forEach((p,i)=>{ if(i===bodyIdx||i===headIdx) return; const role=partRole(p.name), L=laid[i], mir=p.count>1;
-    switch(role){
-      case "ear":   off[i]={x:(head?head.r:bodyR)*0.7, y:(head?head.top:bodyTop)-L.height*0.4, z:0, mirror:mir}; break;
-      case "horn":  off[i]={x:(head?head.r:bodyR)*0.4, y:(head?head.top:bodyTop)-L.height*0.2, z:0, mirror:mir}; break;
-      case "eye":   off[i]={x:(head?head.r:bodyR)*0.42, y:head?head.y+head.r*0.9:bodyTop, z:(head?head.r:bodyR)*0.78, mirror:mir}; break;
-      case "nose":  off[i]={x:0, y:head?head.y+head.r*0.7:bodyTop*0.8, z:(head?head.r:bodyR)*0.92, mirror:false}; break;
-      case "arm":   off[i]={x:bodyR+L.maxR*0.5, y:bodyTop*0.55, z:0, mirror:mir}; break;
-      case "leg":   off[i]={x:bodyR*0.5, y:-L.height*0.9, z:bodyR*0.2, mirror:mir}; break;
-      case "tail":  off[i]={x:0, y:bodyTop*0.3, z:-(bodyR+L.maxR*0.5), mirror:false}; break;
-      default:      { const dir=otherDir[otherN%2]; otherX+=L.maxR*2+sp*2;
-                      off[i]={x:dir*(bodyR+otherX), y:0, z:bodyR+L.maxR+sp*3, mirror:false}; otherN++; }
+// ============================================================
+//  Fabric engine — pattern → physically-structured crochet fabric
+// ============================================================
+// Real crochet is one yarn interlocked with itself: every stitch is anchored
+// INTO a stitch of the row below (its legs start under that row's top braid)
+// and finishes in a chain braid along the top of its own row. We model that:
+//
+//  • each part is a surface — a flat panel, or a surface of revolution for
+//    in-the-round work — addressed by (level, lateral): level k is the top
+//    edge of geometric row k (level 0 = foundation chain / magic ring), and
+//    lateral is x (flat) or the angle around the axis (round);
+//  • a stitch is built between level L-1 (where the hook went in) and L:
+//    sc → two "V" legs + the top braid loop; hdc/dc/tr → a twisted post with
+//    its yarn-over wraps; chains → interlocking oval links;
+//  • a darker inset "core" sits behind the loops (the back layers of yarn) so
+//    the fabric is opaque where real fabric is, with holes only where chains
+//    leave them (mesh / filet);
+//  • yarn is a 3-ply twisted tube, fibre normal-mapped, with crevice
+//    occlusion baked into vertex colours and a halo of loose fibres.
+// Every stitch of a part goes into ONE indexed geometry ordered by stitch, so
+// the progressive reveal is a drawRange: the stitch being worked draws itself.
+const FAB={RS:12, PITCH:7};
+function fabricW(){ return 2.4*hookGauge(); }
+// yarn radius relative to the stitch: thick yarn on a small hook packs denser
+function fabricYarnR(w){ const k=(yarnRadius()/1.4)/Math.sqrt(hookGauge()/1.25); return w*Math.max(0.12,Math.min(0.28,0.22*k)); }
+function smooth01(a,b,x){ const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); }
+// first row is a magic ring, or "ch N, sl st to join" (a chain ring)
+function startsRing(part){ const r0=part.rows[0]; if(!r0) return false; const ks=r0.stitches.map(s=>s.key);
+  if(ks.includes("mr")) return true;
+  return ks.length>2 && ks[ks.length-1]==="sl" && ks.slice(0,-1).every(k=>k==="ch"); }
+
+// ---- 1) part → surface model (pure data, no THREE meshes) -----------------
+function buildPartModel(part,w){
+  const ring=startsRing(part), round=ring||isWorkedInRound(part);
+  const units=[], levels=[{n:0,cells:[]}];
+  let found=0, ringMr=false, ringCh=0;
+  part.rows.forEach((row,ri)=>{
+    const ks=row.stitches.map(s=>s.key);
+    const U=ks.map(k=>({key:k,kind:"none",cell:-1,level:0,link:0,links:1,row:ri}));
+    let rest=ks.map((_,i)=>i);
+    if(ri===0&&ring){
+      if(ks.includes("mr")){ const mi=ks.indexOf("mr"); U[mi].kind="ring"; ringMr=true; rest=rest.filter(i=>i>mi); }
+      else { ringCh=ks.length-1; ks.forEach((k,i)=>{ if(k==="ch") Object.assign(U[i],{kind:"ringch",link:i,links:ringCh}); else U[i].kind="join"; }); rest=[]; }
+    } else if(ri===0&&!round&&ks.every(k=>k==="ch"||k==="sl")){
+      found=ks.filter(k=>k==="ch").length; let m=0;
+      ks.forEach((k,i)=>{ if(k==="ch") Object.assign(U[i],{kind:"found",link:m++,links:found}); }); rest=[];
     }
+    if(rest.length){
+      const L=levels.length, cells=[]; let a=0, b=rest.length, k=0;
+      while(k<b&&ks[rest[k]]==="ch") k++;
+      const other=k<b;
+      if(other&&k>0){
+        if(k===1) U[rest[0]].kind="turn";           // turning chain: sits off the edge, not a stitch
+        else { const c={kind:"chcol",key:"ch",units:[]};   // "ch 3" standing in as the first tall stitch
+          for(let m=0;m<k;m++){ Object.assign(U[rest[m]],{kind:"chcol",cell:0,link:m,links:k}); c.units.push(rest[m]); } cells.push(c); }
+        a=k;
+      }
+      if(round&&b-a>1&&ks[rest[b-1]]==="sl"){ U[rest[b-1]].kind="join"; b--; }
+      for(let q=a;q<b;q++){ const i=rest[q], kk=ks[i]; if(kk==="mr") continue;
+        U[i].kind=kk==="ch"?"chtop":"post"; U[i].cell=cells.length; cells.push({kind:U[i].kind,key:kk,units:[i]}); }
+      if(cells.length){ rest.forEach(i=>U[i].level=L); levels.push({n:cells.length,cells,row:ri}); }
+      else rest.forEach(i=>U[i].level=L-1);
+    }
+    U.forEach(u=>units.push(u));
   });
-  return {off, bodyIdx};
+  const NL=levels.length;
+  levels.forEach((lv,L)=>{ if(!L) return; let h=0;
+    lv.cells.forEach(c=>{ if(c.kind==="post") h=Math.max(h,STITCHES[c.key].h*0.85*w);
+      else if(c.kind==="chcol") h=Math.max(h,Math.min(2.6,c.units.length*0.62)*0.85*w); });
+    lv.h=h||0.55*w; });
+  const M={part,round,ring,ringMr,ringCh,found,units,levels,NL,w};
+  if(round){
+    const R=[],Y=[0];
+    R[0]=ring?(ringMr?0.1*w:Math.max(3,ringCh)*w*0.85/(2*Math.PI)):Math.max(3,NL>1?levels[1].n:3)*w/(2*Math.PI);
+    for(let L=1;L<NL;L++){ R[L]=Math.max(levels[L].n,3)*w/(2*Math.PI); const h=levels[L].h, dr=R[L]-R[L-1];
+      Y[L]=Y[L-1]+Math.sqrt(Math.max(h*h-dr*dr,(0.22*h)*(0.22*h))); }
+    { const ln=levels[NL-1].n, pn=NL>2?levels[NL-2].n:0; inflateMeridian(R,Y,levels.map(l=>l.h||0),w,NL>2&&ln<=8&&pn>ln); }
+    const mer=R.map((_,L)=>{ const a=Math.max(0,L-1), b=Math.min(NL-1,L+1); let dr=R[b]-R[a], dy=Y[b]-Y[a];
+      if(NL===1){dr=0;dy=1;} const l=Math.hypot(dr,dy)||1; return [dr/l,dy/l]; });
+    let ph=0; levels.forEach((lv,L)=>{ if(!L) return; lv.D=2*Math.PI/lv.n; ph+=0.22*lv.D; lv.ph=ph; });
+    Object.assign(M,{R,Y,mer});
+    const last=levels[NL-1], prev=levels[NL-2];
+    M.closedTop=NL>2&&last.n<=8&&prev&&prev.n>last.n;
+    M.Rmax=Math.max(...R); M.Ytop=Y[NL-1]; M.Rtop=R[NL-1];
+  } else {
+    const Y=[found?0.55*w:0]; let dir=found?-1:1;
+    for(let L=1;L<NL;L++){ Y[L]=Y[L-1]+levels[L].h; levels[L].D=dir*w; dir=-dir; }
+    M.Y=Y; M.Ytop=Y[NL-1]; M.width=Math.max(found,...levels.map(l=>l.n))*w; M.Rmax=M.width/2;
+  }
+  M.lat=(L,c)=>{ const lv=levels[L]; return round?lv.ph+(c+0.5)*lv.D:(c+0.5-lv.n/2)*lv.D; };
+  M.cellW=(L)=>round?Math.max(M.R[L],0.2*w)*levels[L].D:w;
+  M.latPer=(Lf)=>round?1/Math.max(lerpLevels(M.R,Lf),0.2*w):1;
+  return M;
 }
+// Worked-in-the-round pieces get their shape from stuffing, not from stacking
+// rigid rings: a 6→24→6 head is a ball, not a can. Solve the meridian as a
+// position-based chain: segment i is one round tall (slightly stretchy), ring i
+// can't exceed its stitch-count circumference, and internal pressure pushes
+// every ring outward along the meridian normal until the constraints balance.
+function inflateMeridian(R,Y,H,w,closedTop){
+  const K=R.length-1; if(K<3) return;          // a 1–2 round disc/cup keeps its natural flare
+  const Rmax=R.slice(), r=R.slice(), y=Y.slice(), step=0.03*w, Rbig=Math.max(...Rmax), R0=R[0];
+  for(let it=0;it<320;it++){
+    // pressure ∝ ring area: force on ring i along the outward meridian normal
+    for(let i=0;i<=K;i++){ if(i===K&&!closedTop) continue;
+      const a=Math.max(0,i-1), b=Math.min(K,i+1), tx=r[b]-r[a], ty=y[b]-y[a], l=Math.hypot(tx,ty)||1, k=step*(0.15+r[i]/Rbig);
+      if(i>0) r[i]+=ty/l*k; y[i]-=tx/l*k; }
+    // a little bending stiffness so the fabric curves instead of kinking
+    for(let i=1;i<K;i++){ r[i]+=0.12*((r[i-1]+r[i+1])/2-r[i]); y[i]+=0.12*((y[i-1]+y[i+1])/2-y[i]); }
+    for(let pass=0;pass<6;pass++){
+      for(let i=1;i<=K;i++){ const dx=r[i]-r[i-1], dy=y[i]-y[i-1], d=Math.hypot(dx,dy)||1e-6;
+        const tgt=Math.max(H[i]*0.92,Math.min(H[i]*1.05,d)); if(Math.abs(d-tgt)<1e-7) continue;
+        const k=(d-tgt)/d*0.5; r[i-1]+=dx*k; y[i-1]+=dy*k; r[i]-=dx*k; y[i]-=dy*k; }
+      r[0]=R0; for(let i=1;i<=K;i++) r[i]=Math.max(0.05*w,Math.min(r[i],Rmax[i]*1.03));
+    }
+  }
+  for(let i=0;i<=K;i++){ R[i]=r[i]; Y[i]=y[i]-y[0]; }
+}
+// linear interpolation over per-level arrays at a continuous level (extrapolates)
+function lerpLevels(arr,Lf){ const n=arr.length; if(n===1) return arr[0];
+  const L0=Math.max(0,Math.min(n-2,Math.floor(Lf))), t=Lf-L0; return arr[L0]+(arr[L0+1]-arr[L0])*t; }
+// gentle hand-made waviness for flat pieces (z offset + its slope)
+function flatWave(x,y,w){ const a=x/(2.6*w)+y/(3.3*w), b=y/(1.7*w)+1.3, c=x/(4.1*w)-0.7;
+  return { z:w*(0.10*Math.sin(a)+0.05*Math.sin(b)+0.06*Math.sin(c)),
+    dx:0.10*Math.cos(a)/2.6+0.06*Math.cos(c)/4.1, dy:0.10*Math.cos(a)/3.3+0.05*Math.cos(b)/1.7 }; }
+// surface frame at (level, lateral): P point, N outward normal, W wale (up the
+// stitches), T along the row
+function fabricFrame(M,Lf,lat){
+  if(M.round){
+    const R=Math.max(lerpLevels(M.R,Lf),0.02*M.w), Y=lerpLevels(M.Y,Lf);
+    const mr=lerpLevels(M.mer.map(m=>m[0]),Lf), my=lerpLevels(M.mer.map(m=>m[1]),Lf), l=Math.hypot(mr,my)||1;
+    const c=Math.cos(lat), s=Math.sin(lat), dr=mr/l, dy=my/l;
+    return {P:new THREE.Vector3(R*c,Y,R*s), N:new THREE.Vector3(dy*c,-dr,dy*s), W:new THREE.Vector3(dr*c,dy,dr*s), T:new THREE.Vector3(-s,0,c)};
+  }
+  const y=lerpLevels(M.Y,Lf), f=flatWave(lat,y,M.w);
+  return {P:new THREE.Vector3(lat,y,f.z), N:new THREE.Vector3(-f.dx,-f.dy,1).normalize(), W:new THREE.Vector3(0,1,f.dy).normalize(), T:new THREE.Vector3(1,0,f.dx).normalize()};
+}
+function fabricPt(M,Lf,lat,o,v){ const F=fabricFrame(M,Lf,lat); return F.P.addScaledVector(F.N,o||0).addScaledVector(F.W,v||0); }
+
+// ---- 2) per-stitch yarn paths -------------------------------------------
+// Each emitter returns {tubes:[{pts,closed,ref}], core:[patch], work:{Lf,lat}}
+// ref = surface point+normal used for baked crevice occlusion.
+function refAt(M,Lf,lat){ const F=fabricFrame(M,Lf,lat); return {C:F.P,N:F.N}; }
+// an oval chain link centred at (Lf,lat). along = "lat" (lies along the row)
+// or "wale" (stands up the fabric). len/wid are physical lengths.
+function chainLink(M,Lf,lat,o,v,along,len,wid,tilt,r){
+  if(r){ wid=Math.max(wid,2.7*r); len=Math.max(len,wid*1.15); }
+  const pts=[], n=12, ca=Math.cos(tilt), sa=Math.sin(tilt);
+  const hFrame=fabricFrame(M,Lf,lat), lvH=Math.max(1e-3,levelSpan(M,Lf));
+  for(let i=0;i<n;i++){ const a=i/n*Math.PI*2, A=Math.cos(a)*len/2, B=Math.sin(a)*wid/2;
+    if(along==="lat") pts.push(fabricPt(M,Lf,lat+A*M.latPer(Lf),o+B*sa,v+B*ca));
+    else pts.push(fabricPt(M,Lf+A/lvH,lat+B*ca*M.latPer(Lf),o+B*sa,v)); }
+  return {pts,closed:true,ref:{C:hFrame.P.clone().addScaledVector(hFrame.N,-0.2*wid),N:hFrame.N}};
+}
+// physical height of one level step around Lf (for converting lengths → Lf)
+function levelSpan(M,Lf){ const n=M.Y.length; if(n<2) return M.w;
+  const L0=Math.max(0,Math.min(n-2,Math.floor(Lf)));
+  if(!M.round) return M.Y[L0+1]-M.Y[L0];
+  return Math.hypot(M.R[L0+1]-M.R[L0],M.Y[L0+1]-M.Y[L0]); }
+
+function emitUnit(M,u,r){
+  const w=M.w, out={tubes:[],core:[],work:null};
+  const L=u.level, lv=M.levels[L];
+  if(u.kind==="found"){
+    const x=(u.link+0.5-u.links/2)*w;
+    out.tubes.push(chainLink(M,0,x,0,-0.25*w,"lat",1.22*w,0.5*w,(u.link%2?1:-1)*0.6,r));
+    out.work={Lf:0,lat:x}; return out;
+  }
+  if(u.kind==="ring"){   // magic ring: a doubled loop of yarn, cinched
+    const Rd=Math.max(M.R[0],1.45*r), Y0=M.Y[0];
+    for(let k=0;k<2;k++){ const pts=[], rr=Rd*(k?1.12:0.95); for(let i=0;i<14;i++){ const a=i/14*Math.PI*2;
+      pts.push(new THREE.Vector3(Math.cos(a)*rr,Y0+(k?-0.5:0.4)*r,Math.sin(a)*rr)); }
+      out.tubes.push({pts,closed:true,ref:{C:new THREE.Vector3(0,Y0+r,0),N:new THREE.Vector3(0,-1,0)}}); }
+    out.core.push({disc:true});
+    out.work={Lf:0,lat:0}; return out;
+  }
+  if(u.kind==="ringch"){ const a=(u.link+0.5)/u.links*Math.PI*2, cw=M.R[0]*2*Math.PI/u.links;
+    out.tubes.push(chainLink(M,0,a,0,0,"lat",cw*1.3,0.6*w,(u.link%2?1:-1)*0.5,r));
+    if(u.link===0) out.core.push({disc:true});
+    out.work={Lf:0,lat:a}; return out;
+  }
+  if(!lv||!lv.D) { out.work={Lf:Math.max(0,L),lat:0}; return out; }
+  const D=lv.D, cw=M.cellW(L);
+  if(u.kind==="turn"){ const lat=M.lat(L,0)-0.95*D;
+    out.tubes.push(chainLink(M,L-0.5,lat+0.25*D,0.2*r,0,"wale",lv.h*0.9,0.42*w,0.5,r));
+    out.work={Lf:L,lat}; return out; }
+  if(u.kind==="join"){ const lat=M.lat(L,0)-0.5*D;
+    out.tubes.push(chainLink(M,L,lat,0.3*r,-0.1*w,"lat",Math.abs(D)/M.latPer(L)*0.7,0.42*w,0.4,r));
+    out.work={Lf:L,lat}; return out; }
+  const c=u.cell, latM=M.lat(L,c);
+  if(u.kind==="chtop"){
+    out.tubes.push(chainLink(M,L-0.04,latM,0.2*r,-0.12*w,"lat",cw*1.3,0.55*w,(c%2?1:-1)*0.55,r));
+    out.work={Lf:L,lat:latM}; return out;
+  }
+  if(u.kind==="chcol"){ const k=u.links, m=u.link;
+    out.tubes.push(chainLink(M,L-1+(m+0.5)/k,latM,0.35*r,0,"wale",lv.h/k*1.32,0.6*cw,(m%2?1:-1)*0.6,r));
+    if(m===k-1) out.core.push({L,lat0:latM-0.5*D,lat1:latM+0.5*D});
+    out.work={Lf:L-1+(m+1)/k,lat:latM}; return out;
+  }
+  if(u.kind!=="post"){ out.work={Lf:L,lat:latM}; return out; }
+  // ---- a worked stitch (sc / hdc / dc / tr / sl / inc / dec) ----
+  const key=u.key, tall=(key==="hdc"||key==="dc"||key==="tr");
+  const prevD=L>1?M.levels[L-1].D:(M.round?D*0.35:D);
+  const spread=key==="dec"?0.45:(tall?0.13:0.03);
+  const tuck=L>1?-0.24:(M.found?-0.35:0);
+  const B0=L-1+tuck, top=L-0.1;
+  const ref=refAt(M,L-0.5,latM);
+  if(!tall){
+    // sc family: the two legs of the "V", bulging proud of the surface
+    for(const sg of [-1,1]){
+      // legs start together in the stitch below and open into a "V" whose
+      // arms ride up over this row's braid (as on real amigurumi fabric)
+      const lb=latM+sg*spread*prevD, lt=latM+sg*0.32*D;
+      const pts=[ fabricPt(M,B0,lb,0.3*r,0),
+        fabricPt(M,L-1+0.25,lerp(lb,lt,0.3),0.85*r,0),
+        fabricPt(M,L-1+0.62,lerp(lb,lt,0.7),0.95*r,0),
+        fabricPt(M,L+0.04,lt,0.75*r,0) ];
+      out.tubes.push({pts,closed:false,ref});
+    }
+  } else {
+    // tall stitch: two strands twisting up the post, flaring into the top
+    const turns=key==="hdc"?0.55:key==="dc"?0.9:1.3, steps=8;
+    for(const k of [0,1]){ const pts=[];
+      for(let i=0;i<=steps;i++){ const t=i/steps, Lf=lerp(B0,top,t), al=Math.PI*(t*turns+k);
+        let lat=latM+(k?1:-1)*spread*prevD*(1-t)+0.17*D*Math.cos(al)*Math.min(1,t*3);
+        let o=0.95*r+0.16*cw*Math.sin(al)*Math.min(1,t*3);
+        if(i===steps){ lat=latM+(k?0.3:-0.3)*D; o=0.55*r; }
+        pts.push(fabricPt(M,Lf,lat,o,0)); }
+      out.tubes.push({pts,closed:false,ref}); }
+    // yarn-over wraps around the post (the diagonal bars on hdc/dc/tr)
+    const wraps=key==="hdc"?[[0.58,0.8]]:key==="dc"?[[0.34,0.6]]:[[0.24,0.44],[0.56,0.76]];
+    wraps.forEach(([a,b])=>{ const pts=[];
+      for(let i=0;i<=11;i++){ const be=-0.75*Math.PI+i/11*2.5*Math.PI, t=lerp(a,b,i/11);
+        pts.push(fabricPt(M,lerp(B0,top,t),latM+0.42*D*Math.cos(be),0.9*r+Math.max(0.34*cw,2.1*r)*Math.sin(be),0)); }
+      out.tubes.push({pts,closed:false,ref}); });
+  }
+  // top braid: the loop that lies along the top of the row (front + back loop)
+  { const pts=[], n=14, cen=latM+0.1*D, bmin=Math.max(0.2*cw,1.3*r), amaj=Math.max(0.56,1.25*bmin/cw);
+    for(let i=0;i<n;i++){ const a=i/n*Math.PI*2, sa=Math.sin(a);
+      pts.push(fabricPt(M,L,cen+amaj*D*Math.cos(a),-0.65*r+bmin*sa,0.05*r-0.3*r*Math.max(0,sa))); }
+    out.tubes.push({pts,closed:true,ref:refAt(M,L-0.15,latM)}); }
+  // wrong side: the horizontal bar each stitch leaves on the back of the fabric
+  // (only where the back can be seen — flat pieces and open cups/tubes)
+  if(!M.round||!M.closedTop){ const pts=[];
+    for(let i=0;i<=4;i++){ const t=i/4; pts.push(fabricPt(M,L-0.42+0.08*Math.sin(Math.PI*t),latM+(t-0.5)*1.05*D,-1.05*r-0.35*r*Math.sin(Math.PI*t),0)); }
+    out.tubes.push({pts,closed:false,ref:{C:ref.C,N:ref.N.clone().negate()}}); }
+  out.core.push({L,lat0:latM-0.5*D,lat1:latM+0.5*D});
+  out.work={Lf:L,lat:latM};
+  return out;
+}
+
+// ---- 3) geometry buffers ------------------------------------------------
+function FabBuf(){ return {pos:[],nor:[],uv:[],shade:[],idx:[],nv:0,uIdx:[],uVert:[],hpos:[],hshade:[],uHair:[],cpos:[],cnor:[],cshade:[],cidx:[],cnv:0,uCore:[],uCVert:[]}; }
+function fabMarkUnit(G){ G.uIdx.push(G.idx.length); G.uVert.push(G.nv); G.uHair.push(G.hpos.length/3); G.uCore.push(G.cidx.length); G.uCVert.push(G.cnv); }
+function fabSeal(G){ fabMarkUnit(G); }
+// plied yarn tube: 3 strands twisting along the centreline (geometric lobes,
+// with analytic normals), crevice occlusion baked per vertex, plus fibre halo
+function emitTube(G,pts,closed,r,ref,opt){
+  const curve=new THREE.CatmullRomCurve3(pts,closed,"centripetal");
+  curve.arcLengthDivisions=Math.max(30,pts.length*6);
+  const len=curve.getLength(), segs=Math.max(4,Math.min(48,Math.ceil(len/(r*0.7))));
+  const P=curve.getSpacedPoints(segs), fr=curve.computeFrenetFrames(segs,closed);
+  const RS=FAB.RS, base=G.nv, ply=opt.ply, pitch=r*FAB.PITCH, seed=opt.seed||0;
+  // smooth 3-lobe cross-section (ply ridges); radial resolution is 4 verts/lobe
+  const kTw=2*Math.PI/pitch;
+  const v=new THREE.Vector3(), n=new THREE.Vector3(), er=new THREE.Vector3(), ep=new THREE.Vector3();
+  for(let i=0;i<=segs;i++){ const s=len*i/segs, C=P[i], Nn=fr.normals[i], Bn=fr.binormals[i], Tn=fr.tangents[i];
+    const dye=1+0.045*Math.sin(s/(r*2.3)+seed)+0.03*Math.sin(s/(r*0.9)+seed*1.7);
+    for(let j=0;j<=RS;j++){ const ph=j/RS*Math.PI*2, co=Math.cos(ph), si=Math.sin(ph);
+      const x=3*(ph-kTw*s), rho=r*(1-ply*0.5*(1-Math.cos(x)));
+      const dphi=-r*ply*1.5*Math.sin(x), ds=-dphi*kTw;      // ∂ρ/∂φ, ∂ρ/∂s
+      er.set(0,0,0).addScaledVector(Nn,co).addScaledVector(Bn,si);
+      ep.set(0,0,0).addScaledVector(Nn,-si).addScaledVector(Bn,co);
+      v.copy(C).addScaledVector(er,rho);
+      n.copy(er).addScaledVector(ep,-dphi/rho).addScaledVector(Tn,-ds).normalize();
+      G.pos.push(v.x,v.y,v.z); G.nor.push(n.x,n.y,n.z); G.uv.push(s/(r*4),j/RS);
+      const hgt=(v.x-ref.C.x)*ref.N.x+(v.y-ref.C.y)*ref.N.y+(v.z-ref.C.z)*ref.N.z;
+      const ao=opt.noAO?1:0.3+0.7*smooth01(-1.3*r,1.9*r,hgt);
+      const cav=opt.noAO?1:0.7+0.3*Math.max(0,Math.min(1,0.5+0.6*(n.x*ref.N.x+n.y*ref.N.y+n.z*ref.N.z)));
+      const groove=0.86+0.14*(0.5+0.5*Math.cos(x));
+      G.shade.push(ao*cav*groove*dye);
+    }
+  }
+  const RW=RS+1;
+  for(let i=0;i<segs;i++) for(let j=0;j<RS;j++){ const a=base+i*RW+j, b=a+RW;
+    G.idx.push(a,a+1,b, b,a+1,b+1); }   // CCW seen from outside (N×B frame)
+  G.nv+=(segs+1)*RW;
+  // loose fibres: short kinked hairs leaving the surface
+  const nh=opt.fuzzN*len/(6*r);
+  for(let h=0;h<nh;h++){ if(h+1>nh&&Math.random()>nh-h) break;
+    const i=Math.floor(Math.random()*(segs+1)), j=Math.floor(Math.random()*RS);
+    const k=(base+i*RW+j)*3, sh=G.shade[base+i*RW+j];
+    const p0=new THREE.Vector3(G.pos[k],G.pos[k+1],G.pos[k+2]), nn=new THREE.Vector3(G.nor[k],G.nor[k+1],G.nor[k+2]);
+    const d=nn.clone().add(new THREE.Vector3(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).multiplyScalar(1.3)).normalize();
+    const ln=r*(0.2+Math.random()*0.7)*opt.fuzzLen;
+    const p1=p0.clone().addScaledVector(d,ln*0.5);
+    d.add(new THREE.Vector3(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).multiplyScalar(0.9)).normalize();
+    const p2=p1.clone().addScaledVector(d,ln*0.5);
+    G.hpos.push(p0.x,p0.y,p0.z,p1.x,p1.y,p1.z, p1.x,p1.y,p1.z,p2.x,p2.y,p2.z);
+    const hs=0.75+0.35*sh; G.hshade.push(hs,hs*1.08,hs*1.08,hs*1.15);
+  }
+}
+// inset core patch behind a cell (the back layers of yarn), slightly pillowed
+function emitCore(G,M,patch,r){
+  const base=G.cnv;
+  if(patch.disc||patch.cap){
+    const Lf=patch.disc?0:M.NL-1, segs=18, o=-0.45*r;
+    const ctr=patch.disc?new THREE.Vector3(0,M.Y[0]-0.1*r,0):new THREE.Vector3(0,M.Y[M.NL-1]+0.25*M.R[M.NL-1],0);
+    const nC=patch.disc?new THREE.Vector3(0,-1,0):new THREE.Vector3(0,1,0);
+    G.cpos.push(ctr.x,ctr.y,ctr.z); G.cnor.push(nC.x,nC.y,nC.z); G.cshade.push(0.8);
+    for(let i=0;i<=segs;i++){ const a=i/segs*Math.PI*2, F=fabricFrame(M,Lf,a), p=F.P.addScaledVector(F.N,o);
+      G.cpos.push(p.x,p.y,p.z); G.cnor.push(nC.x,nC.y,nC.z); G.cshade.push(0.7); }
+    for(let i=0;i<segs;i++) G.cidx.push(base,base+1+i,base+2+i);
+    G.cnv+=segs+2; return;
+  }
+  const L=patch.L, nu=3, nt=2;
+  for(let ti=0;ti<=nt;ti++) for(let ui=0;ui<=nu;ui++){ const t=ti/nt, uu=ui/nu;
+    const Lf=L-1+t, lat=lerp(patch.lat0,patch.lat1,uu), F=fabricFrame(M,Lf,lat);
+    const p=F.P.addScaledVector(F.N,-0.55*r+0.5*r*Math.sin(Math.PI*t)*Math.sin(Math.PI*uu));
+    G.cpos.push(p.x,p.y,p.z); G.cnor.push(F.N.x,F.N.y,F.N.z); G.cshade.push(0.55+0.45*Math.sin(Math.PI*t)*Math.sin(Math.PI*uu)); }
+  for(let ti=0;ti<nt;ti++) for(let ui=0;ui<nu;ui++){ const a=base+ti*(nu+1)+ui, b=a+nu+1;
+    G.cidx.push(a,a+1,b, b,a+1,b+1); }
+  G.cnv+=(nt+1)*(nu+1);
+}
+
+// ---- 4) assembly: where each part sits in the finished figure -----------
+function radiusAtY(M,y){ if(!M.round) return M.Rmax; const Y=M.Y,R=M.R;
+  if(y<=Y[0]) return R[0]; for(let i=1;i<Y.length;i++) if(y<=Y[i]){ const t=(y-Y[i-1])/((Y[i]-Y[i-1])||1); return lerp(R[i-1],R[i],t); }
+  return R[R.length-1]; }
+function quatTo(dir){ return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),dir.clone().normalize()); }
+function assembleFabric(models){
+  const roles=models.map(m=>partRole(m.part.name));
+  const X=models.map(()=>({pos:new THREE.Vector3(),quat:new THREE.Quaternion(),mirror:"x"}));
+  if(models.length===1) return X;
+  let bodyI=roles.indexOf("body"), headI=roles.indexOf("head");
+  if(bodyI<0&&headI<0){ let best=-1,bv=-1; models.forEach((m,i)=>{ const v=m.Rmax*m.Rmax*m.Ytop; if(v>bv){bv=v;best=i;} }); bodyI=best; }
+  const B=bodyI>=0?models[bodyI]:null, w=models[0].w;
+  let Hc=null, headR=0;
+  if(headI>=0){ const H=models[headI];
+    let y0=0;
+    if(B&&B.round){ const target=B.Rtop; // seat the head's lower dome into the body's neck opening
+      for(let i=0;i<H.Y.length;i++){ if(H.R[i]>=target){ y0=i?lerp(H.Y[i-1],H.Y[i],(target-H.R[i-1])/((H.R[i]-H.R[i-1])||1)):H.Y[0]; break; } }
+      X[headI].pos.set(0,B.Ytop-y0-0.15*w,0); }
+    let im=0; H.R.forEach((r,i)=>{ if(r>=H.R[im]-1e-6) im=i; });
+    const imid=H.R.reduce((acc,r,i)=>r>=H.Rmax*0.97?acc.concat(i):acc,[]); const ym=imid.length?(H.Y[imid[0]]+H.Y[imid[imid.length-1]])/2:H.Y[im];
+    Hc=new THREE.Vector3(0,X[headI].pos.y+ym,0); headR=H.Rmax; }
+  const top=B?B.Ytop:0;
+  let side=0;
+  models.forEach((m,i)=>{ if(i===bodyI||i===headI) return; const role=roles[i], x=X[i];
+    const len=m.round?m.Ytop:m.Ytop;
+    const place=(dir,attach,inset)=>{ dir.normalize(); x.quat=quatTo(dir); x.pos.copy(attach).addScaledVector(dir,-(len-(inset||0))); };
+    if(role==="arm"&&B){ const ys=top*0.76, a=0.78;    // arms reach forward and out, like a hug
+      place(new THREE.Vector3(-Math.sin(a),Math.cos(a),-0.55),new THREE.Vector3(radiusAtY(B,ys)*0.82,ys,0.12*B.Rmax),m.Rtop*0.7); }
+    else if(role==="leg"&&B){ const ly=m.Rmax*0.95;
+      place(new THREE.Vector3(-0.42,0.06,-1),new THREE.Vector3(B.Rmax*0.42,ly,Math.max(radiusAtY(B,ly),B.Rmax*0.55)*0.75),m.Rtop*0.6); }
+    else if((role==="ear"||role==="horn")&&(Hc||B)){ const c=Hc||new THREE.Vector3(0,top,0), R=Hc?headR:B.Rmax, an=0.72;
+      const nrm=new THREE.Vector3(Math.sin(an),Math.cos(an),-0.12).normalize();
+      x.quat=quatTo(new THREE.Vector3(0.28,0.15,1)); x.pos.copy(c).addScaledVector(nrm,R*0.88).addScaledVector(new THREE.Vector3(0,1,0),-m.Rmax*0.1); }
+    else if(role==="tail"&&B){ place(new THREE.Vector3(0,0.3,1),new THREE.Vector3(0,top*0.22,-radiusAtY(B,top*0.22)*0.9),m.Rtop*0.5); }
+    else if(role==="nose"&&(Hc||B)){ const c=Hc||new THREE.Vector3(0,top*0.8,0), R=Hc?headR:B.Rmax;
+      x.quat=quatTo(new THREE.Vector3(0,0,1)); x.pos.set(0,c.y-R*0.18,c.z+R*0.82); x.mirror=null; }
+    else if(role==="eye"&&(Hc||B)){ const c=Hc||new THREE.Vector3(0,top*0.8,0), R=Hc?headR:B.Rmax;
+      x.quat=quatTo(new THREE.Vector3(0.35,0.1,1)); x.pos.set(R*0.38,c.y+R*0.12,c.z+R*0.86); }
+    else { const span=(B?B.Rmax:w*4)+m.Rmax+w*2+side; side+=m.Rmax*2+w*2;
+      x.pos.set(span,0,0); x.mirror="dup"; }
+  });
+  return X;
+}
+
+// ---- 5) full layout: models + transforms + per-stitch work points --------
 function layout3D(parsed){
-  const sp=2.4*hookGauge(), unit=sp*0.95, parts=parsed.parts;
-  const laid=parts.map(p=>layoutPart(p,sp,unit));
-  if(parts.length===1){ const l=laid[0];
-    return {positions:l.positions.map(lp=>({...lp,part:0,mirror:false})), sp,unit,height:l.height,round:l.round,multi:false}; }
-  const {off}=placeParts(parts,laid,sp);
+  const w=fabricW(), r=fabricYarnR(w);
+  const models=parsed.parts.map(p=>buildPartModel(p,w));
+  const X=assembleFabric(models);
   const positions=[];
-  parts.forEach((p,pi)=>{ const o=off[pi];
-    laid[pi].positions.forEach(lp=>positions.push({...lp, x:lp.x+o.x, y:lp.y+o.y, z:lp.z+o.z, part:pi, mirror:o.mirror, mirrorAxis:o.x})); });
-  const height=Math.max(...parts.map((p,i)=>off[i].y+laid[i].height),1);
-  return {positions,sp,unit,height,round:true,multi:true,laid,off};
+  models.forEach((M,pi)=>{ const x=X[pi], mat=new THREE.Matrix4().compose(x.pos,x.quat,new THREE.Vector3(1,1,1));
+    M.matrix=mat; M.xf=x;
+    const nmat=new THREE.Matrix3().getNormalMatrix(mat);
+    M.units.forEach((u,ui)=>{ const out=emitUnit(M,u,r); u.out=out;
+      const wk=out.work||{Lf:0,lat:0}, F=fabricFrame(M,wk.Lf,wk.lat);
+      const top=F.P.clone().addScaledVector(F.N,0.9*r).applyMatrix4(mat);
+      const N=F.N.clone().applyMatrix3(nmat).normalize(), W=F.W.clone().applyMatrix3(nmat).normalize(), T=F.T.clone().applyMatrix3(nmat).normalize();
+      const f=parsed.parts[pi].flat[ui];
+      positions.push({part:pi,row:f?f.row:0,key:u.key,top,N,W,T,x:top.x,y:top.y,z:top.z,h:0,half:w*0.42,mirror:x.mirror==="x"&&parsed.parts[pi].count>1});
+    }); });
+  return {positions,models,sp:w,yarnR:r,unit:w,multi:models.length>1};
 }
 
 // ============================================================
@@ -1111,8 +1412,307 @@ function drawYarnBall2D(cx,cy,t){ctx.save();const r=30;const g=ctx.createRadialG
 // ============================================================
 //  3D studio
 // ============================================================
-const Studio={ready:false,renderer:null,scene:null,camera:null,controls:null,group:null,stitchMeshes:[],hook:null,ball:null,strand:null,yarnMat:null,tex:null,env:null};
+const Studio={ready:false,renderer:null,scene:null,camera:null,controls:null,group:null,stitchMeshes:[],hook:null,ball:null,strand:null,yarnMat:null,tex:null,env:null,fab:null};
 
+// fibre normal map: fine fibres running along each ply, tiled along the yarn
+let _fiberTex=null;
+function fiberNormalMap(){ return _fiberTex||(_fiberTex=makeFiberNormalMap()); }
+function makeFiberNormalMap(){
+  const S=256, cv=document.createElement("canvas"); cv.width=cv.height=S; const c=cv.getContext("2d");
+  c.fillStyle="#808080"; c.fillRect(0,0,S,S);
+  for(let i=0;i<900;i++){ const x=Math.random()*S, y=Math.random()*S, l=8+Math.random()*40, a=-0.35+Math.random()*0.12;
+    const v=Math.random()<0.5?255:0; c.strokeStyle=`rgba(${v},${v},${v},${0.06+Math.random()*0.16})`; c.lineWidth=0.6+Math.random()*1.4;
+    for(const ox of [-S,0,S]) for(const oy of [-S,0,S]){ c.beginPath(); c.moveTo(x+ox,y+oy); c.lineTo(x+ox+Math.cos(a)*l,y+oy+Math.sin(a)*l); c.stroke(); } }
+  const src=c.getImageData(0,0,S,S).data, out=c.createImageData(S,S), d=out.data, H=(x,y)=>src[(((y+S)%S)*S+((x+S)%S))*4]/255;
+  for(let y=0;y<S;y++) for(let x=0;x<S;x++){ const dx=(H(x+1,y)-H(x-1,y))*2.2, dy=(H(x,y+1)-H(x,y-1))*2.2, l=Math.hypot(dx,dy,1), k=(y*S+x)*4;
+    d[k]=(-dx/l*0.5+0.5)*255; d[k+1]=(-dy/l*0.5+0.5)*255; d[k+2]=(1/l*0.5+0.5)*255; d[k+3]=255; }
+  c.putImageData(out,0,0);
+  const tex=new THREE.CanvasTexture(cv); tex.wrapS=tex.wrapT=THREE.RepeatWrapping; return tex;
+}
+// procedural studio environment (equirect): soft overhead softbox + warm room
+function makeEnvironment(renderer){
+  const S=512,cv=document.createElement("canvas");cv.width=S;cv.height=S/2;const c=cv.getContext("2d");
+  const g=c.createLinearGradient(0,0,0,S/2);
+  g.addColorStop(0,"#fbf3e8");g.addColorStop(0.42,"#a99a86");g.addColorStop(0.55,"#4a4036");g.addColorStop(1,"#1a1611");
+  c.fillStyle=g;c.fillRect(0,0,S,S/2);
+  const blobs=[[S*0.3,S*0.12,110,"rgba(255,250,240,0.95)"],[S*0.75,S*0.16,80,"rgba(255,226,196,0.6)"]];
+  blobs.forEach(([x,y,r,col])=>{const rg=c.createRadialGradient(x,y,0,x,y,r);rg.addColorStop(0,col);rg.addColorStop(1,"rgba(255,255,255,0)");c.fillStyle=rg;c.fillRect(x-r,y-r,r*2,r*2);});
+  const tex=new THREE.CanvasTexture(cv);tex.mapping=THREE.EquirectangularReflectionMapping;
+  if('SRGBColorSpace'in THREE) tex.colorSpace=THREE.SRGBColorSpace; else tex.encoding=THREE.sRGBEncoding;
+  const pmrem=new THREE.PMREMGenerator(renderer);const env=pmrem.fromEquirectangular(tex).texture;
+  tex.dispose();pmrem.dispose();return env;
+}
+// soft table surface: fine linen weave that fades out into the stage background
+// (one texture with the fade in its alpha — r128 shares a single UV transform
+// across map/alphaMap, so a repeated weave can't carry a separate vignette)
+function makeGround(){
+  const S=1024, cv=document.createElement("canvas"); cv.width=cv.height=S; const c=cv.getContext("2d");
+  c.fillStyle="#5d544a"; c.fillRect(0,0,S,S);
+  for(let y=0;y<S;y+=3){ c.fillStyle=`rgba(0,0,0,${0.05+Math.random()*0.07})`; c.fillRect(0,y,S,1.4); }
+  for(let x=0;x<S;x+=3){ c.fillStyle=`rgba(255,240,220,${0.025+Math.random()*0.04})`; c.fillRect(x,0,1.4,S); }
+  for(let i=0;i<5000;i++){ const v=Math.random()<0.5?0:255; c.fillStyle=`rgba(${v},${v},${v},0.035)`; c.fillRect(Math.random()*S,Math.random()*S,3,1); }
+  // radial fade baked into alpha
+  const img=c.getImageData(0,0,S,S), d=img.data;
+  for(let y=0;y<S;y++) for(let x=0;x<S;x++){ const r=Math.hypot(x-S/2,y-S/2)/(S/2); d[(y*S+x)*4+3]=255*(1-smooth01(0.18,1,r)); }
+  c.putImageData(img,0,0);
+  const map=new THREE.CanvasTexture(cv); map.anisotropy=8;
+  if('SRGBColorSpace'in THREE) map.colorSpace=THREE.SRGBColorSpace; else map.encoding=THREE.sRGBEncoding;
+  const mat=new THREE.MeshStandardMaterial({color:0xffffff,map,transparent:true,roughness:0.96,metalness:0,envMapIntensity:0.3,depthWrite:false});
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat); m.rotation.x=-Math.PI/2; m.receiveShadow=true; m.renderOrder=-1; return m;
+}
+function initStudio(){
+  if(Studio.ready) return;
+  const cv=document.getElementById("stage3d");
+  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true,preserveDrawingBuffer:true});
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  if('outputColorSpace'in renderer)renderer.outputColorSpace=THREE.SRGBColorSpace; else if('outputEncoding'in renderer)renderer.outputEncoding=THREE.sRGBEncoding;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(32,1040/600,0.1,2000);camera.position.set(0,8,40);
+  const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.08;controls.target.set(0,4,0);controls.minDistance=4;controls.maxDistance=260;
+  controls.maxPolarAngle=Math.PI*0.495;
+  const env=makeEnvironment(renderer);scene.environment=env;Studio.env=env;
+  // photo-studio lighting: large warm key, cool fill, and a back rim that
+  // catches the fibre halo so the yarn reads soft instead of plastic
+  const hemi=new THREE.HemisphereLight(0xfff1e0,0x241d17,0.32);scene.add(hemi);
+  const key=new THREE.DirectionalLight(0xfff0e0,2.5);key.position.set(-14,26,20);key.castShadow=true;
+  key.shadow.mapSize.set(2048,2048);key.shadow.bias=-0.0002;key.shadow.normalBias=0.04;key.shadow.radius=4;scene.add(key);scene.add(key.target);
+  const fill=new THREE.DirectionalLight(0xcfdcff,0.3);fill.position.set(20,10,10);scene.add(fill);
+  const rim=new THREE.DirectionalLight(0xffe0c0,1.15);rim.position.set(6,16,-26);scene.add(rim);
+  const ground=makeGround();scene.add(ground);
+  const group=new THREE.Group();scene.add(group);
+  Object.assign(Studio,{ready:true,renderer,scene,camera,controls,group,key,ground});
+  Studio.fiberTex=fiberNormalMap();
+  buildYarnMaterial();
+}
+function yarnLook(){ const t=YARN_TYPES[settings.type];
+  return { ply:settings.type==="chenille"?0.02:settings.type==="cotton"?0.26:settings.type==="wool"?0.2:0.22,
+    fuzzN:t.fuzz*12, fuzzLen:0.7+t.fuzz*1.1, hairOpacity:0.18+t.fuzz*0.3, t }; }
+function buildYarnMaterial(){
+  if(!Studio.ready) return; const t=YARN_TYPES[settings.type];
+  ["yarnMat","coreMat","hairMat","propMat"].forEach(k=>{ if(Studio[k]) Studio[k].dispose(); });
+  const yarn=new THREE.MeshPhysicalMaterial({color:0xffffff,vertexColors:true,roughness:Math.min(1,t.roughness+0.08),metalness:0,
+    normalMap:Studio.fiberTex,normalScale:new THREE.Vector2(0.55,0.55),envMapIntensity:t.env*0.6});
+  // velvet-like sheen at grazing angles = the soft glow of fibres catching light
+  yarn.sheen=new THREE.Color(0.05+t.fuzz*0.12,0.05+t.fuzz*0.12,0.05+t.fuzz*0.12);
+  Studio.yarnMat=yarn;
+  Studio.propMat=yarn.clone(); Studio.propMat.sheen=yarn.sheen.clone();
+  Studio.coreMat=new THREE.MeshStandardMaterial({color:0xffffff,vertexColors:true,roughness:1,metalness:0,side:THREE.DoubleSide,envMapIntensity:0.2});
+  Studio.hairMat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:yarnLook().hairOpacity,depthWrite:false});
+}
+function linearColor(hex){ return new THREE.Color(hex).convertSRGBToLinear(); }
+function stitchHex(g){ return App.paint[g]||settings.color; }
+// write colours (yarn colour × baked shading) for every stitch of every part
+function fabRecolor(){
+  if(!Studio.fab) return;
+  Studio.fab.forEach(F=>{ const cy=F.yarn.geometry.attributes.color.array, cc=F.core.geometry.attributes.color.array, ch=F.hair?F.hair.geometry.attributes.color.array:null;
+    for(let u=0;u<F.n;u++){ const col=linearColor(stitchHex(F.g0+u));
+      for(let v=F.uVert[u];v<F.uVert[u+1];v++){ const s=F.shade[v]; cy[v*3]=col.r*s; cy[v*3+1]=col.g*s; cy[v*3+2]=col.b*s; }
+      for(let v=F.uCVert[u];v<F.uCVert[u+1];v++){ const s=F.cshade[v]*0.44; cc[v*3]=col.r*s; cc[v*3+1]=col.g*s; cc[v*3+2]=col.b*s; }
+      if(ch) for(let v=F.uHair[u];v<F.uHair[u+1];v++){ const s=F.hshade[v]*1.05; ch[v*3]=Math.min(1,col.r*s+0.015); ch[v*3+1]=Math.min(1,col.g*s+0.015); ch[v*3+2]=Math.min(1,col.b*s+0.015); } }
+    F.yarn.geometry.attributes.color.needsUpdate=true; F.core.geometry.attributes.color.needsUpdate=true; if(ch) F.hair.geometry.attributes.color.needsUpdate=true; });
+}
+// a real ball of yarn: one strand wound in many great circles over a core
+function makeYarnBall(Rb,r){
+  const G=FabBuf(), look=yarnLook(), wraps=46;
+  fabMarkUnit(G);
+  for(let k=0;k<wraps;k++){ const ax=new THREE.Vector3(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).normalize();
+    const u=new THREE.Vector3().crossVectors(ax,Math.abs(ax.y)<0.9?new THREE.Vector3(0,1,0):new THREE.Vector3(1,0,0)).normalize(), v=new THREE.Vector3().crossVectors(ax,u);
+    const rad=Rb*(0.93+0.07*k/wraps), pts=[];
+    for(let i=0;i<20;i++){ const a=i/20*Math.PI*2; pts.push(new THREE.Vector3().addScaledVector(u,Math.cos(a)*rad).addScaledVector(v,Math.sin(a)*rad)); }
+    emitTube(G,pts,true,r,{C:new THREE.Vector3(),N:pts[0].clone().normalize()},{ply:look.ply,fuzzN:look.fuzzN*0.5,fuzzLen:look.fuzzLen,seed:k});
+  }
+  // shade relative to the sphere, not one surface normal
+  for(let i=0;i<G.nv;i++){ const x=G.pos[i*3],y=G.pos[i*3+1],z=G.pos[i*3+2], l=Math.hypot(x,y,z);
+    G.shade[i]=0.25+0.75*smooth01(Rb*0.85,Rb*0.98+r,l); }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.Float32BufferAttribute(G.pos,3)); geo.setAttribute("normal",new THREE.Float32BufferAttribute(G.nor,3));
+  geo.setAttribute("uv",new THREE.Float32BufferAttribute(G.uv,2)); geo.setAttribute("color",new THREE.Float32BufferAttribute(G.shade.flatMap(s=>[s,s,s]),3)); geo.setIndex(G.idx);
+  const g=new THREE.Group(), m=new THREE.Mesh(geo,Studio.propMat); m.castShadow=true; m.receiveShadow=true; g.add(m);
+  const core=new THREE.Mesh(new THREE.SphereGeometry(Rb*0.9,24,16),Studio.propMat); g.add(core);
+  core.geometry.setAttribute("color",new THREE.Float32BufferAttribute(new Array(core.geometry.attributes.position.count*3).fill(0.3),3));
+  return g;
+}
+// stand-alone plied yarn BufferGeometry (shading in vertex colour, tint via material.color)
+function plyTubeGeometry(pts,closed,r,geo){
+  const G=FabBuf(); fabMarkUnit(G); const look=yarnLook();
+  emitTube(G,pts,closed,r,{C:new THREE.Vector3(),N:new THREE.Vector3(0,1,0)},{ply:look.ply,fuzzN:0,fuzzLen:1,noAO:true,seed:pts.length});
+  geo=geo||new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.Float32BufferAttribute(G.pos,3)); geo.setAttribute("normal",new THREE.Float32BufferAttribute(G.nor,3));
+  geo.setAttribute("uv",new THREE.Float32BufferAttribute(G.uv,2)); geo.setAttribute("color",new THREE.Float32BufferAttribute(G.shade.flatMap(s=>[s,s,s]),3));
+  geo.setIndex(G.idx); geo.computeBoundingSphere(); return geo;
+}
+function makeYarnPropMaterial(hex){ const t=YARN_TYPES[settings.type];
+  const m=new THREE.MeshPhysicalMaterial({color:linearColor(hex),vertexColors:true,roughness:Math.min(1,t.roughness+0.08),metalness:0,
+    normalMap:fiberNormalMap(),normalScale:new THREE.Vector2(0.55,0.55),envMapIntensity:t.env*0.6});
+  m.sheen=new THREE.Color(0.05+t.fuzz*0.12,0.05+t.fuzz*0.12,0.05+t.fuzz*0.12); return m; }
+// working yarn: hook → over the edge → along the table → into the ball
+function updateStrand(pts,r){
+  if(!Studio.strand) return;
+  const G=FabBuf(); fabMarkUnit(G); const look=yarnLook();
+  emitTube(G,pts,false,r,{C:new THREE.Vector3(0,-1e3,0),N:new THREE.Vector3(0,1,0)},{ply:look.ply,fuzzN:0,fuzzLen:1});
+  const geo=Studio.strand.geometry;
+  geo.setAttribute("position",new THREE.Float32BufferAttribute(G.pos,3)); geo.setAttribute("normal",new THREE.Float32BufferAttribute(G.nor,3));
+  geo.setAttribute("uv",new THREE.Float32BufferAttribute(G.uv,2)); geo.setAttribute("color",new THREE.Float32BufferAttribute(G.shade.map(s=>0.6+0.4*s).flatMap(s=>[s,s,s]),3));
+  geo.setIndex(G.idx); geo.computeBoundingSphere();
+}
+// Accurate metal crochet hook. Local space: tip at origin, shaft up +Y.
+function makeCrochetHook(R){
+  const V=THREE.Vector3, g=new THREE.Group();
+  const steel=new THREE.MeshStandardMaterial({color:0xc9d0da,metalness:0.92,roughness:0.24,envMapIntensity:1.2});
+  const handleMat=new THREE.MeshPhysicalMaterial({color:0xb4566c,metalness:0,roughness:0.42,clearcoat:0.6,clearcoatRoughness:0.35,envMapIntensity:0.6});
+  const r=Math.max(0.22,R);                 // shaft radius
+  const shaftLen=14+R*2;
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(r,r,shaftLen,24),steel);
+  shaft.position.y=r*2+shaftLen/2;shaft.castShadow=true;g.add(shaft);
+  const throat=new THREE.Mesh(new THREE.CylinderGeometry(r,r*0.7,r*2.4,24),steel);
+  throat.position.y=r*1.2;throat.castShadow=true;g.add(throat);
+  const lipPts=[ new V(0,r*0.6,0),new V(r*0.05,-r*0.2,0),new V(-r*0.35,-r*0.55,0),new V(-r*0.75,-r*0.2,0),
+    new V(-r*0.7,r*0.5,0),new V(-r*0.2,r*0.75,0),new V(r*0.25,r*0.4,0),new V(r*0.2,-r*0.05,0) ];
+  const lipCurve=new THREE.CatmullRomCurve3(lipPts,false,"catmullrom",0.35);
+  const lip=new THREE.Mesh(new THREE.TubeGeometry(lipCurve,56,r*0.62,14,false),steel); lip.castShadow=true;g.add(lip);
+  const cap0=new THREE.Mesh(new THREE.SphereGeometry(r*0.62,14,10),steel);cap0.position.copy(lipPts[0]);g.add(cap0);
+  const cap1=new THREE.Mesh(new THREE.SphereGeometry(r*0.6,14,10),steel);cap1.position.copy(lipPts[lipPts.length-1]);g.add(cap1);
+  const rest=new THREE.Mesh(new THREE.CylinderGeometry(r*1.7,r*1.7,r*5,28),handleMat);
+  rest.position.y=r*2+shaftLen*0.5;rest.scale.z=0.42;rest.castShadow=true;g.add(rest);
+  const handle=new THREE.Mesh(new THREE.CylinderGeometry(r*1.5,r*1.3,shaftLen*0.5,28),handleMat);
+  handle.position.y=r*2+shaftLen*0.82;handle.castShadow=true;g.add(handle);
+  const knob=new THREE.Mesh(new THREE.SphereGeometry(r*1.5,20,14),handleMat);knob.position.y=r*2+shaftLen*1.05;g.add(knob);
+  return g;
+}
+function makeLabelSprite(text){
+  const pad=10,fs=44,cv=document.createElement("canvas"),c=cv.getContext("2d");
+  c.font="700 "+fs+"px system-ui"; const w=c.measureText(text).width;
+  cv.width=w+pad*2; cv.height=fs+pad*2;
+  c.font="700 "+fs+"px system-ui"; c.textBaseline="middle";
+  c.fillStyle="rgba(20,17,14,.78)"; const r=14;
+  c.beginPath();c.moveTo(r,0);c.arcTo(cv.width,0,cv.width,cv.height,r);c.arcTo(cv.width,cv.height,0,cv.height,r);c.arcTo(0,cv.height,0,0,r);c.arcTo(0,0,cv.width,0,r);c.closePath();c.fill();
+  c.fillStyle="#f3ede3"; c.fillText(text,pad,cv.height/2+1);
+  const tex=new THREE.CanvasTexture(cv); if('SRGBColorSpace'in THREE) tex.colorSpace=THREE.SRGBColorSpace;
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true}));
+  spr.scale.set(cv.width/fs*1.7,cv.height/fs*1.7,1); spr.renderOrder=10;
+  return spr;
+}
+// remove every current "make" (fabric, clones, labels, extras, props)
+// from the studio — shared by the pattern path and the medium-plan viewer.
+function clearStudioMakes(){
+  Studio.stitchMeshes.forEach(m=>{Studio.group.remove(m);m.traverse(o=>{if(o.geometry)o.geometry.dispose();});});Studio.stitchMeshes=[];
+  (Studio.fab||[]).forEach(F=>{ [F.yarn,F.core,F.hair].forEach(m=>{ if(m){Studio.group.remove(m);m.geometry.dispose();} }); if(F.clone) Studio.group.remove(F.clone); }); Studio.fab=null;
+  (Studio.labels||[]).forEach(l=>Studio.group.remove(l)); Studio.labels=[];
+  (Studio.extras||[]).forEach(e=>{Studio.group.remove(e);e.traverse(o=>{if(o.geometry)o.geometry.dispose();});}); Studio.extras=[];
+  ["hook","ball","strand"].forEach(k=>{if(Studio[k]){Studio.group.remove(Studio[k]);Studio[k].traverse&&Studio[k].traverse(o=>{if(o.geometry)o.geometry.dispose();});Studio[k]=null;}});
+}
+function frameStudio(box,flat){
+  const c=box.getCenter(new THREE.Vector3()), size=box.getSize(new THREE.Vector3());
+  Studio.group.position.set(-c.x,-box.min.y,-c.z);
+  const rad=Math.max(size.length()*0.5,4), fov=Studio.camera.fov*Math.PI/180;
+  const dist=rad/Math.sin(fov/2)*(flat?0.82:0.95);
+  const dir=flat?new THREE.Vector3(0.18,0.3,1).normalize():new THREE.Vector3(0.42,0.36,1).normalize();
+  Studio.controls.target.set(0,size.y*0.46,0);
+  Studio.camera.position.copy(Studio.controls.target).addScaledVector(dir,dist);
+  Studio.controls.update();
+  // shadow frustum + table sized to the piece
+  const k=Studio.key, s=rad*1.6; k.position.set(-rad*0.9,rad*2.2,rad*1.4); k.target.position.set(0,0,0);
+  Object.assign(k.shadow.camera,{left:-s,right:s,top:s,bottom:-s,near:0.1,far:rad*8}); k.shadow.camera.updateProjectionMatrix();
+  Studio.ground.scale.set(rad*6,rad*6,1); Studio.ground.position.set(0,-0.02,0);
+}
+function buildStudioGeometry(){
+  initStudio();buildYarnMaterial();
+  clearStudioMakes();
+  App.plan=null;               // a text pattern replaces any image-derived plan
+  if(!App.parsed) return;
+  const lay=App.lay3d, r=lay.yarnR, look=yarnLook();
+  Studio.fab=[]; let g0=0;
+  lay.models.forEach((M,pi)=>{
+    const G=FabBuf(), n=M.units.length;
+    M.units.forEach((u,ui)=>{ fabMarkUnit(G); const o=u.out;
+      o.tubes.forEach((tb,k)=>emitTube(G,tb.pts,tb.closed,r,tb.ref,{ply:look.ply,fuzzN:look.fuzzN,fuzzLen:look.fuzzLen,seed:(g0+ui)*1.37+k*2.1}));
+      o.core.forEach(c=>emitCore(G,M,c,r));
+      if(ui===n-1&&M.round&&M.closedTop){ emitCore(G,M,{cap:true},r);   // fastened off: the last round cinched shut
+        const Y=M.Y[M.NL-1], R=M.R[M.NL-1], pts=[]; for(let i=0;i<8;i++){ const a=i/8*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*R*0.45,Y+R*0.32,Math.sin(a)*R*0.45)); }
+        emitTube(G,pts,true,r,{C:new THREE.Vector3(0,Y,0),N:new THREE.Vector3(0,1,0)},{ply:look.ply,fuzzN:look.fuzzN,fuzzLen:look.fuzzLen,seed:3}); }
+    });
+    fabSeal(G);
+    const mk=(pos,nor,uv,idx)=>{ const geo=new THREE.BufferGeometry();
+      geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+      if(nor) geo.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
+      if(uv) geo.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
+      geo.setAttribute("color",new THREE.Float32BufferAttribute(new Float32Array(pos.length),3));
+      if(idx) geo.setIndex(idx); geo.applyMatrix4(M.matrix); return geo; };
+    const yarn=new THREE.Mesh(mk(G.pos,G.nor,G.uv,G.idx),Studio.yarnMat); yarn.castShadow=true; yarn.receiveShadow=true;
+    const core=new THREE.Mesh(mk(G.cpos,G.cnor,null,G.cidx),Studio.coreMat); core.castShadow=true; core.receiveShadow=true;
+    const hair=G.hpos.length?new THREE.LineSegments(mk(G.hpos,null,null,null),Studio.hairMat):null;
+    [yarn,core,hair].forEach(m=>{ if(m) Studio.group.add(m); });
+    const F={pi,g0,n,yarn,core,hair,uIdx:G.uIdx,uVert:G.uVert,uHair:G.uHair,uCore:G.uCore,uCVert:G.uCVert,shade:G.shade,cshade:G.cshade,hshade:G.hshade,clone:null};
+    // "make 2": the second arm/leg/ear is a mirror image across the figure
+    const part=App.parsed.parts[pi];
+    if(part.count>1&&M.xf.mirror){ const cg=new THREE.Group();
+      [yarn,core,hair].forEach(m=>{ if(!m) return; const cl=m.isLineSegments?new THREE.LineSegments(m.geometry,m.material):new THREE.Mesh(m.geometry,m.material); cl.castShadow=!!m.castShadow; cl.receiveShadow=!!m.receiveShadow; cg.add(cl); });
+      if(M.xf.mirror==="x") cg.scale.x=-1; else cg.position.x=M.Rmax*2+M.w*2;
+      cg.visible=false; Studio.group.add(cg); F.clone=cg; }
+    Studio.fab.push(F); g0+=n;
+  });
+  fabRecolor();
+  // floating section labels above each part (shown while working)
+  if(lay.multi&&App.parsed.parts){ App.parsed.parts.forEach((part,pi)=>{ if(!part.name) return;
+    const pts=lay.positions.filter(p=>p.part===pi); if(!pts.length) return;
+    let cx=0,cz=0,top=-1e9; pts.forEach(p=>{cx+=p.x;cz+=p.z;top=Math.max(top,p.y);}); cx/=pts.length; cz/=pts.length;
+    const spr=makeLabelSprite(part.name+(part.count>1?" ×"+part.count:"")); spr.position.set(cx,top+lay.sp*1.6,cz);
+    spr.userData.partIndex=pi; spr.visible=false; Studio.group.add(spr); Studio.labels.push(spr); }); }
+  // frame on the finished fabric (clones included)
+  const box=new THREE.Box3(); Studio.fab.forEach(F=>{ box.expandByObject(F.yarn); if(F.clone) box.expandByObject(F.clone); });
+  const size=box.getSize(new THREE.Vector3()), flat=lay.models.length===1&&!lay.models[0].round;
+  frameStudio(box,flat);
+  // props: hook, ball of yarn on the table, and the working strand between them
+  Studio.hook=makeCrochetHook(lay.sp*0.36);Studio.group.add(Studio.hook);
+  const Rb=lay.sp*1.5; Studio.ball=makeYarnBall(Rb,r);
+  Studio.ball.position.set(box.max.x+Rb*1.5,box.min.y+Rb*0.96,box.max.z+Rb*0.6); Studio.ball.rotation.set(0.4,0.8,0.2);
+  Studio.group.add(Studio.ball);
+  Studio.strand=new THREE.Mesh(new THREE.BufferGeometry(),Studio.propMat); Studio.strand.castShadow=true; Studio.group.add(Studio.strand);
+  Studio.propKey=null; Studio.groundY=box.min.y;
+}
+function updateStudioProgress(){
+  if(!Studio.ready||(!App.parsed&&!App.plan)) return;
+  const prog=App.progress,complete=Math.floor(prog),frac=prog-complete;
+  if(App.plan){ const meshes=Studio.stitchMeshes;
+    for(let i=0;i<meshes.length;i++){const m=meshes[i];if(i<complete){m.visible=true;m.scale.y=1;}
+      else if(i===complete){m.visible=true;if(m.userData.grow!==false)m.scale.y=Math.max(0.04,frac);}
+      else m.visible=false;}
+    return; }
+  if(!Studio.fab) return;
+  const lay=App.lay3d, total=lay.positions.length, done=complete>=total;
+  Studio.fab.forEach(F=>{ const local=complete-F.g0;
+    const cnt=(arr,mult,f)=>{ if(local<0) return 0; if(local>=F.n) return arr[F.n]; return arr[local]+Math.floor((arr[local+1]-arr[local])*f/mult)*mult; };
+    const on=local>=0; F.yarn.visible=F.core.visible=on; if(F.hair) F.hair.visible=on;
+    F.yarn.geometry.setDrawRange(0,cnt(F.uIdx,3,frac));
+    F.core.geometry.setDrawRange(0,cnt(F.uCore,3,frac>0.55?1:0));
+    if(F.hair) F.hair.geometry.setDrawRange(0,cnt(F.uHair,2,frac));
+    if(F.clone) F.clone.visible=complete>=F.g0+F.n; });
+  (Studio.labels||[]).forEach(spr=>{ const F=Studio.fab[spr.userData.partIndex]; spr.visible=!done&&prog>0&&F&&complete>=F.g0; });
+  const idx=Math.max(0,Math.min(complete,total-1)), p=lay.positions[idx];
+  [Studio.hook,Studio.strand,Studio.ball].forEach(o=>{ if(o) o.visible=!done; });
+  if(done||!p||!Studio.hook) return;
+  // hook: tip in the working loop, shaft angled out of the fabric toward the
+  // maker; it dips into the stitch and draws back as the stitch is worked
+  const dir=new THREE.Vector3().addScaledVector(p.N,0.62).addScaledVector(p.W,0.7).addScaledVector(p.T,0.3).normalize();
+  const dip=Math.sin(Math.min(1,frac*1.6)*Math.PI)*lay.sp*0.35;
+  const tip=p.top.clone().addScaledVector(dir,-dip).addScaledVector(p.N,lay.yarnR*0.6);
+  Studio.hook.position.copy(tip); Studio.hook.quaternion.copy(quatTo(dir));
+  // working strand: from the hook throat, out over the fabric, down to the table, into the ball
+  const col=stitchHex(idx); if(Studio.propKey!==col){ Studio.propMat.color.copy(linearColor(col)); }
+  const key=idx+":"+(Math.round(frac*24));
+  if(Studio.propKey!==col+key){ Studio.propKey=col+key;
+    const r=lay.yarnR, gY=Studio.groundY+r, ballC=Studio.ball.position, Rb=lay.sp*1.5;
+    const A=tip.clone().addScaledVector(dir,r*3), Bp=A.clone().addScaledVector(p.N,lay.sp*1.4).addScaledVector(dir,lay.sp*0.6);
+    const toBall=ballC.clone().sub(Bp); toBall.y=0; const dl=toBall.length(); toBall.normalize();
+    const Cp=new THREE.Vector3(Bp.x+toBall.x*dl*0.35,lerp(Bp.y,gY,0.75),Bp.z+toBall.z*dl*0.35);
+    const Dp=new THREE.Vector3(ballC.x-toBall.x*Rb*1.6,gY,ballC.z-toBall.z*Rb*1.6);
+    const Ep=ballC.clone().addScaledVector(toBall,-Rb*0.92); Ep.y=ballC.y+Rb*0.25;
+    updateStrand([A,Bp,Cp,Dp,Ep],r); }
+}
+
+// legacy per-stitch helpers still used by the Learn close-up
 function makeYarnTexture(hex,typeKey){
   const t=YARN_TYPES[typeKey],S=256,cv=document.createElement("canvas");cv.width=cv.height=S;const c=cv.getContext("2d");
   c.fillStyle=hex;c.fillRect(0,0,S,S);
@@ -1126,49 +1726,6 @@ function makeYarnTexture(hex,typeKey){
     c.fillStyle=Math.random()<0.5?`rgba(255,255,255,${a})`:`rgba(0,0,0,${a*0.8})`;const s=0.5+Math.random()*1.8;c.fillRect(x,y,s,s);}
   const tex=new THREE.CanvasTexture(cv);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(1.5,1.5);
   if('SRGBColorSpace'in THREE) tex.colorSpace=THREE.SRGBColorSpace; return tex;
-}
-// procedural studio environment (equirect) for real reflections
-function makeEnvironment(renderer){
-  const S=512,cv=document.createElement("canvas");cv.width=S;cv.height=S/2;const c=cv.getContext("2d");
-  const g=c.createLinearGradient(0,0,0,S/2);
-  g.addColorStop(0,"#fdf6ec");g.addColorStop(0.45,"#d9c9b4");g.addColorStop(0.7,"#6f6353");g.addColorStop(1,"#2a241d");
-  c.fillStyle=g;c.fillRect(0,0,S,S/2);
-  // soft studio lights for specular glints
-  const blobs=[[S*0.28,S*0.16,90,"rgba(255,255,255,0.95)"],[S*0.72,S*0.12,70,"rgba(255,238,214,0.8)"],[S*0.5,S*0.34,120,"rgba(255,255,255,0.35)"]];
-  blobs.forEach(([x,y,r,col])=>{const rg=c.createRadialGradient(x,y,0,x,y,r);rg.addColorStop(0,col);rg.addColorStop(1,"rgba(255,255,255,0)");c.fillStyle=rg;c.fillRect(x-r,y-r,r*2,r*2);});
-  const tex=new THREE.CanvasTexture(cv);tex.mapping=THREE.EquirectangularReflectionMapping;
-  if('SRGBColorSpace'in THREE) tex.colorSpace=THREE.SRGBColorSpace;
-  const pmrem=new THREE.PMREMGenerator(renderer);const env=pmrem.fromEquirectangular(tex).texture;
-  tex.dispose();pmrem.dispose();return env;
-}
-function initStudio(){
-  if(Studio.ready) return;
-  const cv=document.getElementById("stage3d");
-  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
-  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-  if('outputColorSpace'in renderer)renderer.outputColorSpace=THREE.SRGBColorSpace; else if('outputEncoding'in renderer)renderer.outputEncoding=THREE.sRGBEncoding;
-  renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;
-  const scene=new THREE.Scene();
-  const camera=new THREE.PerspectiveCamera(40,1040/600,0.1,2000);camera.position.set(0,8,40);
-  const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.08;controls.target.set(0,4,0);controls.minDistance=6;controls.maxDistance=240;
-  const env=makeEnvironment(renderer);scene.environment=env;Studio.env=env;
-  const hemi=new THREE.HemisphereLight(0xfff4ea,0x2a241d,0.6);scene.add(hemi);
-  const key=new THREE.DirectionalLight(0xffffff,1.6);key.position.set(16,26,18);key.castShadow=true;
-  key.shadow.mapSize.set(2048,2048);key.shadow.camera.near=1;key.shadow.camera.far=140;
-  key.shadow.camera.left=-46;key.shadow.camera.right=46;key.shadow.camera.top=46;key.shadow.camera.bottom=-46;key.shadow.bias=-0.0004;scene.add(key);
-  const fill=new THREE.DirectionalLight(0xffd9c2,0.4);fill.position.set(-18,8,-12);scene.add(fill);
-  const ground=new THREE.Mesh(new THREE.PlaneGeometry(600,600),new THREE.ShadowMaterial({opacity:0.32}));
-  ground.rotation.x=-Math.PI/2;ground.position.y=-0.5;ground.receiveShadow=true;scene.add(ground);
-  const group=new THREE.Group();scene.add(group);
-  Object.assign(Studio,{ready:true,renderer,scene,camera,controls,group});
-  buildYarnMaterial();
-}
-function buildYarnMaterial(){
-  if(!Studio.ready) return; const t=YARN_TYPES[settings.type];
-  if(Studio.tex)Studio.tex.dispose(); Studio.tex=makeYarnTexture(settings.color,settings.type);
-  if(Studio.yarnMat)Studio.yarnMat.dispose();
-  Studio.yarnMat=new THREE.MeshStandardMaterial({color:new THREE.Color(settings.color),map:Studio.tex,bumpMap:Studio.tex,bumpScale:0.35*t.fuzz+0.12,roughness:t.roughness,metalness:t.metalness,envMapIntensity:t.env});
 }
 function stitchCurve3D(p){
   const H=p.h,half=p.half,V=THREE.Vector3;
@@ -1198,139 +1755,6 @@ function stitchCurve3D(p){
     new V(lw, 0,            0),            // base of right leg
   ];
   return {pts, closed:false, capW:lw};
-}
-// Accurate metal crochet hook. Local space: tip at origin, shaft up +Y.
-function makeCrochetHook(R){
-  const V=THREE.Vector3, g=new THREE.Group();
-  const steel=new THREE.MeshStandardMaterial({color:0xdfe4ec,metalness:0.95,roughness:0.16,envMapIntensity:1.4});
-  const handleMat=new THREE.MeshStandardMaterial({color:0xc06078,metalness:0.1,roughness:0.55,envMapIntensity:0.6});
-  const r=Math.max(0.22,R);                 // shaft radius
-  const shaftLen=14+R*2;
-  // shaft
-  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(r,r,shaftLen,18),steel);
-  shaft.position.y=r*2+shaftLen/2;shaft.castShadow=true;g.add(shaft);
-  // throat: short taper from shaft down to the head
-  const throat=new THREE.Mesh(new THREE.CylinderGeometry(r,r*0.7,r*2.4,18),steel);
-  throat.position.y=r*1.2;throat.castShadow=true;g.add(throat);
-  // head + hook lip: a "?"-shaped hook profile — the throat dips, the nose
-  // points up, and a lip curls back down & in to form the catching bowl.
-  const lipPts=[
-    new V(0, r*0.6, 0),          // top of throat
-    new V(r*0.05, -r*0.2, 0),    // dip down into the throat
-    new V(-r*0.35,-r*0.55, 0),   // front face of the head
-    new V(-r*0.75,-r*0.2, 0),    // nose, pointing forward/up
-    new V(-r*0.7,  r*0.5, 0),    // over the top
-    new V(-r*0.2,  r*0.75,0),    // crest
-    new V(r*0.25,  r*0.4, 0),    // lip curling back down (the catch)
-    new V(r*0.2,  -r*0.05,0),    // tip of the lip, tucking inward
-  ];
-  const lipCurve=new THREE.CatmullRomCurve3(lipPts,false,"catmullrom",0.35);
-  const lip=new THREE.Mesh(new THREE.TubeGeometry(lipCurve,56,r*0.62,12,false),steel);
-  lip.castShadow=true;g.add(lip);
-  // rounded caps at both ends of the lip so it reads as solid metal
-  const cap0=new THREE.Mesh(new THREE.SphereGeometry(r*0.62,12,10),steel);cap0.position.copy(lipPts[0]);g.add(cap0);
-  const cap1=new THREE.Mesh(new THREE.SphereGeometry(r*0.6,12,10),steel);cap1.position.copy(lipPts[lipPts.length-1]);g.add(cap1);
-  // thumb rest (flattened) partway up the shaft
-  const rest=new THREE.Mesh(new THREE.CylinderGeometry(r*1.7,r*1.7,r*5,20),handleMat);
-  rest.position.y=r*2+shaftLen*0.5;rest.scale.z=0.42;rest.castShadow=true;g.add(rest);
-  // handle end
-  const handle=new THREE.Mesh(new THREE.CylinderGeometry(r*1.5,r*1.3,shaftLen*0.5,20),handleMat);
-  handle.position.y=r*2+shaftLen*0.82;handle.castShadow=true;g.add(handle);
-  const knob=new THREE.Mesh(new THREE.SphereGeometry(r*1.5,16,12),handleMat);knob.position.y=r*2+shaftLen*1.05;g.add(knob);
-  return g;
-}
-function makeLabelSprite(text){
-  const pad=10,fs=44,cv=document.createElement("canvas"),c=cv.getContext("2d");
-  c.font="700 "+fs+"px system-ui"; const w=c.measureText(text).width;
-  cv.width=w+pad*2; cv.height=fs+pad*2;
-  c.font="700 "+fs+"px system-ui"; c.textBaseline="middle";
-  c.fillStyle="rgba(20,17,14,.78)"; const r=14;
-  c.beginPath();c.moveTo(r,0);c.arcTo(cv.width,0,cv.width,cv.height,r);c.arcTo(cv.width,cv.height,0,cv.height,r);c.arcTo(0,cv.height,0,0,r);c.arcTo(0,0,cv.width,0,r);c.closePath();c.fill();
-  c.fillStyle="#f3ede3"; c.fillText(text,pad,cv.height/2+1);
-  const tex=new THREE.CanvasTexture(cv); if('SRGBColorSpace'in THREE) tex.colorSpace=THREE.SRGBColorSpace;
-  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true}));
-  spr.scale.set(cv.width/fs*1.7,cv.height/fs*1.7,1); spr.renderOrder=10;
-  return spr;
-}
-// Orient a stitch mesh from pure layout data (renderer side of the model/geometry
-// split): p.rotY faces the post tangentially; p.tilt leans it along the wall slope,
-// about the ring's tangential axis derived from p.a. Local +Y is the post's growth
-// axis (progressive reveal scales scale.y), so tilting keeps reveal correct.
-const _STITCH_UP=new THREE.Vector3(0,1,0);
-function orientStitch(mesh,p){
-  const faceY=new THREE.Quaternion().setFromAxisAngle(_STITCH_UP,p.rotY||0);
-  if(p.tilt){ const ax=new THREE.Vector3(Math.sin(p.a),0,-Math.cos(p.a));
-    mesh.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(ax,p.tilt).multiply(faceY)); }
-  else mesh.quaternion.copy(faceY);
-}
-// remove every current "make" (stitch meshes, clones, labels, extras, props)
-// from the studio — shared by the pattern path and the medium-plan viewer.
-function clearStudioMakes(){
-  Studio.stitchMeshes.forEach(m=>{Studio.group.remove(m);m.traverse(o=>{if(o.geometry)o.geometry.dispose();});});Studio.stitchMeshes=[];
-  (Studio.cloneGroups||[]).forEach(cg=>Studio.group.remove(cg.group)); Studio.cloneGroups=[];
-  (Studio.labels||[]).forEach(l=>Studio.group.remove(l)); Studio.labels=[];
-  (Studio.extras||[]).forEach(e=>{Studio.group.remove(e);e.traverse(o=>{if(o.geometry)o.geometry.dispose();});}); Studio.extras=[];
-  ["hook","ball","strand"].forEach(k=>{if(Studio[k]){Studio.group.remove(Studio[k]);Studio[k]=null;}});
-}
-function buildStudioGeometry(){
-  initStudio();buildYarnMaterial();
-  clearStudioMakes();
-  App.plan=null;               // a text pattern replaces any image-derived plan
-  if(!App.parsed) return;
-  const lay=App.lay3d, radius=yarnRadius()*0.55, pos=lay.positions;
-  const byPart={};
-  pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p);const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
-    const seg=Math.max(10,Math.round(pts.length*2.2));const geo=new THREE.TubeGeometry(curve,seg,radius,8,closed);
-    const useMat=App.paint[i]?matFor(App.paint[i]):matFor(rowShadeHex(settings.color,p.row||0));
-    const mesh=new THREE.Mesh(geo,useMat);mesh.castShadow=true;mesh.receiveShadow=true;mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
-    mesh.userData.stitchIndex=i;
-    Studio.group.add(mesh);Studio.stitchMeshes.push(mesh);
-    (byPart[p.part]=byPart[p.part]||[]).push({mesh,p,i});});
-  // mirrored clones for "make 2" parts (the other arm/leg/ear), revealed when that part is done
-  if(lay.multi){ Object.keys(byPart).forEach(pi=>{ const grp=byPart[pi]; if(!grp[0].p.mirror) return;
-    const cg=new THREE.Group(); let revealIdx=0;
-    grp.forEach(({mesh,i})=>{ const cl=new THREE.Mesh(mesh.geometry,mesh.material); cl.position.copy(mesh.position); cl.rotation.copy(mesh.rotation); cl.castShadow=true; cl.receiveShadow=true; cg.add(cl); revealIdx=Math.max(revealIdx,i); });
-    cg.scale.x=-1; cg.visible=false; Studio.group.add(cg); Studio.cloneGroups.push({group:cg,revealIdx}); }); }
-  // floating section labels above each part
-  if(lay.multi&&App.parsed.parts){ App.parsed.parts.forEach((part,pi)=>{ const grp=byPart[pi]; if(!grp||!part.name) return;
-    let cx=0,cz=0,top=-1e9; grp.forEach(({p})=>{cx+=p.x;cz+=p.z;top=Math.max(top,p.y+p.h);}); cx/=grp.length; cz/=grp.length;
-    const spr=makeLabelSprite(part.name+(part.count>1?" ×"+part.count:"")); spr.position.set(cx,top+lay.sp*1.4,cz);
-    spr.userData.partIndex=pi; spr.visible=false; Studio.group.add(spr); Studio.labels.push(spr); }); }
-  const box=new THREE.Box3().setFromObject(Studio.group);const c=box.getCenter(new THREE.Vector3());const size=box.getSize(new THREE.Vector3());
-  Studio.group.position.set(-c.x,-box.min.y,-c.z);
-  // hook
-  Studio.hook=makeCrochetHook(radius*1.6);Studio.hook.rotation.z=0.32;Studio.group.add(Studio.hook);
-  // yarn ball
-  const ball=new THREE.Mesh(new THREE.SphereGeometry(lay.sp*0.7,28,20),Studio.yarnMat);ball.castShadow=true;
-  ball.position.set(-size.x/2-lay.sp*1.6,lay.sp*0.7,lay.sp*1.5);Studio.ball=ball;Studio.group.add(ball);
-  // working strand
-  const sg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
-  Studio.strand=new THREE.Line(sg,new THREE.LineBasicMaterial({color:new THREE.Color(settings.color)}));Studio.group.add(Studio.strand);
-  // frame camera so the whole make fits (fov 40°, allow for figure height)
-  const distH=size.y*1.374, distW=size.x*0.793, dist=Math.max(distH,distW,8)*1.14+size.z*0.6;
-  Studio.camera.position.set(dist*0.28,size.y*0.52,dist);
-  Studio.controls.target.set(0,size.y*0.5,0);Studio.controls.update();
-}
-function updateStudioProgress(){
-  if(!Studio.ready||(!App.parsed&&!App.plan)) return;
-  const prog=App.progress,complete=Math.floor(prog),frac=prog-complete,meshes=Studio.stitchMeshes;
-  for(let i=0;i<meshes.length;i++){const m=meshes[i];if(i<complete){m.visible=true;m.scale.y=1;}
-    else if(i===complete){m.visible=true;if(m.userData.grow!==false)m.scale.y=Math.max(0.04,frac);}
-    else m.visible=false;}
-  // mirrored "make 2" duplicates appear once their part is fully worked
-  (Studio.cloneGroups||[]).forEach(cg=>cg.group.visible = complete>cg.revealIdx);
-  // section labels show once anything is worked
-  (Studio.labels||[]).forEach(spr=>{ spr.visible = App.progress>0; });
-  const idx=Math.min(complete,meshes.length-1),lay=App.lay3d;
-  if(!App.plan&&lay&&Studio.hook){const p=lay.positions[idx];const t=(complete<meshes.length)?Math.max(0.05,frac):1;const topY=p.y+p.h*t;const wob=Math.sin(performance.now()/220)*0.35;
-    // sit the hook tip in the working loop, handle angled up toward the crocheter
-    Studio.hook.position.set(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6);
-    Studio.hook.visible=complete<meshes.length;
-    // ball of yarn rests on the ground beside whichever column is currently being
-    // worked, instead of staying pinned at the piece's starting corner
-    if(Studio.ball) Studio.ball.position.set(p.x, Studio.ball.position.y, p.z+lay.sp*1.7);
-    if(Studio.strand){const tip=new THREE.Vector3(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6);
-      Studio.strand.geometry.setFromPoints([Studio.ball.position.clone(),new THREE.Vector3(p.x,topY,p.z+0.3),tip]);Studio.strand.visible=complete<meshes.length;}}
 }
 
 // ============================================================
@@ -1431,7 +1855,9 @@ function loadPattern(text,keepProgress){
   if(App.view==="3d")buildStudioGeometry();
   setStatus(`${parsed.rows.length} rows · ${parsed.flat.length} stitches`,true);
 }
-function reStyle(){if(!App.parsed){updateGaugeReadout();return;}clearMatCache();recomputeLayouts();updateGaugeReadout();if(App.view==="3d")buildStudioGeometry();else App.proj2d=project2D();}
+function reStyle(what){if(!App.parsed){updateGaugeReadout();return;}
+  if(what==="color"&&Studio.fab){ fabRecolor(); Studio.propKey=null; return; }   // colour only: no rebuild
+  clearMatCache();recomputeLayouts();updateGaugeReadout();if(App.view==="3d")buildStudioGeometry();else App.proj2d=project2D();}
 function setStatus(msg,ok){const el=document.getElementById("ppStatus");el.innerHTML=`<span class="dot"></span>${msg}`;el.classList.toggle("live",!!ok);}
 function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 
@@ -1453,8 +1879,8 @@ document.getElementById("finishBtn").addEventListener("click",()=>{const T=total
 
 const swWrap=document.getElementById("swatches");
 SWATCH_COLORS.forEach(([name,hex])=>{const d=document.createElement("div");d.className="yc"+(hex===settings.color?" sel":"");d.style.background=hex;d.title=name;
-  d.addEventListener("click",()=>{settings.color=hex;document.getElementById("yarnColor").value=hex;setText("colorName",name);[...swWrap.children].forEach(c=>c.classList.remove("sel"));d.classList.add("sel");reStyle();});swWrap.appendChild(d);});
-document.getElementById("yarnColor").addEventListener("input",e=>{settings.color=e.target.value;setText("colorName","Custom");[...swWrap.children].forEach(c=>c.classList.remove("sel"));reStyle();});
+  d.addEventListener("click",()=>{settings.color=hex;document.getElementById("yarnColor").value=hex;setText("colorName",name);[...swWrap.children].forEach(c=>c.classList.remove("sel"));d.classList.add("sel");reStyle("color");});swWrap.appendChild(d);});
+document.getElementById("yarnColor").addEventListener("input",e=>{settings.color=e.target.value;setText("colorName","Custom");[...swWrap.children].forEach(c=>c.classList.remove("sel"));reStyle("color");});
 document.getElementById("yarnType").addEventListener("change",e=>{settings.type=e.target.value;setText("typeName",YARN_TYPES[settings.type].label);reStyle();});
 document.getElementById("yarnWeight").addEventListener("input",e=>{settings.weightIdx=+e.target.value;setText("weightName",WEIGHTS[settings.weightIdx].label);reStyle();});
 document.getElementById("hookSize").addEventListener("input",e=>{settings.hook=+e.target.value;setText("hookName",settings.hook.toFixed(1)+" mm");reStyle();});
@@ -1537,9 +1963,7 @@ function applyPaint(stitchIndex){
   if(App.paintMode==="row"){
     App.parsed.flat.forEach((f,i)=>{ if(f.row===s.row) App.paint[i]=App.paintColor; });
   } else { App.paint[stitchIndex]=App.paintColor; }
-  if(App.view==="3d"){ // recolour affected meshes in place
-    Studio.stitchMeshes.forEach(m=>{const i=m.userData.stitchIndex; if(App.paint[i]) m.material=matFor(App.paint[i]);});
-  }
+  if(App.view==="3d") fabRecolor();   // recolour the fabric's vertex colours in place
 }
 // 2D hit-testing: nearest projected stitch to the click
 function pick2D(clientX,clientY){
@@ -1561,16 +1985,23 @@ function pick3D(clientX,clientY){
   const rect=Studio.renderer.domElement.getBoundingClientRect();
   mouse.x=((clientX-rect.left)/rect.width)*2-1; mouse.y=-((clientY-rect.top)/rect.height)*2+1;
   ray.setFromCamera(mouse,Studio.camera);
-  const hits=ray.intersectObjects(Studio.stitchMeshes.filter(m=>m.visible),false);
-  return hits.length?hits[0].object.userData.stitchIndex:null;
+  if(App.plan){ const hits=ray.intersectObjects(Studio.stitchMeshes.filter(m=>m.visible),true);
+    let o=hits.length?hits[0].object:null; while(o&&o.userData.stitchIndex==null) o=o.parent; return o?o.userData.stitchIndex:null; }
+  if(!Studio.fab) return null;
+  const objs=[]; Studio.fab.forEach(F=>{ if(F.yarn.visible){ objs.push(F.yarn,F.core); } });
+  const hits=ray.intersectObjects(objs,false); if(!hits.length) return null;
+  // triangle → stitch via the per-stitch index ranges of that part's buffer
+  const h=hits[0], F=Studio.fab.find(F=>F.yarn===h.object||F.core===h.object), arr=h.object===F.yarn?F.uIdx:F.uCore, k=h.faceIndex*3;
+  let lo=0,hi=F.n-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(arr[m]<=k) lo=m; else hi=m-1; }
+  return F.g0+lo;
 }
 document.getElementById("stage3d").addEventListener("click",e=>{ if(App.paintMode==="off")return; const i=pick3D(e.clientX,e.clientY); if(i!=null){applyPaint(i);toast("Painted");} });
 document.getElementById("stripeBtn").addEventListener("click",()=>{
   if(!App.parsed)return; const cols=SWATCH_COLORS.map(c=>c[1]);
   App.parsed.flat.forEach((f,i)=>{ App.paint[i] = (f.row%2===0)?App.paintColor:cols[(f.row)%cols.length]; });
-  if(App.view==="3d")buildStudioGeometry(); toast("Auto-striped");
+  if(App.view==="3d")fabRecolor(); toast("Auto-striped");
 });
-document.getElementById("clearPaintBtn").addEventListener("click",()=>{ App.paint={}; if(App.view==="3d")buildStudioGeometry(); toast("Colours reset"); });
+document.getElementById("clearPaintBtn").addEventListener("click",()=>{ App.paint={}; if(App.view==="3d")fabRecolor(); toast("Colours reset"); });
 
 // ============================================================
 //  Stitch glossary + "Learn this stitch" macro animation
@@ -1740,6 +2171,11 @@ const HAND_GRIP_LOCAL=new THREE.Vector3(0,0.041,0.017);
 // so the hand sits right at the live loops — reads as the hand working the yarn,
 // not parked far up the handle.
 const LEARN_GRIP_Y=5.0;
+// The available hand meshes (procedural + low-poly glTF) read as a floating toy
+// claw at ~⅓ real scale next to the hook, which breaks the realism of the
+// close-up more than any other element. Off until a proper scanned/sculpted
+// hand asset exists; flip to true to bring the grip back.
+const LEARN_SHOW_HAND=false;
 const HAND_CFG={ scale:18, grip:[0,LEARN_GRIP_Y,0], rot:[0,0,-Math.PI/2],
   curl:1.0, axis:"x", sign:1, thumb:0.85, thumbAxis:"z", thumbSign:1, skin:0xc98a5c };
 const HandModel={ scene:null, loading:false };
@@ -1819,8 +2255,7 @@ function learnGetRing(i){ while(L3.rings.length<=i) L3.rings.push(learnMkMesh())
 function learnGetFab(i){ while(L3.fabric.length<=i) L3.fabric.push(learnMkMesh()); return L3.fabric[i]; }
 function setTube(mesh,pts,closed,radius){
   if(!pts||pts.length<3){ mesh.visible=false; return; }
-  const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
-  const g=new THREE.TubeGeometry(curve,Math.max(28,pts.length*5),radius||YR,12,closed);
+  const g=plyTubeGeometry(pts,closed,radius||YR);
   if(mesh.geometry) mesh.geometry.dispose(); mesh.geometry=g; mesh.visible=true;
 }
 // a loop of yarn threaded on the shaft at distance d, hanging below it
@@ -1858,8 +2293,8 @@ function buildLearnScene(key){
   ["loopMesh","workMesh"].forEach(k=>{ if(Sim[k]){L3.scene.remove(Sim[k]);Sim[k].geometry&&Sim[k].geometry.dispose();Sim[k]=null;} });
   (L3.loopRings||[]).forEach(r=>L3.scene.remove(r)); L3.loopRings=[];
   const col=App.paintColor||settings.color, t=YARN_TYPES[settings.type];
-  const tex=makeYarnTexture(col,settings.type);
-  L3.yarnMat=new THREE.MeshStandardMaterial({color:new THREE.Color(col),map:tex,bumpMap:tex,bumpScale:0.3,roughness:t.roughness,metalness:t.metalness,envMapIntensity:t.env});
+  if(L3.yarnMat) L3.yarnMat.dispose();
+  L3.yarnMat=makeYarnPropMaterial(col);
   Learn.isChain=(key==="ch"||key==="sl"||key==="mr");
   Learn.B=learnFrame();
   const B=Learn.B;
@@ -1868,10 +2303,10 @@ function buildLearnScene(key){
   const roll=new THREE.Quaternion().setFromAxisAngle(B.U,-0.6);
   L3.hook.quaternion.copy(roll.multiply(q));
   L3.hook.position.copy(LEARN_TIP);
-  const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,LEARN_GRIP_Y,0); hand.name="proceduralHand"; L3.hook.add(hand);
+  if(LEARN_SHOW_HAND){ const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,LEARN_GRIP_Y,0); hand.name="proceduralHand"; L3.hook.add(hand); }
   L3.scene.add(L3.hook);
-  attachRealHand();
-  const ball=new THREE.Mesh(new THREE.SphereGeometry(1.4,30,22),L3.yarnMat); ball.castShadow=true;
+  if(LEARN_SHOW_HAND) attachRealHand();
+  const ball=makeYarnBall(1.4,YR*0.8); ball.traverse(o=>{ if(o.isMesh){ o.material=L3.yarnMat; o.castShadow=true; } });
   ball.position.set(LEARN_TIP.x-6.0, LEARN_TIP.y-6.0, LEARN_TIP.z+2.4);
   L3.ball=ball; L3.scene.add(ball);
   L3.work=learnMkMesh();

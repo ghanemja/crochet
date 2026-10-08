@@ -3,7 +3,7 @@ name: Deploy YarnFlow to GitHub Pages
 on:
   push:
     branches:
-      - claude/crochet-pattern-animator-LoKad
+      - main
   workflow_dispatch:
 
 permissions:

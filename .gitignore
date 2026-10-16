@@ -4,3 +4,6 @@ node_modules/
 _*.mjs
 /package.json
 /package-lock.json
+
+# local dev launcher
+.claude/

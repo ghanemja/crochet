@@ -1469,7 +1469,7 @@ function makeYarnMaps(hex,typeKey){
     const i=y*S+x,o=i*4,h=H[i];
     // colour: fibres lit on their crown, shadowed in the grooves; subtle hue drift
     const grain=N2[(y*S+((x*3)%S))];
-    let lum=0.80+0.30*h + (grain-0.5)*0.08;
+    let lum=0.68+0.34*h + (grain-0.5)*0.08;
     const warm=(N[i]-0.5)*0.08;
     dC.data[o]=Math.max(0,Math.min(255,base.r*lum*(1+warm)));
     dC.data[o+1]=Math.max(0,Math.min(255,base.g*lum));
@@ -1498,11 +1498,11 @@ function makeYarnTexture(hex,typeKey){ return makeYarnMaps(hex,typeKey).map; }
 function makeYarnMaterial(hex,typeKey){
   const t=YARN_TYPES[typeKey], maps=makeYarnMaps(hex,typeKey);
   const m=new THREE.MeshPhysicalMaterial({color:new THREE.Color(0xffffff),map:maps.map,
-    normalMap:maps.normal,normalScale:new THREE.Vector2(0.28+t.fuzz*0.2,0.28+t.fuzz*0.2),
+    normalMap:maps.normal,normalScale:new THREE.Vector2(0.2+t.fuzz*0.15,0.2+t.fuzz*0.15),
     roughnessMap:maps.rough,roughness:1.0,metalness:t.metalness,envMapIntensity:t.env,
     clearcoat:typeKey==="acrylic"?0.18:0,clearcoatRoughness:0.7});
   // Charlie sheen = the soft rim glow of fuzzy fibres catching light
-  if(t.fuzz>0.3){ m.sheen=new THREE.Color(hex).convertSRGBToLinear().lerp(new THREE.Color(0xffffff),0.55); }
+  if(t.fuzz>0.3){ m.sheen=new THREE.Color(hex).convertSRGBToLinear().lerp(new THREE.Color(0xffffff),0.25).multiplyScalar(0.6); }
   m.needsUpdate=true; m.userData.yarnHex=hex; m.userData.yarnType=typeKey; return m;
 }
 const _haloMatCache={};
@@ -1598,27 +1598,44 @@ function makeEnvironment(renderer){
   const pmrem=new THREE.PMREMGenerator(renderer);const env=pmrem.fromEquirectangular(tex).texture;
   tex.dispose();pmrem.dispose();return env;
 }
+function smooth01(a,b,x){ const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); }
+// soft linen table top with a baked radial fade (ported from the fabric-engine branch)
+function makeGround(){
+  const S=1024, cv=document.createElement("canvas"); cv.width=cv.height=S; const c=cv.getContext("2d");
+  c.fillStyle="#5d544a"; c.fillRect(0,0,S,S);
+  for(let y=0;y<S;y+=3){ c.fillStyle=`rgba(0,0,0,${0.05+Math.random()*0.07})`; c.fillRect(0,y,S,1.4); }
+  for(let x=0;x<S;x+=3){ c.fillStyle=`rgba(255,240,220,${0.025+Math.random()*0.04})`; c.fillRect(x,0,1.4,S); }
+  for(let i=0;i<5000;i++){ const v=Math.random()<0.5?0:255; c.fillStyle=`rgba(${v},${v},${v},0.035)`; c.fillRect(Math.random()*S,Math.random()*S,3,1); }
+  const img=c.getImageData(0,0,S,S), d=img.data;
+  for(let y=0;y<S;y++) for(let x=0;x<S;x++){ const r=Math.hypot(x-S/2,y-S/2)/(S/2); d[(y*S+x)*4+3]=255*(1-smooth01(0.18,1,r)); }
+  c.putImageData(img,0,0);
+  const map=new THREE.CanvasTexture(cv); map.anisotropy=8;
+  if('SRGBColorSpace'in THREE) map.colorSpace=THREE.SRGBColorSpace; else map.encoding=THREE.sRGBEncoding;
+  const mat=new THREE.MeshStandardMaterial({color:0xffffff,map,transparent:true,roughness:0.96,metalness:0,envMapIntensity:0.3,depthWrite:false});
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat); m.rotation.x=-Math.PI/2; m.receiveShadow=true; m.renderOrder=-1; return m;
+}
 function initStudio(){
   if(Studio.ready) return;
   const cv=document.getElementById("stage3d");
-  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+  const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true,preserveDrawingBuffer:true});
   renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   if('outputColorSpace'in renderer)renderer.outputColorSpace=THREE.SRGBColorSpace; else if('outputEncoding'in renderer)renderer.outputEncoding=THREE.sRGBEncoding;
-  renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.9;
   const scene=new THREE.Scene();
-  const camera=new THREE.PerspectiveCamera(40,1040/600,0.1,2000);camera.position.set(0,8,40);
-  const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.08;controls.target.set(0,4,0);controls.minDistance=6;controls.maxDistance=240;
+  const camera=new THREE.PerspectiveCamera(32,1040/600,0.1,2000);camera.position.set(0,8,40);
+  const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.08;controls.target.set(0,4,0);controls.minDistance=4;controls.maxDistance=260;
+  controls.maxPolarAngle=Math.PI*0.495;
   const env=makeEnvironment(renderer);scene.environment=env;Studio.env=env;
-  const hemi=new THREE.HemisphereLight(0xfff4ea,0x2a241d,0.6);scene.add(hemi);
-  const key=new THREE.DirectionalLight(0xffffff,1.6);key.position.set(16,26,18);key.castShadow=true;
-  key.shadow.mapSize.set(2048,2048);key.shadow.camera.near=1;key.shadow.camera.far=140;
-  key.shadow.camera.left=-46;key.shadow.camera.right=46;key.shadow.camera.top=46;key.shadow.camera.bottom=-46;key.shadow.bias=-0.0004;scene.add(key);
-  const fill=new THREE.DirectionalLight(0xffd9c2,0.4);fill.position.set(-18,8,-12);scene.add(fill);
-  const ground=new THREE.Mesh(new THREE.PlaneGeometry(600,600),new THREE.ShadowMaterial({opacity:0.32}));
-  ground.rotation.x=-Math.PI/2;ground.position.y=-0.5;ground.receiveShadow=true;scene.add(ground);
+  // photo-studio lighting: large warm key, cool fill, back rim that catches the fibre halo
+  const hemi=new THREE.HemisphereLight(0xfff1e0,0x241d17,0.38);scene.add(hemi);
+  const key=new THREE.DirectionalLight(0xfff0e0,1.35);key.position.set(-14,26,20);key.castShadow=true;
+  key.shadow.mapSize.set(2048,2048);key.shadow.bias=-0.0002;key.shadow.normalBias=0.04;key.shadow.radius=4;scene.add(key);scene.add(key.target);
+  const fill=new THREE.DirectionalLight(0xcfdcff,0.3);fill.position.set(20,10,10);scene.add(fill);
+  const rim=new THREE.DirectionalLight(0xffe0c0,0.7);rim.position.set(6,16,-26);scene.add(rim);
+  const ground=makeGround();scene.add(ground);
   const group=new THREE.Group();scene.add(group);
-  Object.assign(Studio,{ready:true,renderer,scene,camera,controls,group});
+  Object.assign(Studio,{ready:true,renderer,scene,camera,controls,group,key,ground});
   buildYarnMaterial();
 }
 function buildYarnMaterial(){
@@ -1631,7 +1648,7 @@ function buildYarnMaterial(){
 // previous stitch, runs down the left leg, dips through the top ring of the stitch
 // below, climbs the right leg, then lays the top ring (back loop, then front loop)
 // and runs on to `nextLocal` — the next stitch's entry point — so neighbours touch.
-function stitchEntryLocal(p){ return new THREE.Vector3(-p.half*0.9, p.h*0.86, 0.25); }
+function stitchEntryLocal(p){ return new THREE.Vector3(-p.half*0.72, p.h*0.86, 0.25); }
 function stitchCurve3D(p,nextLocal){
   const H=p.h,half=p.half,V=THREE.Vector3;
   if(p.key==="sl"||p.key==="mr"){
@@ -1646,7 +1663,7 @@ function stitchCurve3D(p,nextLocal){
       pts.push(new V(pitch*(t-0.5)+a*Math.sin(ph), ry*(1-Math.cos(ph)), c*Math.sin(ph))); }
     return {pts, closed:false, capW:half*0.55};
   }
-  const lw=half*0.9, bow=half*0.12, dip=H*0.15, zv=Math.max(0.25,half*0.3);
+  const lw=half*0.72, bow=half*0.1, dip=H*0.15, zv=Math.max(0.25,half*0.34);
   const pts=[
     new V(-lw, H*0.86, 0.25),              // enter from the previous stitch's top
     new V(-lw-bow, H*0.5, 0.12),           // left leg bows out
@@ -1656,12 +1673,12 @@ function stitchCurve3D(p,nextLocal){
     new V(lw*0.7, H*0.12, 0.04),
     new V(lw+bow, H*0.5, 0.12),            // right leg bows out
     new V(lw, H*0.86, 0.05),
-    new V(lw*0.6, H*1.0, -zv),             // back loop runs right -> left
-    new V(-lw*0.6, H*1.0, -zv),
-    new V(-lw*0.95, H*0.93, -0.15),
-    new V(-lw*0.6, H*1.03, zv),            // front loop runs left -> right
-    new V(lw*0.6, H*1.03, zv),
-    new V(lw*0.98, H*0.95, zv*0.4),
+    new V(lw*0.8, H*1.0, -zv),             // back loop runs right -> left
+    new V(-lw*0.8, H*1.0, -zv),
+    new V(-lw*1.15, H*0.93, -0.15),
+    new V(-lw*0.8, H*1.03, zv),            // front loop runs left -> right
+    new V(lw*0.8, H*1.03, zv),
+    new V(lw*1.15, H*0.95, zv*0.4),
   ];
   if(nextLocal) pts.push(nextLocal);
   return {pts, closed:false, capW:lw};
@@ -1778,6 +1795,7 @@ function buildStudioGeometry(){
     spr.userData.partIndex=pi; spr.visible=false; Studio.group.add(spr); Studio.labels.push(spr); }); }
   const box=new THREE.Box3().setFromObject(Studio.group);const c=box.getCenter(new THREE.Vector3());const size=box.getSize(new THREE.Vector3());
   Studio.group.position.set(-c.x,-box.min.y,-c.z);
+  fitStudioScene(Math.max(size.x,size.y,size.z,6));
   // hook
   Studio.hook=makeCrochetHook(radius*1.6);Studio.hook.rotation.z=0.32;Studio.group.add(Studio.hook);
   // yarn ball
@@ -1789,6 +1807,12 @@ function buildStudioGeometry(){
   const distH=size.y*1.374, distW=size.x*0.793, dist=Math.max(distH,distW,8)*1.14+size.z*0.6;
   Studio.camera.position.set(dist*0.28,size.y*0.52,dist);
   Studio.controls.target.set(0,size.y*0.5,0);Studio.controls.update();
+}
+// size the key light's shadow frustum and the table top to the current make
+function fitStudioScene(rad){
+  const k=Studio.key, s=rad*1.6; k.position.set(-rad*0.9,rad*2.2,rad*1.4); k.target.position.set(0,0,0);
+  Object.assign(k.shadow.camera,{left:-s,right:s,top:s,bottom:-s,near:0.1,far:rad*8}); k.shadow.camera.updateProjectionMatrix();
+  Studio.ground.scale.set(rad*6,rad*6,1); Studio.ground.position.set(0,-0.02,0);
 }
 function updateStudioProgress(){
   if(!Studio.ready||(!App.parsed&&!App.plan)) return;
@@ -2977,6 +3001,7 @@ function renderPlanPreview(adapter,plan){
     base.position.y=-0.2;base.receiveShadow=true;Studio.group.add(base);Studio.extras.push(base);}
   const box=new THREE.Box3().setFromObject(Studio.group),c=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
   Studio.group.position.set(-c.x,-box.min.y,-c.z);
+  fitStudioScene(Math.max(size.x,size.y,size.z,6));
   const dist=Math.max(size.x*1.05,size.z*1.05,8)*1.25;
   Studio.camera.position.set(dist*0.4,Math.max(size.z*0.9,size.y*1.4,7),dist);
   Studio.controls.target.set(0,size.y*0.5,0);Studio.controls.update();

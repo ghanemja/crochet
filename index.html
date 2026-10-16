@@ -11,9 +11,41 @@
      Apple-grade craft: SF type, vibrancy materials, hairline rules,
      spring motion, 8px rhythm, one accent. Artistic: aurora light,
      film grain, gradient wordmark, gallery spacing.
-     Adapts to system light / dark. Content stage stays dark (viewer).
+     Light by default; dark is opt-in via <html data-theme="dark">. Content stage stays dark (viewer).
      ============================================================ */
   :root {
+    color-scheme: light;
+    --bg:        #f2efec;
+    --bg-2:      #fbf9f7;
+    --bg-tint-a: #f6dfe6;
+    --bg-tint-b: #dfe7f4;
+    --bg-tint-c: #f6e8d6;
+    --surface:     rgba(255,255,255,.72);
+    --surface-2:   rgba(255,255,255,.92);
+    --surface-3:   rgba(16,12,10,.055);
+    --surface-solid: #ffffff;
+    --glass:       rgba(255,255,255,.72);
+    --glass-bar:   rgba(250,248,246,.72);
+    --border:      rgba(16,12,10,.10);
+    --border-2:    rgba(16,12,10,.20);
+    --hair:        rgba(16,12,10,.08);
+    --text:        #1b1917;
+    --text-2:      rgba(27,25,23,.66);
+    --text-3:      rgba(27,25,23,.44);
+    --accent:      #e04a6a;
+    --accent-press:#c53c5b;
+    --accent-soft: rgba(224,74,106,.10);
+    --accent-ring: rgba(224,74,106,.26);
+    --gold:        #b3800f;
+    --good:        #1f9c72;
+    --sh-1: 0 1px 1px rgba(30,20,15,.06), 0 0 0 .5px rgba(30,20,15,.05);
+    --sh-2: 0 1px 3px rgba(30,20,15,.07), 0 12px 30px -14px rgba(30,20,15,.28);
+    --sh-3: 0 30px 70px -24px rgba(30,20,15,.35), 0 2px 8px rgba(30,20,15,.10);
+    --sheen: inset 0 1px 0 rgba(255,255,255,.9);
+  }
+
+  /* ---------- Dark appearance (opt-in: <html data-theme="dark">) ---------- */
+  :root[data-theme="dark"] {
     color-scheme: dark;
 
     /* — canvas — */
@@ -80,40 +112,6 @@
                "SF Pro Display", var(--sans);
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", monospace;
     font-synthesis: none;
-  }
-
-  /* ---------- Light appearance ---------- */
-  @media (prefers-color-scheme: light) {
-    :root {
-      color-scheme: light;
-      --bg:        #f2efec;
-      --bg-2:      #fbf9f7;
-      --bg-tint-a: #f6dfe6;
-      --bg-tint-b: #dfe7f4;
-      --bg-tint-c: #f6e8d6;
-      --surface:     rgba(255,255,255,.72);
-      --surface-2:   rgba(255,255,255,.92);
-      --surface-3:   rgba(16,12,10,.055);
-      --surface-solid: #ffffff;
-      --glass:       rgba(255,255,255,.72);
-      --glass-bar:   rgba(250,248,246,.72);
-      --border:      rgba(16,12,10,.10);
-      --border-2:    rgba(16,12,10,.20);
-      --hair:        rgba(16,12,10,.08);
-      --text:        #1b1917;
-      --text-2:      rgba(27,25,23,.66);
-      --text-3:      rgba(27,25,23,.44);
-      --accent:      #e04a6a;
-      --accent-press:#c53c5b;
-      --accent-soft: rgba(224,74,106,.10);
-      --accent-ring: rgba(224,74,106,.26);
-      --gold:        #b3800f;
-      --good:        #1f9c72;
-      --sh-1: 0 1px 1px rgba(30,20,15,.06), 0 0 0 .5px rgba(30,20,15,.05);
-      --sh-2: 0 1px 3px rgba(30,20,15,.07), 0 12px 30px -14px rgba(30,20,15,.28);
-      --sh-3: 0 30px 70px -24px rgba(30,20,15,.35), 0 2px 8px rgba(30,20,15,.10);
-      --sheen: inset 0 1px 0 rgba(255,255,255,.9);
-    }
   }
 
   * { box-sizing: border-box; }

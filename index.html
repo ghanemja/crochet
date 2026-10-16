@@ -2385,32 +2385,10 @@ function setTube(mesh,pts,closed,radius){
   const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
   setYarnCurve(mesh,curve,radius||YR,closed,Math.max(28,pts.length*4)); mesh.visible=true;
 }
-// a loop of yarn threaded on the shaft at distance d, hanging below it
-function ringPts(B,d,rL,droop){
-  const shaft=LEARN_TIP.clone().addScaledVector(B.U,d);
-  const center=shaft.clone().addScaledVector(WDOWN,(rL*droop)*0.55);
-  const pts=[];
-  for(let k=0;k<18;k++){ const a=k/18*Math.PI*2;
-    pts.push(center.clone()
-      .addScaledVector(B.side,Math.cos(a)*rL)
-      .addScaledVector(WDOWN,Math.sin(a)*rL*droop)
-      .addScaledVector(B.nrm,Math.cos(a)*0.05)); }
-  return pts;
-}
 function ovalRing(center,axisL,axisS,rL,rS){ const pts=[];
   for(let k=0;k<16;k++){ const a=k/16*Math.PI*2;
     pts.push(center.clone().addScaledVector(axisL,Math.cos(a)*rL).addScaledVector(axisS,Math.sin(a)*rS)); }
   return pts; }
-// working strand: ball -> feeds up -> wraps over the shaft -> down to top loop
-function workYarnPts(B,overT,topShaftD){
-  const ball=L3.ball.position;
-  const shaftTop=LEARN_TIP.clone().addScaledVector(B.U,topShaftD+0.9);
-  const a=lerp(-0.6,0.55,overT)*Math.PI;
-  const wrap=shaftTop.clone().addScaledVector(B.side,Math.cos(a)*0.8).addScaledVector(B.nrm,Math.sin(a)*0.8);
-  const feed=ball.clone().lerp(wrap,0.5).addScaledVector(WDOWN,0.4);
-  const tail=shaftTop.clone().addScaledVector(WDOWN,0.6).addScaledVector(B.nrm,0.25);
-  return [ball.clone(),feed,wrap,tail];
-}
 
 function buildLearnScene(key){
   initLearn3D();
@@ -2428,7 +2406,7 @@ function buildLearnScene(key){
   L3.hook=makeCrochetHook(HOOK_HALF);
   const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),B.U);
   const roll=new THREE.Quaternion().setFromAxisAngle(B.U,-0.6);
-  L3.hook.quaternion.copy(roll.multiply(q));
+  L3.hook.quaternion.copy(roll.multiply(q)); Learn.hookQ0=L3.hook.quaternion.clone();
   L3.hook.position.copy(LEARN_TIP);
   const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,LEARN_GRIP_Y,0); hand.name="proceduralHand"; L3.hook.add(hand);
   L3.scene.add(L3.hook);
@@ -2458,69 +2436,171 @@ function postWraps(key,base,postLen){ const at=key==="tr"?[0.34,0.6]:key==="dc"?
     pts.push(base.clone().addScaledVector(WX,0.75*Math.cos(a)).addScaledVector(WZ,0.55*Math.sin(a)).addScaledVector(WDOWN,-(postLen*h+i/14*0.7))); }
     return pts; }); }
 
+// ---- Learn choreography -----------------------------------------------
+// Each written step is split into the real hand acts it contains, in the
+// order they are written: "Yarn over, pull through 2" = [yarnover, through2].
+function stepActs(text){
+  const t=text.toLowerCase(), acts=[];
+  const yo=t.match(/yarn[ -]?over|\byo\b/g); if(yo){ const n=/twice/.test(t)?2:/three times|3 times/.test(t)?3:yo.length; for(let i=0;i<n;i++) acts.push("yarnover"); }
+  const order=[];
+  const pi=t.search(/insert/), pu=t.search(/pull up|up a loop|draw up/), pt=t.search(/through/);
+  if(pi>=0) order.push([pi,"insert"]);
+  if(pu>=0) order.push([pu,"pullup"]);
+  if(pt>=0) order.push([pt,(/\ball\b|both|loop$/.test(t)&&!/\b2\b|two/.test(t))?"through":(/\b2\b|two/.test(t))?"through2":"through"]);
+  order.sort((a,b)=>a[0]-b[0]).forEach(o=>acts.push(o[1]));
+  // a yarn-over written before "insert" happens first; otherwise it comes after the insert
+  if(yo&&pi>=0&&t.indexOf("yarn")>pi){ const k=acts.indexOf("insert"); acts.splice(k,1); acts.unshift("insert"); }
+  if(!acts.length) acts.push("insert","yarnover","pullup","yarnover","through");   // vague steps (inc/dec/mr)
+  return acts;
+}
+// Walk the acts up to `upto` (exclusive) and return the hook state.
+// loops: stack from the tip outward. inserted: tip is inside the stitch below.
+function simulateActs(acts,upto){
+  let loops=1, inserted=false;
+  for(let i=0;i<upto;i++){ const a=acts[i];
+    if(a==="insert") inserted=true;
+    else if(a==="yarnover"){ if(!inserted) loops+=1; }       // inside the stitch the wrap IS the loop about to be pulled up
+    else if(a==="pullup"){ loops+=1; inserted=false; }
+    else if(a==="through2"){ loops=Math.max(1,loops-2); inserted=false; }
+    else if(a==="through"){ loops=1; inserted=false; }
+  }
+  return {loops,inserted};
+}
+// a loop of yarn threaded on the shaft at distance d from the tip, hanging below it
+function ringPts(B,tip,d,rL,droop,sink,center){
+  const shaft=tip.clone().addScaledVector(B.U,d);
+  center=center||shaft.clone().addScaledVector(WDOWN,(rL*droop)*0.55+(sink||0));
+  const pts=[];
+  for(let k=0;k<18;k++){ const a=k/18*Math.PI*2;
+    pts.push(center.clone()
+      .addScaledVector(B.side,Math.cos(a)*rL)
+      .addScaledVector(WDOWN,Math.sin(a)*rL*droop)
+      .addScaledVector(B.nrm,Math.cos(a)*0.05)); }
+  return pts;
+}
 function animateLearn3D(){
   if(!L3.ready||!Learn.key||!Learn.B) return;
   const B=Learn.B, key=Learn.key, isChain=Learn.isChain;
   const steps=STITCH_STEPS[key]||["Work the stitch"], N=steps.length;
   const moves=steps.map(classifyMove), loops=loopTimeline(steps,moves,isChain);
   const phase=Math.min(N,Learn.t/STEP_DUR);
-  const mi=Math.max(0,Math.min(N-1,Math.floor(phase))), f=easeIO(phase-Math.floor(phase));
-  const move=moves[mi], stepTxt=steps[mi].toLowerCase();
-  const loopStart=mi>0?loops[mi-1]:1, loopEnd=loops[mi];
+  const mi=Math.max(0,Math.min(N-1,Math.floor(phase)));
+  // ---- act timeline: every step's acts share that step's time evenly ----
+  const perStep=steps.map(stepActs), acts=[], actStart=[], actLen=[];
+  perStep.forEach((as,si)=>as.forEach((a,k)=>{ acts.push(a); actStart.push(si+k/as.length); actLen.push(1/as.length); }));
+  let ai=acts.length-1; for(let i=0;i<acts.length;i++){ if(phase>=actStart[i]) ai=i; }
+  const done=phase>=N, af=done?1:easeIO((phase-actStart[ai])/actLen[ai]);
+  const act=acts[ai], before=simulateActs(acts,ai), after=simulateActs(acts,ai+1);
 
-  let dip=0, overT=0.5;
-  if(move==="insert") dip=Math.sin(f*Math.PI);
-  if(move==="yarnover"||/yarn over/.test(stepTxt)){ overT=f; }
-  else if(mi>0 && moves[mi-1]==="yarnover") overT=1;
-  const tip=LEARN_TIP.clone().addScaledVector(WDOWN,dip*2.6);
+  // ---- geometry of the fabric under the hook ----
+  const baseD=0.55, gap=0.6, rL=0.92, pitch=1.35;
+  const postLen=isChain?1.6:STITCHES[key].h*1.0+1.7;
+  const rowC=LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,postLen+0.9);
+  const insPt=rowC.clone().addScaledVector(WDOWN,-0.25).addScaledVector(WX,-0.3);        // where the hook enters
+  const prevTop=rowC.clone().addScaledVector(WX,-pitch).addScaledVector(WDOWN,-postLen-0.2); // top of the last finished post
+
+  // ---- hook motion ----
+  // depth: how far the tip is inside the stitch below (0 = resting at the live loop)
+  let depth=before.inserted?1:0;
+  if(act==="insert") depth=af;
+  else if(before.inserted&&(act==="pullup"||act==="through"||act==="through2")) depth=1-af;
+  const inTarget=insPt.clone().addScaledVector(WZ,-0.9).addScaledVector(WDOWN,-0.15);
+  const tip=LEARN_TIP.clone().lerp(inTarget,depth).addScaledVector(WZ,0.35*Math.sin(depth*Math.PI)); // arcs over the top loops, then dives in
+  // pull-through: draw the hook back along the shaft so the loops ride off the head
+  let retract=0, roll=0;
+  if(act==="through"||act==="through2"){ retract=0.9*Math.sin(af*Math.PI); roll=0.9*Math.sin(af*Math.PI); }
+  if(act==="yarnover") roll=-0.45*Math.sin(af*Math.PI);                     // tilt the throat up to catch the strand
+  if(act==="insert") roll=-0.35*af; else if(before.inserted) roll=-0.35;      // head turned down while inside the stitch
+  tip.addScaledVector(B.U,retract);
   L3.hook.position.copy(tip);
+  L3.hook.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(B.U,roll).multiply(Learn.hookQ0));
 
-  // loops on the hook
-  const baseD=0.55, gap=0.6, rL=0.92;
-  const shown=Math.max(loopStart,loopEnd), changing=(loopEnd!==loopStart);
-  let ri=0, topShaftD=baseD;
-  for(let k=0;k<shown;k++){
-    const m=learnGetRing(ri++);
-    const isTop=(k===shown-1);
-    let scale=1, droop=1.15;
-    if(changing && isTop){
-      if(loopEnd>loopStart){ scale=Math.max(0.12,f); droop=1.5-f*0.35; }
-      else { scale=Math.max(0.08,1-f); droop=1.15+f*0.8; }
-    }
-    const d=baseD+k*gap; topShaftD=d;
-    setTube(m, ringPts(B,d,rL*scale,droop), true, YR);
-  }
-  for(let k=ri;k<L3.rings.length;k++) L3.rings[k].visible=false;
-
-  // working yarn
-  setTube(L3.work, workYarnPts(B,overT,topShaftD), false, YR);
-
-  // formed stitches below (hang straight down in world space)
-  let fi=0;
-  const colTop=LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN, 1.4);
-  if(isChain){
-    // a real chain: one continuous strand that loops through itself
-    setTube(learnGetFab(fi++), chainPts(colTop,WDOWN,WX,WZ,6), false, YR);
+  // ---- loops on the hook (index 0 = nearest the tip) ----
+  // stack entries: {d, r, droop, sink}; animated per act
+  const stack=[]; let ri=0;
+  const n0=before.loops;
+  // loops already on the hook stay at the fabric's top edge while the shaft
+  // slides through them, so they are pushed up the shaft by the dip
+  // (their rest position projected onto the current shaft line)
+  const shift=Math.max(0,LEARN_TIP.clone().sub(tip).dot(B.U));
+  const addRing=(d,r,droop,sink,center)=>stack.push({d,r,droop,sink:sink||0,center});
+  // where the loops that slip off the hook tighten into: the top of the stitch being made
+  const curTop=isChain?LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,1.2)
+                      :rowC.clone().addScaledVector(WX,-0.3).addScaledVector(WDOWN,-postLen-0.1);
+  const shaftCenter=(d,r,droop)=>tip.clone().addScaledVector(B.U,d).addScaledVector(WDOWN,(r*droop)*0.55);
+  if(act==="yarnover"&&!before.inserted){
+    // existing loops shift up the shaft while the new wrap forms at the throat
+    for(let k=0;k<n0;k++) addRing(baseD+k*gap+gap*af, rL, 1.15);
+  } else if(act==="pullup"){
+    // the caught bight grows into a loop as the hook rises out of the stitch
+    for(let k=0;k<n0;k++) addRing(baseD+k*gap+gap*af+shift, rL, 1.15);
+    addRing(baseD*lerp(0.35,1,af), lerp(0.25,rL,af), lerp(1.8,1.15,af));
+    stack.sort((a,b)=>a.d-b.d);
+  } else if(act==="through"||act==="through2"){
+    // index 0 is the wrap being pulled through; the next k loops slide down
+    // the shaft, over the head and off — tightening into the stitch top
+    const k=act==="through"?(before.inserted?n0:n0-1):Math.min(2,n0-1);
+    addRing(baseD+shift*(1-af), rL, 1.15);
+    for(let i=1;i<=k;i++){ const d0=baseD+i*gap+shift, off=Math.max(0,Math.min(1,(af*1.25)-(i-1)*0.18));
+      // slide down the shaft to the head (first 60%), then drop off and tighten into the stitch top
+      const slide=Math.min(1,off/0.6), drop=Math.max(0,(off-0.6)/0.4);
+      const onShaft=shaftCenter(lerp(d0,-0.1,slide),rL,1.15), c=onShaft.lerp(curTop.clone().addScaledVector(WX,0.15*(i-1)),drop);
+      addRing(0, lerp(rL,0.5,drop), lerp(1.15,0.55,drop), 0, c); }
+    for(let i=k+1;i<n0;i++) addRing(baseD+i*gap+shift-k*gap*af, rL, 1.15);
   } else {
-    // row stitches: a foundation chain runs BELOW; finished posts stand on it
-    // (two legs + the top "V"), taller stitches show their yarn-over wraps.
-    const postLen=STITCHES[key].h*1.0+1.7, pitch=1.35;
-    const rowC=LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,postLen+0.9);
+    for(let k=0;k<n0;k++) addRing(baseD+k*gap+shift, rL, 1.15);
+  }
+  stack.forEach(s=>{ setTube(learnGetRing(ri++), ringPts(B,tip,s.d,s.r,s.droop,s.sink,s.center), true, YR); });
+  for(let k=ri;k<L3.rings.length;k++) L3.rings[k].visible=false;
+  const ringBottom=s=>(s.center?s.center.clone():tip.clone().addScaledVector(B.U,s.d).addScaledVector(WDOWN,(s.r*s.droop)*0.55+s.sink)).addScaledVector(WDOWN,s.r*s.droop);
+
+  // ---- working yarn: ball -> (wraps over the throat while a yarn-over forms) -> newest loop ----
+  const ball=L3.ball.position.clone();
+  const feed=tip.clone().addScaledVector(B.side,-2.6).addScaledVector(WDOWN,1.4).addScaledVector(WZ,-0.6);
+  const wy=[ball, ball.clone().lerp(feed,0.55).addScaledVector(WDOWN,0.6), feed];
+  const liveIdx=stack.length?0:0;
+  if(act==="yarnover"){
+    // the strand swings under the shaft, up the far side and over the top into the throat
+    const c=tip.clone().addScaledVector(B.U,0.32), R=0.62;
+    const a0=-0.55*Math.PI, a1=a0+af*1.65*Math.PI;
+    for(let i=0;i<=7;i++){ const a=lerp(a0,a1,i/7); wy.push(c.clone().addScaledVector(B.side,Math.cos(a)*R).addScaledVector(B.nrm,Math.sin(a)*R)); }
+    if(stack.length) wy.push(ringBottom(stack[0]).addScaledVector(B.nrm,0.3));
+  } else if(before.inserted||act==="insert"){
+    // yarn waits behind the fabric at the insertion point, then up to the live loop
+    wy.push(insPt.clone().addScaledVector(WZ,-0.9).addScaledVector(WDOWN,0.3));
+    if(stack.length) wy.push(ringBottom(stack[0]));
+  } else {
+    if(stack.length) wy.push(ringBottom(stack[0]).addScaledVector(B.nrm,0.25));
+  }
+  setTube(L3.work, wy, false, YR);
+
+  // ---- fabric below ----
+  let fi=0;
+  if(isChain){
+    const colTop=tip.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,1.4);
+    setTube(learnGetFab(fi++), chainPts(colTop,WDOWN,WX,WZ,6), false, YR);
+    // the live loop's leg runs down into the top chain
+    const last=stack[stack.length-1]; if(last) setTube(learnGetFab(fi++),[colTop.clone().addScaledVector(WX,0.4), colTop.clone().addScaledVector(WDOWN,-0.6).addScaledVector(WZ,0.2), ringBottom(last)],false,YR);
+  } else {
     setTube(learnGetFab(fi++), chainPts(rowC.clone().addScaledVector(WX,-4.5*pitch),WX,WDOWN,WZ,9), false, YR);
     for(let st=1;st<=3;st++){ const baseP=rowC.clone().addScaledVector(WX,-st*pitch).addScaledVector(WDOWN,-0.25);
       setTube(learnGetFab(fi++), postPts(key,baseP,postLen,pitch), false, YR);
       postWraps(key,baseP,postLen).forEach(w=>setTube(learnGetFab(fi++),w,false,YR)); }
-    // the post currently being made: insertion point up to the live loop
-    const insPt=rowC.clone().addScaledVector(WDOWN,-0.25).addScaledVector(WX,-0.3);
-    const topCur=LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,0.35);
-    setTube(learnGetFab(fi++),[insPt, insPt.clone().addScaledVector(WDOWN,-postLen*0.5).addScaledVector(B.nrm,0.28), topCur],false,YR);
+    // live loop (outermost on the hook) is tied to the previous stitch's top
+    const last=stack[stack.length-1];
+    if(last) setTube(learnGetFab(fi++),[prevTop, prevTop.clone().lerp(ringBottom(last),0.5).addScaledVector(B.nrm,0.35), ringBottom(last)],false,YR);
+    // once a loop has been pulled up, its leg runs down through the insertion point (the post's first leg)
+    const pulled=(after.loops>before.loops&&act==="pullup")?stack.find(s=>s.r<rL-0.01)||stack[0]:(before.loops>1&&!before.inserted&&stack.length>1?stack[Math.min(1,stack.length-1)]:null);
+    if(pulled&&act!=="insert"&&!(act==="yarnover"&&before.inserted)){
+      const top=ringBottom(pulled);
+      setTube(learnGetFab(fi++),[insPt, insPt.clone().lerp(top,0.5).addScaledVector(B.nrm,0.3), top],false,YR); }
   }
   for(let k=fi;k<L3.fabric.length;k++) L3.fabric[k].visible=false;
 
   // readout
-  const li=Math.min(N-1,Math.floor(phase));
   const ro=document.getElementById("learnReadout");
-  if(ro) ro.textContent=(loops[li]||1)+" loop"+((loops[li]||1)===1?"":"s")+" on hook · "+(MOVE_LABEL[moves[li]]||"");
+  const shownLoops=done?after.loops:before.loops;
+  if(ro) ro.textContent=shownLoops+" loop"+(shownLoops===1?"":"s")+" on hook · "+(MOVE_LABEL[act]||"");
 }
 
 

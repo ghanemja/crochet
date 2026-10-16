@@ -2180,7 +2180,8 @@ function initLearn3D(){
   const camera=new THREE.PerspectiveCamera(38,16/10,0.1,500);camera.position.set(6,6,12);
   const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.1;controls.enablePan=false;controls.minDistance=6;controls.maxDistance=40;
   const env=makeEnvironment(renderer);scene.environment=env;L3.env=env;
-  scene.add(new THREE.HemisphereLight(0xfff4ea,0x2a241d,0.65));
+  scene.background=new THREE.Color(0xf3ece3);
+  scene.add(new THREE.HemisphereLight(0xfff4ea,0x8a7f72,0.75));
   const kl=new THREE.DirectionalLight(0xffffff,1.7);kl.position.set(8,16,12);kl.castShadow=true;
   kl.shadow.mapSize.set(1024,1024);kl.shadow.camera.near=1;kl.shadow.camera.far=60;
   kl.shadow.camera.left=-16;kl.shadow.camera.right=16;kl.shadow.camera.top=16;kl.shadow.camera.bottom=-16;kl.shadow.bias=-0.0005;scene.add(kl);
@@ -2378,8 +2379,10 @@ function learnFrame(){
 }
 function learnMkMesh(){ const m=yarnMesh(new THREE.LineCurve3(new THREE.Vector3(),new THREE.Vector3(0,1,0)),YR,false,4,L3.yarnMat);
   m.visible=false; L3.scene.add(m); L3.managed.push(m); return m; }
-function learnGetRing(i){ while(L3.rings.length<=i) L3.rings.push(learnMkMesh()); return L3.rings[i]; }
-function learnGetFab(i){ while(L3.fabric.length<=i) L3.fabric.push(learnMkMesh()); return L3.fabric[i]; }
+function learnSetMat(m,accent){ const mat=accent?L3.newMat:L3.yarnMat; if(m.material!==mat){ m.material=mat;
+  const h=m.getObjectByName("halo"); if(h) h.material=haloMaterial(mat.userData.yarnHex,settings.type); } return m; }
+function learnGetRing(i,accent){ while(L3.rings.length<=i) L3.rings.push(learnMkMesh()); return learnSetMat(L3.rings[i],accent); }
+function learnGetFab(i,accent){ while(L3.fabric.length<=i) L3.fabric.push(learnMkMesh()); return learnSetMat(L3.fabric[i],accent); }
 function setTube(mesh,pts,closed,radius){
   if(!pts||pts.length<3){ mesh.visible=false; return; }
   const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
@@ -2400,6 +2403,9 @@ function buildLearnScene(key){
   const col=App.paintColor||settings.color, t=YARN_TYPES[settings.type];
   if(L3.yarnMat) L3.yarnMat.dispose();
   L3.yarnMat=makeYarnMaterial(col,settings.type);
+  // the strand being worked gets a contrasting colour so the learner can follow it
+  const hsl={}; new THREE.Color(col).getHSL(hsl); const acc=new THREE.Color().setHSL((hsl.h+0.45)%1,Math.max(0.55,hsl.s),0.5);
+  L3.accentHex="#"+acc.getHexString(); if(L3.newMat) L3.newMat.dispose(); L3.newMat=makeYarnMaterial(L3.accentHex,settings.type);
   Learn.isChain=(key==="ch"||key==="sl"||key==="mr");
   Learn.B=learnFrame();
   const B=Learn.B;
@@ -2408,15 +2414,15 @@ function buildLearnScene(key){
   const roll=new THREE.Quaternion().setFromAxisAngle(B.U,-0.6);
   L3.hook.quaternion.copy(roll.multiply(q)); Learn.hookQ0=L3.hook.quaternion.clone();
   L3.hook.position.copy(LEARN_TIP);
-  const hand=makeHand(); hand.scale.setScalar(0.9); hand.position.set(0,LEARN_GRIP_Y,0); hand.name="proceduralHand"; L3.hook.add(hand);
+  // (no hand in the tutorial — it hid the hook head and the loops)
   L3.scene.add(L3.hook);
-  attachRealHand();
   const ball=makeYarnBall(1.4,L3.yarnMat,YR,5);
   ball.position.set(LEARN_TIP.x-10.5, LEARN_TIP.y-8.5, LEARN_TIP.z-3.5);
   L3.ball=ball; L3.scene.add(ball);
   L3.work=learnMkMesh();
-  const focus=new THREE.Vector3(0.3,0.4,0);   // frame the fabric, the live loops AND the gripping hand
-  L3.camera.position.set(focus.x+1.6, focus.y+1.4, focus.z+21);
+  const tall=Math.max(0,(STITCHES[key]?STITCHES[key].h:1)-1);           // dc/tr need a wider frame
+  const focus=LEARN_TIP.clone().add(new THREE.Vector3(0.2,-0.6-tall*0.7,0));   // the hook head and the stitch under it
+  L3.camera.position.set(focus.x+2.0, focus.y+3.6+tall*0.5, focus.z+10.5+tall*2.2);
   L3.controls.target.copy(focus); L3.controls.update();
 }
 
@@ -2550,7 +2556,8 @@ function animateLearn3D(){
   } else {
     for(let k=0;k<n0;k++) addRing(baseD+k*gap+shift, rL, 1.15);
   }
-  stack.forEach(s=>{ setTube(learnGetRing(ri++), ringPts(B,tip,s.d,s.r,s.droop,s.sink,s.center), true, YR); });
+  stack.forEach((s,i)=>{ const live=(i===stack.length-1)&&!(act==="through"&&before.inserted);
+    setTube(learnGetRing(ri++,!live), ringPts(B,tip,s.d,s.r,s.droop,s.sink,s.center), true, YR); });
   for(let k=ri;k<L3.rings.length;k++) L3.rings[k].visible=false;
   const ringBottom=s=>(s.center?s.center.clone():tip.clone().addScaledVector(B.U,s.d).addScaledVector(WDOWN,(s.r*s.droop)*0.55+s.sink)).addScaledVector(WDOWN,s.r*s.droop);
 
@@ -2572,7 +2579,7 @@ function animateLearn3D(){
   } else {
     if(stack.length) wy.push(ringBottom(stack[0]).addScaledVector(B.nrm,0.25));
   }
-  setTube(L3.work, wy, false, YR);
+  learnSetMat(L3.work,true); setTube(L3.work, wy, false, YR);
 
   // ---- fabric below ----
   let fi=0;
@@ -2582,8 +2589,8 @@ function animateLearn3D(){
     // the live loop's leg runs down into the top chain
     const last=stack[stack.length-1]; if(last) setTube(learnGetFab(fi++),[colTop.clone().addScaledVector(WX,0.4), colTop.clone().addScaledVector(WDOWN,-0.6).addScaledVector(WZ,0.2), ringBottom(last)],false,YR);
   } else {
-    setTube(learnGetFab(fi++), chainPts(rowC.clone().addScaledVector(WX,-4.5*pitch),WX,WDOWN,WZ,9), false, YR);
-    for(let st=1;st<=3;st++){ const baseP=rowC.clone().addScaledVector(WX,-st*pitch).addScaledVector(WDOWN,-0.25);
+    setTube(learnGetFab(fi++), chainPts(rowC.clone().addScaledVector(WX,-3.5*pitch),WX,WDOWN,WZ,6), false, YR);
+    for(let st=1;st<=2;st++){ const baseP=rowC.clone().addScaledVector(WX,-st*pitch).addScaledVector(WDOWN,-0.25);
       setTube(learnGetFab(fi++), postPts(key,baseP,postLen,pitch), false, YR);
       postWraps(key,baseP,postLen).forEach(w=>setTube(learnGetFab(fi++),w,false,YR)); }
     // live loop (outermost on the hook) is tied to the previous stitch's top
@@ -2593,7 +2600,7 @@ function animateLearn3D(){
     const pulled=(after.loops>before.loops&&act==="pullup")?stack.find(s=>s.r<rL-0.01)||stack[0]:(before.loops>1&&!before.inserted&&stack.length>1?stack[Math.min(1,stack.length-1)]:null);
     if(pulled&&act!=="insert"&&!(act==="yarnover"&&before.inserted)){
       const top=ringBottom(pulled);
-      setTube(learnGetFab(fi++),[insPt, insPt.clone().lerp(top,0.5).addScaledVector(B.nrm,0.3), top],false,YR); }
+      setTube(learnGetFab(fi++,true),[insPt, insPt.clone().lerp(top,0.5).addScaledVector(B.nrm,0.3), top],false,YR); }
   }
   for(let k=fi;k<L3.fabric.length;k++) L3.fabric[k].visible=false;
 

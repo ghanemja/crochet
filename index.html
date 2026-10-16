@@ -14,6 +14,72 @@
      Light by default; dark is opt-in via <html data-theme="dark">. Content stage stays dark (viewer).
      ============================================================ */
   :root {
+
+    /* — canvas — */
+    --bg:          #0c0b0d;
+    --bg-2:        #131117;
+    --bg-tint-a:   #2a1d2a;   /* aurora lobe 1 */
+    --bg-tint-b:   #1b2130;   /* aurora lobe 2 */
+    --bg-tint-c:   #2b2119;   /* aurora lobe 3 */
+
+    /* — materials (translucent fills, Apple style) — */
+    --surface:     rgba(255,255,255,.045);
+    --surface-2:   rgba(255,255,255,.070);
+    --surface-3:   rgba(255,255,255,.104);
+    --surface-solid: #191820;
+    --glass:       rgba(22,21,27,.62);
+    --glass-bar:   rgba(16,15,20,.68);
+    --blur:        saturate(180%) blur(24px);
+
+    /* — hairlines — */
+    --border:      rgba(255,255,255,.085);
+    --border-2:    rgba(255,255,255,.155);
+    --hair:        rgba(255,255,255,.07);
+
+    /* — ink — */
+    --text:        #f4f1ee;
+    --text-2:      rgba(244,241,238,.68);
+    --text-3:      rgba(244,241,238,.42);
+
+    /* — accent — */
+    --accent:      #ff6b85;
+    --accent-2:    #ffa06b;
+    --accent-press:#e8556f;
+    --accent-soft: rgba(255,107,133,.14);
+    --accent-ring: rgba(255,107,133,.34);
+    --accent-grad: linear-gradient(135deg, #ff7f92 0%, #ff9d6e 55%, #ffc46b 100%);
+    --gold:        #f0b95c;
+    --good:        #5fd0a3;
+
+    /* — stage (always dark: it is a viewer) — */
+    --stage-bg:    radial-gradient(120% 95% at 50% -10%, #221d2c 0%, #121119 45%, #08080b 100%);
+    --stage-ink:   rgba(255,255,255,.72);
+    --stage-chip:  rgba(10,10,14,.5);
+
+    /* — geometry — */
+    --r-xs: 7px; --r-sm: 10px; --r: 14px; --r-lg: 20px; --r-xl: 26px;
+
+    /* — elevation: soft, wide, low-opacity — */
+    --sh-1: 0 1px 1px rgba(0,0,0,.30), 0 0 0 .5px rgba(255,255,255,.04);
+    --sh-2: 0 2px 6px rgba(0,0,0,.26), 0 12px 32px -12px rgba(0,0,0,.55);
+    --sh-3: 0 24px 70px -20px rgba(0,0,0,.72), 0 2px 8px rgba(0,0,0,.4);
+    --glow: 0 6px 22px -6px rgba(255,107,133,.45);
+    --sheen: inset 0 1px 0 rgba(255,255,255,.07);
+
+    /* — motion: Apple springs — */
+    --ease:   cubic-bezier(.32,.72,0,1);
+    --ease-o: cubic-bezier(.22,1,.36,1);
+    --t-fast: .16s var(--ease);
+    --t-med:  .28s var(--ease);
+
+    /* — type — */
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+            "Helvetica Neue", Inter, system-ui, sans-serif;
+    --display: ui-rounded, -apple-system, BlinkMacSystemFont, "SF Pro Rounded",
+               "SF Pro Display", var(--sans);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", monospace;
+    font-synthesis: none;
+    /* light overrides */
     color-scheme: light;
     --bg:        #f2efec;
     --bg-2:      #fbf9f7;

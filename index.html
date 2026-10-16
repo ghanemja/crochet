@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- YarnFlow — Crochet Studio. Copyright (c) 2026 Janelle <janghanem@gmail.com>. MIT License: see LICENSE. Keep this notice when copying. -->
+<!-- YarnFlow — Crochet Studio. Copyright (c) 2026 Janelle Ghanem. MIT License: see LICENSE. Keep this notice when copying. -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -555,7 +555,7 @@
 
   /* ---------- Embed mode ---------- */
   body.embed header.appbar, body.embed .left-col, body.embed footer.note,
-  body.embed #steps, body.embed .legend, body.embed .gate { display: none !important; }
+  body.embed #steps, body.embed .legend { display: none !important; }
   body.embed .workspace { grid-template-columns: 1fr; padding: 10px; }
   body.embed { background: var(--bg); }
 
@@ -700,49 +700,16 @@
   .pc-var-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
   .pc-var-fork { font-family: var(--sans); font-size: 11px; font-weight: 640; color: var(--accent); background: none; border: none; cursor: pointer; flex: none; }
 
-  /* ---------- Gate ---------- */
-  .gate {
-    position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
-    background: color-mix(in srgb, var(--bg) 62%, transparent);
-    -webkit-backdrop-filter: blur(40px) saturate(150%); backdrop-filter: blur(40px) saturate(150%);
-  }
-  .gate.hidden { display: none; }
-  .gate-card {
-    width: min(396px, 92vw);
-    background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
-    border: .5px solid var(--border-2); border-radius: var(--r-xl); box-shadow: var(--sh-3), var(--sheen);
-    padding: 38px 32px 30px; text-align: center;
-    animation: rise .5s var(--ease-o);
-  }
-  .gate-mark {
-    width: 58px; height: 58px; margin: 0 auto 18px; border-radius: 18px; display: grid; place-items: center;
-    background: var(--accent-grad); color: #fff; box-shadow: var(--glow), var(--sheen);
-  }
-  .gate-mark svg { width: 30px; height: 30px; }
-  .gate-card h1 { font-size: 27px; letter-spacing: -.03em; }
-  .gate-sub { margin: 7px 0 26px; color: var(--text-3); font-size: 13.5px; }
-  .gate-field { display: block; text-align: left; margin-bottom: 13px; }
-  .gate-field span { display: block; font-size: 11px; font-weight: 620; color: var(--text-3); margin-bottom: 7px; letter-spacing: .05em; text-transform: uppercase; }
-  .gate-field input {
+  /* ---------- Form fields (publish modal) ---------- */
+  .form-field { display: block; text-align: left; margin-bottom: 13px; }
+  .form-field span { display: block; font-size: 11px; font-weight: 620; color: var(--text-3); margin-bottom: 7px; letter-spacing: .05em; text-transform: uppercase; }
+  .form-field input {
     width: 100%; background: var(--surface-3); color: var(--text); border: .5px solid var(--border);
     border-radius: var(--r-sm); padding: 12px 13px; font-family: var(--sans); font-size: 14px;
     transition: border-color var(--t-fast), box-shadow var(--t-fast);
   }
-  .gate-field input::placeholder { color: var(--text-3); }
-  .gate-field input:focus { outline: none; border-color: transparent; box-shadow: 0 0 0 3.5px var(--accent-ring); }
-  .gate-error { display: none; color: var(--accent); font-size: 12.5px; margin: -2px 0 12px; text-align: left; }
-  .gate-error.show { display: block; }
-  .gate.shake .gate-card { animation: gshake .4s var(--ease); }
-  @keyframes gshake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(7px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(3px)} }
-  .gate-btn {
-    width: 100%; margin-top: 8px; padding: 13px; border: none; cursor: pointer; border-radius: 999px;
-    font-family: var(--sans); font-weight: 640; font-size: 14.5px; letter-spacing: -.012em; color: #fff;
-    background: var(--accent-grad); box-shadow: var(--glow), var(--sheen);
-    transition: transform var(--t-fast), filter var(--t-fast);
-  }
-  .gate-btn:hover { filter: brightness(1.06); }
-  .gate-btn:active { transform: scale(.975); }
-  .gate-hint { margin-top: 18px; font-size: 11.5px; color: var(--text-3); }
+  .form-field input::placeholder { color: var(--text-3); }
+  .form-field input:focus { outline: none; border-color: transparent; box-shadow: 0 0 0 3.5px var(--accent-ring); }
 
   /* ---------- Compact / phone ---------- */
   @media (max-width: 760px) {
@@ -784,25 +751,6 @@
 </style>
 </head>
 <body>
-
-<!-- Access gate (client-side deterrent only; credentials live in source). -->
-<div class="gate" id="gate">
-  <form class="gate-card" id="gateForm" autocomplete="off">
-    <div class="gate-mark">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="9" r="6"/><path d="M12 15v6M9 19l3-2 3 2"/><path d="M9 9a3 3 0 0 1 6 0"/>
-      </svg>
-    </div>
-    <h1>YarnFlow</h1>
-    <p class="gate-sub">Sign in to enter the studio</p>
-    <label class="gate-field"><span>Username</span>
-      <input type="text" id="gateUser" autocomplete="username" placeholder="username" /></label>
-    <label class="gate-field"><span>Password</span>
-      <input type="password" id="gatePass" autocomplete="current-password" placeholder="password" /></label>
-    <div class="gate-error" id="gateError">That username or password didn't match.</div>
-    <button type="submit" class="gate-btn">Sign in</button>
-  </form>
-</div>
 
 <header class="appbar">
   <div class="mark">
@@ -1042,6 +990,7 @@
       <button class="modal-x" id="communityClose">✕</button>
     </div>
     <div class="modal-body">
+      <p class="feed-note" style="margin:0 0 14px;font-size:12.5px;color:var(--text-3);line-height:1.5">Makes are shared as public posts on this project's GitHub repository. Browsing is open to everyone; publishing opens GitHub and needs a free GitHub account.</p>
       <div id="threadList" class="feed"></div>
     </div>
   </div>
@@ -1053,8 +1002,8 @@
     <div class="modal-head"><h3>Publish your make</h3><button class="modal-x" id="publishCancel">✕</button></div>
     <div class="modal-body">
       <p class="modal-note" id="publishParent">Posting a new pattern</p>
-      <label class="gate-field"><span>Title</span><input id="publishTitle" placeholder="e.g. Striped market bag" /></label>
-      <label class="gate-field"><span>Your name</span><input id="publishAuthor" placeholder="maker handle" /></label>
+      <label class="form-field"><span>Title</span><input id="publishTitle" placeholder="e.g. Striped market bag" /></label>
+      <label class="form-field"><span>Your name</span><input id="publishAuthor" placeholder="maker handle" /></label>
       <p class="modal-note">It captures your current pattern, yarn, hook &amp; colours.</p>
       <button class="btn-primary" id="publishSave" style="margin-top:4px">Publish</button>
     </div>
@@ -3090,14 +3039,6 @@ function generateFromImage(source,mediumId,res){
   return plan;
 }
 
-// ---- gate --------------------------------------------------------------
-const GATE_USER="admin",GATE_PASS="password";
-const gate=document.getElementById("gate"),gateForm=document.getElementById("gateForm"),gateError=document.getElementById("gateError");
-function openGate(){if(sessionStorage.getItem("yarnflow_in")==="1"){gate.classList.add("hidden");return;}setTimeout(()=>document.getElementById("gateUser").focus(),50);}
-gateForm.addEventListener("submit",e=>{e.preventDefault();const u=document.getElementById("gateUser").value.trim(),p=document.getElementById("gatePass").value;
-  if(u===GATE_USER&&p===GATE_PASS){sessionStorage.setItem("yarnflow_in","1");gate.classList.add("hidden");}
-  else{gateError.classList.add("show");gate.classList.add("shake");setTimeout(()=>gate.classList.remove("shake"),360);document.getElementById("gatePass").value="";document.getElementById("gatePass").focus();}});
-openGate();
 
 // ---- boot --------------------------------------------------------------
 updateGaugeReadout();requestAnimationFrame(masterLoop);

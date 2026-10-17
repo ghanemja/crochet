@@ -57,7 +57,7 @@
     --stage-chip:  rgba(255,250,242,.72);
 
     /* — geometry — */
-    --r-xs: 7px; --r-sm: 10px; --r: 14px; --r-lg: 20px; --r-xl: 26px;
+    --r-xs: 5px; --r-sm: 7px; --r: 9px; --r-lg: 12px; --r-xl: 14px;
 
     /* — elevation: soft, wide, low-opacity — */
     --sh-1: 0 1px 1px rgba(0,0,0,.30), 0 0 0 .5px rgba(255,255,255,.04);
@@ -156,7 +156,7 @@
     --stage-chip:  rgba(255,250,242,.72);
 
     /* — geometry — */
-    --r-xs: 7px; --r-sm: 10px; --r: 14px; --r-lg: 20px; --r-xl: 26px;
+    --r-xs: 5px; --r-sm: 7px; --r: 9px; --r-lg: 12px; --r-xl: 14px;
 
     /* — elevation: soft, wide, low-opacity — */
     --sh-1: 0 1px 1px rgba(0,0,0,.30), 0 0 0 .5px rgba(255,255,255,.04);
@@ -239,7 +239,7 @@
     position: sticky; top: 0; z-index: 30;
   }
   .mark {
-    width: 34px; height: 34px; border-radius: 11px; flex: none;
+    width: 34px; height: 34px; border-radius: 8px; flex: none;
     display: grid; place-items: center; position: relative; color: #fff;
     background: var(--accent-grad);
     box-shadow: var(--glow), var(--sheen);
@@ -289,6 +289,15 @@
     overflow: hidden;
   }
   .card-head { padding: 20px 20px 0; }
+  /* step cards fold up like an accordion */
+  .card.acc .card-head { position: relative; cursor: pointer; padding-right: 48px; user-select: none; }
+  .card.acc .card-head::after { content: ""; position: absolute; right: 20px; top: 26px; width: 9px; height: 9px;
+    border-right: 1.5px solid var(--text-3); border-bottom: 1.5px solid var(--text-3); transform: rotate(45deg); transition: transform var(--t-fast); }
+  .card.acc.collapsed .card-head::after { transform: rotate(-45deg); }
+  .card.acc.collapsed .card-head { padding-bottom: 18px; }
+  .card.acc.collapsed .card-head p { display: none; }
+  .card.acc.collapsed .card-body { display: none; }
+  .card.acc .card-head:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
   .card-head .kicker {
     font-size: 10.5px; font-weight: 680; letter-spacing: .09em; text-transform: uppercase;
     background: var(--accent-grad); -webkit-background-clip: text; background-clip: text; color: transparent;
@@ -465,7 +474,7 @@
   }
   .badge2 b { color: #2a1d14; font-weight: 620; }
   .ov-tr { right: 16px; top: 14px; text-align: right; max-width: 52%; display: flex; flex-direction: column; align-items: flex-end; }
-  .ov-tr { background: rgba(255,250,242,.72); -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%); border: .5px solid rgba(60,40,20,.12); border-radius: 16px; padding: 10px 14px 12px; }
+  .ov-tr { background: rgba(255,250,242,.72); -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%); border: .5px solid rgba(60,40,20,.12); border-radius: 10px; padding: 10px 14px 12px; }
   .ov-tr .lbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: rgba(45,32,22,.55); font-weight: 580; }
   .ov-tr .val { font-family: var(--display); font-size: 26px; font-weight: 680; color: #2a1d14; margin-top: 2px; letter-spacing: -.03em; }
   .ov-tr .desc { font-size: 12px; color: rgba(45,32,22,.75); margin-top: 4px; line-height: 1.45; text-wrap: balance; }
@@ -836,8 +845,8 @@
 
   <!-- LEFT -->
   <div class="left-col">
-    <section class="card">
-      <div class="card-head">
+    <section class="card acc">
+      <div class="card-head" role="button" tabindex="0" aria-expanded="true">
         <div class="kicker">Step 1</div>
         <h2>Your pattern</h2>
         <p>Paste, upload, or edit — it updates live.</p>
@@ -877,8 +886,8 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="card-head">
+    <section class="card acc collapsed">
+      <div class="card-head" role="button" tabindex="0" aria-expanded="false">
         <div class="kicker">Step 2</div>
         <h2>Yarn &amp; hook</h2>
         <p>Tune the materials — both views update.</p>
@@ -917,8 +926,8 @@
       </div>
     </section>
 
-    <section class="card">
-      <div class="card-head">
+    <section class="card acc collapsed">
+      <div class="card-head" role="button" tabindex="0" aria-expanded="false">
         <div class="kicker">Step 3</div>
         <h2>Design the look</h2>
         <p>Recolour your make — by row, or stitch by stitch.</p>
@@ -1031,7 +1040,7 @@
       <button class="modal-x" id="learnClose">✕</button>
     </div>
     <div class="modal-body">
-      <canvas id="learnCanvas" style="width:100%;border-radius:16px;display:block;background:var(--stage-bg)"></canvas>
+      <canvas id="learnCanvas" style="width:100%;border-radius:10px;display:block;background:var(--stage-bg)"></canvas>
       <div id="learnReadout" class="learn-readout"></div>
       <div class="learn-scrub-row">
         <button class="learn-play" id="learnPlay" title="Play / pause">⏸</button>
@@ -3381,6 +3390,13 @@ function generateFromImage(source,mediumId,res){
 }
 
 
+// ---- step accordions ----------------------------------------------------
+document.querySelectorAll(".card.acc .card-head").forEach(h=>{
+  const toggle=()=>{ const sec=h.closest(".card"); sec.classList.toggle("collapsed"); h.setAttribute("aria-expanded",String(!sec.classList.contains("collapsed")));
+    if(sec.classList.contains("collapsed")) return; window.dispatchEvent(new Event("resize")); };
+  h.addEventListener("click",toggle);
+  h.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(); } });
+});
 // ---- boot --------------------------------------------------------------
 updateGaugeReadout();requestAnimationFrame(masterLoop);
 initStudio();resize3D();

@@ -586,6 +586,7 @@
   }
   .import-url button:hover { border-color: var(--accent); color: var(--accent); }
   .import-url button:active { transform: scale(.96); }
+  .pc-act.liked { color: #e0608a; }
 
   /* ---------- Design / paint ---------- */
   .seg-mode { display: flex; gap: 3px; margin: 6px 0 12px; background: var(--surface-3); border: .5px solid var(--border); border-radius: 999px; padding: 3px; }
@@ -1064,7 +1065,7 @@
       <button class="modal-x" id="communityClose">✕</button>
     </div>
     <div class="modal-body">
-      <p class="feed-note" style="margin:0 0 14px;font-size:12.5px;color:var(--text-3);line-height:1.5">Makes are shared as public posts on this project's GitHub repository. Browsing is open to everyone; publishing opens GitHub and needs a free GitHub account.</p>
+      <p class="feed-note" id="communityNote" style="margin:0 0 14px;font-size:12.5px;color:var(--text-3);line-height:1.5">Makes are shared as public posts on this project's GitHub repository. Browsing is open to everyone; publishing opens GitHub and needs a free GitHub account.</p>
       <div id="threadList" class="feed"></div>
     </div>
   </div>
@@ -1543,7 +1544,7 @@ function makeYarnMaps(hex,typeKey){
     const i=y*S+x,o=i*4,h=H[i];
     // colour: fibres lit on their crown, shadowed in the grooves; subtle hue drift
     const grain=N2[(y*S+((x*3)%S))];
-    let lum=0.68+0.34*h + (grain-0.5)*0.08;
+    let lum=0.74+0.26*h + (grain-0.5)*0.06;
     const warm=(N[i]-0.5)*0.08;
     dC.data[o]=Math.max(0,Math.min(255,base.r*lum*(1+warm)));
     dC.data[o+1]=Math.max(0,Math.min(255,base.g*lum));
@@ -1557,7 +1558,7 @@ function makeYarnMaps(hex,typeKey){
     const rg=Math.max(0,Math.min(1,t.roughness*(1.08-0.25*h)+(N[i]-0.5)*0.12));
     dR.data[o]=dR.data[o+1]=dR.data[o+2]=rg*255; dR.data[o+3]=255;
     // halo alpha: sparse stray fibres
-    const a=Math.pow(Math.max(0,h-0.62)*2.6,2.2)*Math.max(0,(N[(y*S+(x*5)%S)]-0.45)*1.8);
+    const a=Math.pow(Math.max(0,h-0.66)*2.9,2.4)*Math.max(0,(N[(y*S+(x*5)%S)]-0.5)*2.2);
     dA.data[o]=dA.data[o+1]=dA.data[o+2]=255; dA.data[o+3]=Math.min(255,a*255);
   }
   cC.getContext("2d").putImageData(dC,0,0); cN.getContext("2d").putImageData(dN,0,0);
@@ -1572,7 +1573,7 @@ function makeYarnTexture(hex,typeKey){ return makeYarnMaps(hex,typeKey).map; }
 function makeYarnMaterial(hex,typeKey){
   const t=YARN_TYPES[typeKey], maps=makeYarnMaps(hex,typeKey);
   const m=new THREE.MeshPhysicalMaterial({color:new THREE.Color(0xffffff),map:maps.map,
-    normalMap:maps.normal,normalScale:new THREE.Vector2(0.2+t.fuzz*0.15,0.2+t.fuzz*0.15),
+    normalMap:maps.normal,normalScale:new THREE.Vector2(0.14+t.fuzz*0.1,0.14+t.fuzz*0.1),
     roughnessMap:maps.rough,roughness:1.0,metalness:t.metalness,envMapIntensity:t.env,
     clearcoat:typeKey==="acrylic"?0.18:0,clearcoatRoughness:0.7});
   // Charlie sheen = the soft rim glow of fuzzy fibres catching light
@@ -1584,7 +1585,7 @@ function haloMaterial(hex,typeKey){
   const key=hex+"|"+typeKey; if(_haloMatCache[key]) return _haloMatCache[key];
   const t=YARN_TYPES[typeKey], maps=makeYarnMaps(hex,typeKey);
   const m=new THREE.MeshStandardMaterial({color:new THREE.Color(hex).convertSRGBToLinear().lerp(new THREE.Color(0xffffff),0.12),alphaMap:maps.alpha,
-    transparent:true,opacity:Math.min(0.7,0.16+t.fuzz*0.32),depthWrite:false,side:THREE.FrontSide,roughness:1,metalness:0,envMapIntensity:t.env*0.6});
+    transparent:false,alphaTest:Math.max(0.25,0.62-t.fuzz*0.3),depthWrite:true,side:THREE.FrontSide,roughness:1,metalness:0,envMapIntensity:t.env*0.6});
   _haloMatCache[key]=m; return m;
 }
 // Plied yarn geometry along a curve. P plies of radius rp orbit the centre
@@ -1619,6 +1620,19 @@ function yarnGeometry(curve,radius,closed,segs,opts){
         pos.push(ctr.x+d.x*rr,ctr.y+d.y*rr,ctr.z+d.z*rr); nor.push(d.x,d.y,d.z); uv.push(u*len*uScale+p*0.37,j/R); }
     }
     for(let i=0;i<segs;i++)for(let j=0;j<R;j++){ const a=base+i*(R+1)+j,b=a+R+1; idx.push(a,b,a+1,b,b+1,a+1); }
+    if(!closed){
+      // rounded caps: a centre vertex at each end, fanned to the end ring
+      [[0,-1],[segs,1]].forEach(([i,dir])=>{
+        const u=i/segs; curve.getPointAt(Math.min(1,u),C);
+        const T=frames.tangents[i],Nn=frames.normals[i],B=frames.binormals[i];
+        const th=p/P*6.283+u*turns*6.283, cx=Math.cos(th),sy=Math.sin(th);
+        rad.set(Nn.x*cx+B.x*sy,Nn.y*cx+B.y*sy,Nn.z*cx+B.z*sy);
+        const rr=rp*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
+        ctr.copy(C).addScaledVector(rad,rho).addScaledVector(T,dir*rr*0.6);
+        const ci=pos.length/3; pos.push(ctr.x,ctr.y,ctr.z); nor.push(T.x*dir,T.y*dir,T.z*dir); uv.push(u*len*uScale+p*0.37,0.5);
+        for(let j=0;j<R;j++){ const a=base+i*(R+1)+j, b=base+i*(R+1)+j+1; if(dir<0) idx.push(ci,a,b); else idx.push(ci,b,a); }
+      });
+    }
   }
   const g=new THREE.BufferGeometry();
   g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
@@ -1633,8 +1647,7 @@ function yarnMesh(curve,radius,closed,segs,mat,opts){
   opts=opts||{}; const typeKey=opts.type||settings.type, t=YARN_TYPES[typeKey];
   const m=new THREE.Mesh(yarnGeometry(curve,radius,closed,segs,{type:typeKey}),mat);
   m.castShadow=true; m.receiveShadow=true;
-  if(t.fuzz>0.3&&opts.halo!==false){ const hex=(mat.userData&&mat.userData.yarnHex)||settings.color;
-    const h=new THREE.Mesh(haloGeometry(curve,radius,closed,segs),haloMaterial(hex,typeKey)); h.name="halo"; h.renderOrder=2; m.add(h); }
+  // (no fuzz halo sleeve: it shredded into shards wherever strands crossed; sheen carries the softness)
   return m;
 }
 // swap the geometry of an existing yarn mesh (and its halo) for a new curve
@@ -1710,7 +1723,7 @@ function initStudio(){
   // photo-studio lighting: large warm key, cool fill, back rim that catches the fibre halo
   const hemi=new THREE.HemisphereLight(0xfff1e0,0x241d17,0.38);scene.add(hemi);
   const key=new THREE.DirectionalLight(0xfff0e0,1.35);key.position.set(-14,26,20);key.castShadow=true;
-  key.shadow.mapSize.set(2048,2048);key.shadow.bias=-0.0002;key.shadow.normalBias=0.04;key.shadow.radius=4;scene.add(key);scene.add(key.target);
+  key.shadow.mapSize.set(2048,2048);key.shadow.bias=-0.0002;key.shadow.normalBias=0.08;key.shadow.radius=4;scene.add(key);scene.add(key.target);
   const fill=new THREE.DirectionalLight(0xcfdcff,0.3);fill.position.set(20,10,10);scene.add(fill);
   const rim=new THREE.DirectionalLight(0xffe0c0,0.7);rim.position.set(6,16,-26);scene.add(rim);
   const ground=makeGround();scene.add(ground);
@@ -1854,7 +1867,7 @@ function buildStudioGeometry(){
   clearStudioMakes();
   App.plan=null;               // a text pattern replaces any image-derived plan
   if(!App.parsed) return;
-  const lay=App.lay3d, radius=yarnRadius()*0.55, pos=lay.positions;
+  const lay=App.lay3d, radius=yarnRadius()*0.5, pos=lay.positions;
   const byPart={};
   pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p,nextEntryLocal(pos,i));const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
     const seg=Math.max(14,Math.round(pts.length*2.6));
@@ -2350,7 +2363,7 @@ function initLearn3D(){
   scene.add(new THREE.HemisphereLight(0xfff4ea,0x8a7f72,0.75));
   const kl=new THREE.DirectionalLight(0xffffff,1.7);kl.position.set(8,16,12);kl.castShadow=true;
   kl.shadow.mapSize.set(1024,1024);kl.shadow.camera.near=1;kl.shadow.camera.far=60;
-  kl.shadow.camera.left=-16;kl.shadow.camera.right=16;kl.shadow.camera.top=16;kl.shadow.camera.bottom=-16;kl.shadow.bias=-0.0005;scene.add(kl);
+  kl.shadow.camera.left=-16;kl.shadow.camera.right=16;kl.shadow.camera.top=16;kl.shadow.camera.bottom=-16;kl.shadow.bias=-0.0003;kl.shadow.normalBias=0.05;kl.shadow.radius=3;scene.add(kl);
   const fl=new THREE.DirectionalLight(0xffd9c2,0.45);fl.position.set(-10,5,-6);scene.add(fl);
   const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.ShadowMaterial({opacity:0.26}));
   ground.rotation.x=-Math.PI/2;ground.position.y=-3.4;ground.receiveShadow=true;scene.add(ground);
@@ -2528,7 +2541,7 @@ function refreshLearnHand(){ if(HandModel.scene){ poseHandGrip(HandModel.scene,H
 //  real rings whose count matches each written step, and the hook is animated
 //  through the actual insert / yarn-over / pull-through motion.
 // ============================================================
-const YR=0.40;                                              // yarn radius (uniform gauge)
+const YR=0.36;                                              // yarn radius (uniform gauge)
 const HOOK_HALF=0.42;                                       // hook shaft radius
 const HOOK_DIR=new THREE.Vector3(0.66,1,-0.12).normalize();// natural diagonal lean of the shaft
 const LEARN_TIP=new THREE.Vector3(0,0.4,0);                 // hook tip / working point
@@ -2665,7 +2678,7 @@ function animateLearn3D(){
   const act=acts[ai], before=simulateActs(acts,ai), after=simulateActs(acts,ai+1);
 
   // ---- geometry of the fabric under the hook ----
-  const baseD=0.55, gap=0.6, rL=0.92, pitch=1.35;
+  const baseD=0.55, gap=0.78, rL=0.9, pitch=1.35;
   const postLen=isChain?1.6:STITCHES[key].h*1.0+1.7;
   const rowC=LEARN_TIP.clone().addScaledVector(B0.U,baseD).addScaledVector(WDOWN,postLen+0.9);
   const anchor=LEARN_TIP.clone().addScaledVector(B0.U,baseD);   // where the fabric holds the live loop on the shaft
@@ -2926,7 +2939,51 @@ function extractPattern(src){
 }
 
 // ============================================================
-//  Community via GitHub Issues (genuinely multi-user, no backend)
+//  Community database (Supabase / Postgres)
+//  - Fill in SUPABASE_URL + SUPABASE_ANON_KEY below (Project Settings →
+//    API in the Supabase dashboard). Schema lives in supabase/schema.sql,
+//    setup steps in docs/SUPABASE.md.
+//  - Talks to PostgREST directly with fetch(): no SDK, works from file://.
+//  - The anon key is a *publishable* key; row-level security in the
+//    schema is what keeps the table insert-only for the public.
+//  - Leave both blank and the app falls back to the GitHub-Issues feed.
+// ============================================================
+const SUPABASE_URL="";       // e.g. "https://abcdefgh.supabase.co"
+const SUPABASE_ANON_KEY="";  // e.g. "eyJhbGciOi..."
+const SUPABASE_TABLE="makes";
+const DB_MODE = (SUPABASE_URL && SUPABASE_ANON_KEY) ? "supabase" : "github";
+
+function sbHeaders(extra){
+  return Object.assign({ apikey:SUPABASE_ANON_KEY, Authorization:"Bearer "+SUPABASE_ANON_KEY,
+    "Content-Type":"application/json", Accept:"application/json" }, extra||{});
+}
+async function sbFetch(path,opts){
+  const r=await fetch(SUPABASE_URL.replace(/\/$/,"")+"/rest/v1/"+path, Object.assign({headers:sbHeaders()},opts||{}));
+  if(!r.ok){ let msg=r.status+""; try{ const j=await r.json(); msg+=" "+(j.message||j.hint||j.error||""); }catch(e){} throw new Error("Supabase "+msg.trim()); }
+  const t=await r.text(); return t?JSON.parse(t):null;
+}
+async function sbFetchCommunity(){
+  const rows=await sbFetch(`${SUPABASE_TABLE}?select=id,created_at,title,author,parent_id,likes,state&order=created_at.desc&limit=200`);
+  return rows.map(r=>({ number:r.id, title:r.title||"Untitled make", author:r.author||"", ts:Date.parse(r.created_at),
+    html_url:r.state?linkFor(r.state):"#", state:r.state, parent:r.parent_id||null, reactions:r.likes||0 }));
+}
+async function sbPublish(title,author,state,parentId){
+  const rows=await sbFetch(SUPABASE_TABLE,{ method:"POST", headers:sbHeaders({Prefer:"return=representation"}),
+    body:JSON.stringify({ title, author:author||null, parent_id:parentId||null, state }) });
+  return rows&&rows[0];
+}
+// one like per browser per make (soft guard; the RPC itself is open)
+const LIKED_KEY="yarnflow.liked";
+function likedSet(){ try{ return new Set(JSON.parse(localStorage.getItem(LIKED_KEY)||"[]")); }catch(e){ return new Set(); } }
+async function sbLike(id){
+  const liked=likedSet(); if(liked.has(id)) return false;
+  await sbFetch("rpc/like_make",{ method:"POST", body:JSON.stringify({ make_id:id }) });
+  liked.add(id); try{ localStorage.setItem(LIKED_KEY,JSON.stringify([...liked])); }catch(e){}
+  return true;
+}
+
+// ============================================================
+//  Fallback: Community via GitHub Issues (no backend at all)
 //  - Each published make = a public GitHub issue labelled
 //    "yarnflow-pattern" whose body holds the .crochet JSON in a code
 //    fence. Variations record their parent issue # in meta.parentIssue,
@@ -2947,7 +3004,8 @@ function parseIssueState(body){
   if(!m) return null;
   try{ return JSON.parse(m[1]); }catch(e){ return null; }
 }
-async function fetchCommunity(){
+function fetchCommunity(){ return DB_MODE==="supabase" ? sbFetchCommunity() : ghFetchCommunity(); }
+async function ghFetchCommunity(){
   const url=`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/issues?labels=${GH_LABEL}&state=open&per_page=100&sort=created&direction=desc`;
   const r=await fetch(url,{headers:{Accept:"application/vnd.github+json"}});
   if(!r.ok) throw new Error("GitHub API "+r.status);
@@ -2962,13 +3020,18 @@ async function fetchCommunity(){
 }
 function openCommunity(){
   communityModal.classList.add("open");
+  document.getElementById("communityNote").textContent = DB_MODE==="supabase"
+    ? "Makes are stored in a shared YarnFlow database. Browsing, publishing and liking are open to everyone — no account needed."
+    : "Makes are shared as public posts on this project's GitHub repository. Browsing is open to everyone; publishing opens GitHub and needs a free GitHub account.";
   loadFeed();
 }
 function loadFeed(){
   const list=document.getElementById("threadList");
   list.innerHTML=`<div class="feed-empty">Loading the feed…</div>`;
   fetchCommunity().then(posts=>renderCommunity(posts)).catch(err=>{
-    list.innerHTML=`<div class="feed-empty">Couldn't reach GitHub (${escapeHtml(err.message)}).<br><br>
+    list.innerHTML = DB_MODE==="supabase"
+      ? `<div class="feed-empty">Couldn't reach the database (${escapeHtml(err.message)}).<br><br>Check your connection and tap <b>↻ Refresh</b>.</div>`
+      : `<div class="feed-empty">Couldn't reach GitHub (${escapeHtml(err.message)}).<br><br>
       You can still tap <b>Publish</b> above — it opens a GitHub issue you submit with your own login.</div>`;
   });
 }
@@ -3001,10 +3064,11 @@ function renderCommunity(posts){
   const thumbs=[]; // {sel, state}
   function card(p){
     const kids=byParent[p.number]||[];
-    const id="m"+p.number;
+    const id="m"+String(p.number).replace(/[^a-z0-9]/gi,"");
+    const gh = DB_MODE!=="supabase";
     const varsHtml = kids.length ? `<div class="pc-vars">
       <div class="pc-vars-h">${kids.length} variation${kids.length===1?"":"s"}</div>
-      ${kids.map(k=>{ const kid="m"+k.number; thumbs.push({sel:"#"+kid,state:k.state});
+      ${kids.map(k=>{ const kid="m"+String(k.number).replace(/[^a-z0-9]/gi,""); thumbs.push({sel:"#"+kid,state:k.state});
         return `<div class="pc-var" data-open="${k.number}">
           <canvas id="${kid}" width="156" height="120"></canvas>
           <div class="pc-var-info"><div class="pc-var-title">${escapeHtml(k.title)}</div>
@@ -3017,18 +3081,20 @@ function renderCommunity(posts){
       <div class="pc-head">
         <div class="pc-avatar" style="background:${avatarColor(p.author)}">${escapeHtml(initials(p.author))}</div>
         <div class="pc-who"><div class="pc-name">${escapeHtml(p.author||"someone")}</div>
-          <div class="pc-sub">${timeAgo(p.ts)} · #${p.number}</div></div>
-        <a class="pc-gh" href="${p.html_url}" target="_blank" rel="noopener" title="View on GitHub">GitHub ↗</a>
+          <div class="pc-sub">${timeAgo(p.ts)}${gh?" · #"+p.number:""}</div></div>
+        ${gh?`<a class="pc-gh" href="${p.html_url}" target="_blank" rel="noopener" title="View on GitHub">GitHub ↗</a>`:""}
       </div>
       <div class="pc-media" data-open="${p.number}">
         <canvas id="${id}" width="468" height="351"></canvas>
         <div class="pc-open-ov"><span>Open in YarnFlow</span></div>
-        <div class="pc-badge">${p.state?(p.state.pattern?(p.state.pattern.split(/\n+/).filter(Boolean).length+" rows"):"pattern"):"on GitHub"}</div>
+        <div class="pc-badge">${p.state?(p.state.pattern?(p.state.pattern.split(/\n+/).filter(Boolean).length+" rows"):"pattern"):(gh?"on GitHub":"no preview")}</div>
       </div>
       <div class="pc-actions">
-        <a class="pc-act" href="${p.html_url}" target="_blank" rel="noopener" title="React on GitHub">${ICON.heart}<span>${p.reactions||0}</span></a>
+        ${gh
+          ? `<a class="pc-act" href="${p.html_url}" target="_blank" rel="noopener" title="React on GitHub">${ICON.heart}<span>${p.reactions||0}</span></a>`
+          : `<button class="pc-act${likedSet().has(p.number)?" liked":""}" data-like="${p.number}" title="Like">${likedSet().has(p.number)?ICON.heartFill:ICON.heart}<span>${p.reactions||0}</span></button>`}
         <button class="pc-act" data-fork="${p.number}" data-ftitle="${escapeHtml(p.title)}" title="Post a variation">${ICON.fork}<span>${kids.length}</span></button>
-        <a class="pc-act" href="${p.html_url}#issue-comment-box" target="_blank" rel="noopener" title="Comment on GitHub">${ICON.comment}</a>
+        ${gh?`<a class="pc-act" href="${p.html_url}#issue-comment-box" target="_blank" rel="noopener" title="Comment on GitHub">${ICON.comment}</a>`:""}
         <button class="pc-act" data-share="${p.number}" title="Copy share link">${ICON.share}</button>
         <span class="pc-spacer"></span>
         <button class="pc-fork-btn" data-fork="${p.number}" data-ftitle="${escapeHtml(p.title)}">Remix</button>
@@ -3049,7 +3115,12 @@ function renderCommunity(posts){
     const p=find(el.dataset.open); if(!p||!p.state){ toast("This post has no embedded pattern"); return; }
     applyState(p.state); communityModal.classList.remove("open"); toast("Loaded “"+p.title+"”"); }));
   list.querySelectorAll("[data-fork]").forEach(b=>b.addEventListener("click",e=>{
-    e.stopPropagation(); openPublish(+b.dataset.fork,b.dataset.ftitle); }));
+    e.stopPropagation(); openPublish(b.dataset.fork,b.dataset.ftitle); }));
+  list.querySelectorAll("[data-like]").forEach(b=>b.addEventListener("click",async e=>{
+    e.stopPropagation(); const id=b.dataset.like;
+    try{ const ok=await sbLike(id); if(!ok){ toast("Already liked"); return; }
+      const n=b.querySelector("span"); n.textContent=(+n.textContent||0)+1; b.classList.add("liked"); b.firstChild.outerHTML=ICON.heartFill;
+    }catch(err){ toast("Couldn't like: "+err.message); } }));
   list.querySelectorAll("[data-share]").forEach(b=>b.addEventListener("click",async e=>{
     e.stopPropagation(); const p=find(b.dataset.share);
     await copyText(p&&p.state?linkFor(p.state):p.html_url); toast("Share link copied"); }));
@@ -3062,7 +3133,7 @@ function renderThumb(cv,state){
   c.fillStyle=bg; c.fillRect(0,0,W,H);
   let parsed=null; try{ if(state&&state.pattern) parsed=parsePattern(state.pattern); }catch(e){}
   if(!parsed||!parsed.rows.length){ c.fillStyle="rgba(255,255,255,.22)"; c.textAlign="center";
-    c.font="600 "+Math.round(W*0.045)+"px system-ui"; c.fillText("view on GitHub",W/2,H/2); return; }
+    c.font="600 "+Math.round(W*0.045)+"px system-ui"; c.fillText(DB_MODE==="supabase"?"no preview":"view on GitHub",W/2,H/2); return; }
   const color=(state.yarn&&state.yarn.color)||"#e0608a", paint=state.paint||{}, rows=parsed.rows;
   const maxN=Math.max(...rows.map(r=>r.stitches.length),1), pad=W*0.08;
   const gap=Math.min(W*0.06,(W-pad*2)/Math.max(maxN-1,3));
@@ -3091,19 +3162,32 @@ function timeAgo(ts){if(!ts)return"just now";const s=(Date.now()-ts)/1000;if(s<3
 
 function openPublish(parentIssue,parentTitle){
   App.meta.parentIssue=parentIssue||null;
+  const ref = DB_MODE==="supabase" ? "" : ` (#${parentIssue})`;
   document.getElementById("publishParent").textContent = parentIssue
-    ? `Posting a variation of “${parentTitle||("#"+parentIssue)}” (#${parentIssue})`
+    ? `Posting a variation of “${parentTitle||("#"+parentIssue)}”${ref}`
     : "Posting a new pattern";
   if(parentIssue && !document.getElementById("publishTitle").value) document.getElementById("publishTitle").value="Variation of "+(parentTitle||("#"+parentIssue));
   document.getElementById("publishModal").classList.add("open");
 }
 document.getElementById("publishBtn").addEventListener("click",()=>openPublish(null));
 document.getElementById("publishCancel").addEventListener("click",()=>document.getElementById("publishModal").classList.remove("open"));
-document.getElementById("publishSave").addEventListener("click",()=>{
+document.getElementById("publishSave").addEventListener("click",async ()=>{
   const title=document.getElementById("publishTitle").value.trim()||"Untitled make";
   const author=document.getElementById("publishAuthor").value.trim();
   const state=currentState();
   state.meta=Object.assign({},state.meta,{author,parentIssue:App.meta.parentIssue||null});
+  if(DB_MODE==="supabase"){
+    if(!App.parsed||!App.parsed.flat.length){ toast("Load a pattern before publishing"); return; }
+    const btn=document.getElementById("publishSave"); btn.disabled=true; btn.textContent="Publishing…";
+    try{
+      await sbPublish(title,author,state,App.meta.parentIssue||null);
+      document.getElementById("publishModal").classList.remove("open");
+      toast("Published “"+title+"”");
+      if(communityModal.classList.contains("open")) loadFeed(); else openCommunity();
+    }catch(err){ toast("Publish failed: "+err.message); }
+    finally{ btn.disabled=false; btn.textContent="Publish"; }
+    return;
+  }
   // build the GitHub issue body: human summary + a json fence the app reads back
   const counts={}; (App.parsed?App.parsed.flat:[]).forEach(s=>counts[s.key]=(counts[s.key]||0)+1);
   const summary=Object.entries(counts).map(([k,v])=>`${v} ${k}`).join(", ");

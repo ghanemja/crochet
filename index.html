@@ -52,9 +52,9 @@
     --good:        #5fd0a3;
 
     /* — stage (always dark: it is a viewer) — */
-    --stage-bg:    radial-gradient(120% 95% at 50% -10%, #221d2c 0%, #121119 45%, #08080b 100%);
+    --stage-bg:    radial-gradient(120% 95% at 50% -10%, #fbf5ec 0%, #f6eee2 55%, #efe4d3 100%);
     --stage-ink:   rgba(255,255,255,.72);
-    --stage-chip:  rgba(10,10,14,.5);
+    --stage-chip:  rgba(255,250,242,.72);
 
     /* — geometry — */
     --r-xs: 7px; --r-sm: 10px; --r: 14px; --r-lg: 20px; --r-xl: 26px;
@@ -151,9 +151,9 @@
     --good:        #5fd0a3;
 
     /* — stage (always dark: it is a viewer) — */
-    --stage-bg:    radial-gradient(120% 95% at 50% -10%, #221d2c 0%, #121119 45%, #08080b 100%);
+    --stage-bg:    radial-gradient(120% 95% at 50% -10%, #fbf5ec 0%, #f6eee2 55%, #efe4d3 100%);
     --stage-ink:   rgba(255,255,255,.72);
-    --stage-chip:  rgba(10,10,14,.5);
+    --stage-chip:  rgba(255,250,242,.72);
 
     /* — geometry — */
     --r-xs: 7px; --r-sm: 10px; --r: 14px; --r-lg: 20px; --r-xl: 26px;
@@ -460,18 +460,19 @@
   .ov-tl { left: 16px; top: 14px; display: flex; gap: 7px; }
   .badge2 {
     background: var(--stage-chip); -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
-    border: .5px solid rgba(255,255,255,.14); padding: 6px 12px; border-radius: 999px;
-    font-size: 12px; color: rgba(255,255,255,.72); font-variant-numeric: tabular-nums;
+    border: .5px solid rgba(60,40,20,.14); padding: 6px 12px; border-radius: 999px;
+    font-size: 12px; color: rgba(45,32,22,.78); font-variant-numeric: tabular-nums;
   }
-  .badge2 b { color: #fff; font-weight: 620; }
+  .badge2 b { color: #2a1d14; font-weight: 620; }
   .ov-tr { right: 16px; top: 14px; text-align: right; max-width: 52%; display: flex; flex-direction: column; align-items: flex-end; }
-  .ov-tr .lbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.45); font-weight: 580; }
-  .ov-tr .val { font-family: var(--display); font-size: 26px; font-weight: 680; color: #fff; margin-top: 2px; letter-spacing: -.03em; text-shadow: 0 2px 14px rgba(0,0,0,.5); }
-  .ov-tr .desc { font-size: 12px; color: rgba(255,255,255,.68); margin-top: 4px; line-height: 1.45; text-wrap: balance; }
+  .ov-tr { background: rgba(255,250,242,.72); -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%); border: .5px solid rgba(60,40,20,.12); border-radius: 16px; padding: 10px 14px 12px; }
+  .ov-tr .lbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: rgba(45,32,22,.55); font-weight: 580; }
+  .ov-tr .val { font-family: var(--display); font-size: 26px; font-weight: 680; color: #2a1d14; margin-top: 2px; letter-spacing: -.03em; }
+  .ov-tr .desc { font-size: 12px; color: rgba(45,32,22,.75); margin-top: 4px; line-height: 1.45; text-wrap: balance; }
   .hint3d {
-    left: 50%; bottom: 14px; transform: translateX(-50%); font-size: 11.5px; color: rgba(255,255,255,.62);
+    left: 50%; bottom: 14px; transform: translateX(-50%); font-size: 11.5px; color: rgba(45,32,22,.7);
     background: var(--stage-chip); -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
-    border: .5px solid rgba(255,255,255,.12); padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+    border: .5px solid rgba(60,40,20,.12); padding: 6px 14px; border-radius: 999px; white-space: nowrap;
   }
 
   /* ---------- Transport ---------- */
@@ -1663,20 +1664,24 @@ function makeEnvironment(renderer){
   tex.dispose();pmrem.dispose();return env;
 }
 function smooth01(a,b,x){ const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); }
-// soft linen table top with a baked radial fade (ported from the fabric-engine branch)
+// warm wooden craft table (procedural planks + grain)
 function makeGround(){
   const S=1024, cv=document.createElement("canvas"); cv.width=cv.height=S; const c=cv.getContext("2d");
-  c.fillStyle="#5d544a"; c.fillRect(0,0,S,S);
-  for(let y=0;y<S;y+=3){ c.fillStyle=`rgba(0,0,0,${0.05+Math.random()*0.07})`; c.fillRect(0,y,S,1.4); }
-  for(let x=0;x<S;x+=3){ c.fillStyle=`rgba(255,240,220,${0.025+Math.random()*0.04})`; c.fillRect(x,0,1.4,S); }
-  for(let i=0;i<5000;i++){ const v=Math.random()<0.5?0:255; c.fillStyle=`rgba(${v},${v},${v},0.035)`; c.fillRect(Math.random()*S,Math.random()*S,3,1); }
-  const img=c.getImageData(0,0,S,S), d=img.data;
-  for(let y=0;y<S;y++) for(let x=0;x<S;x++){ const r=Math.hypot(x-S/2,y-S/2)/(S/2); d[(y*S+x)*4+3]=255*(1-smooth01(0.18,1,r)); }
-  c.putImageData(img,0,0);
-  const map=new THREE.CanvasTexture(cv); map.anisotropy=8;
+  const planks=6, pw=S/planks;
+  for(let i=0;i<planks;i++){ const t=(i*37)%7/7; c.fillStyle=`hsl(${28+t*6},${46+t*10}%,${56+t*8}%)`; c.fillRect(0,i*pw,S,pw);
+    // grain: wavy dark streaks along the plank
+    for(let g=0;g<26;g++){ const y0=i*pw+Math.random()*pw, amp=2+Math.random()*5, f=0.004+Math.random()*0.01, ph=Math.random()*9;
+      c.strokeStyle=`rgba(70,40,15,${0.06+Math.random()*0.12})`; c.lineWidth=0.8+Math.random()*1.6; c.beginPath();
+      for(let x=0;x<=S;x+=8){ const y=y0+Math.sin(x*f+ph)*amp+Math.sin(x*0.03+g)*1.2; x?c.lineTo(x,y):c.moveTo(x,y); } c.stroke(); }
+    // plank seam + soft bevel
+    c.fillStyle="rgba(50,28,10,0.55)"; c.fillRect(0,i*pw,S,2); c.fillStyle="rgba(255,235,205,0.18)"; c.fillRect(0,i*pw+2,S,2);
+  }
+  // fine noise for a matte finish
+  for(let i=0;i<30000;i++){ const v=Math.random()<0.5?0:255; c.fillStyle=`rgba(${v},${v},${v},0.03)`; c.fillRect(Math.random()*S,Math.random()*S,2,1); }
+  const map=new THREE.CanvasTexture(cv); map.anisotropy=8; map.wrapS=map.wrapT=THREE.RepeatWrapping; map.repeat.set(3,3);
   if('SRGBColorSpace'in THREE) map.colorSpace=THREE.SRGBColorSpace; else map.encoding=THREE.sRGBEncoding;
-  const mat=new THREE.MeshStandardMaterial({color:0xffffff,map,transparent:true,roughness:0.96,metalness:0,envMapIntensity:0.3,depthWrite:false});
-  const m=new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat); m.rotation.x=-Math.PI/2; m.receiveShadow=true; m.renderOrder=-1; return m;
+  const mat=new THREE.MeshStandardMaterial({color:0xffffff,map,roughness:0.78,metalness:0,envMapIntensity:0.35});
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat); m.rotation.x=-Math.PI/2; m.receiveShadow=true; return m;
 }
 function initStudio(){
   if(Studio.ready) return;
@@ -1687,6 +1692,8 @@ function initStudio(){
   if('outputColorSpace'in renderer)renderer.outputColorSpace=THREE.SRGBColorSpace; else if('outputEncoding'in renderer)renderer.outputEncoding=THREE.sRGBEncoding;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.9;
   const scene=new THREE.Scene();
+  scene.background=new THREE.Color(0xf6eee2);           // a bright, homey room instead of a black void
+  scene.fog=new THREE.Fog(0xf6eee2,60,200);
   const camera=new THREE.PerspectiveCamera(32,1040/600,0.1,2000);camera.position.set(0,8,40);
   const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.08;controls.target.set(0,4,0);controls.minDistance=4;controls.maxDistance=260;
   controls.maxPolarAngle=Math.PI*0.495;
@@ -1857,6 +1864,9 @@ function buildStudioGeometry(){
     let cx=0,cz=0,top=-1e9; grp.forEach(({p})=>{cx+=p.x;cz+=p.z;top=Math.max(top,p.y+p.h);}); cx/=grp.length; cz/=grp.length;
     const spr=makeLabelSprite(part.name+(part.count>1?" ×"+part.count:"")); spr.position.set(cx,top+lay.sp*1.4,cz);
     spr.userData.partIndex=pi; spr.visible=false; Studio.group.add(spr); Studio.labels.push(spr); }); }
+  // measure with the group at the origin — the box is in world space, and the
+  // previous make's offset would otherwise seat this one above or below the floor
+  Studio.group.position.set(0,0,0); Studio.group.updateMatrixWorld(true);
   const box=new THREE.Box3().setFromObject(Studio.group);const c=box.getCenter(new THREE.Vector3());const size=box.getSize(new THREE.Vector3());
   Studio.group.position.set(-c.x,-box.min.y,-c.z);
   fitStudioScene(Math.max(size.x,size.y,size.z,6));
@@ -1876,7 +1886,48 @@ function buildStudioGeometry(){
 function fitStudioScene(rad){
   const k=Studio.key, s=rad*1.6; k.position.set(-rad*0.9,rad*2.2,rad*1.4); k.target.position.set(0,0,0);
   Object.assign(k.shadow.camera,{left:-s,right:s,top:s,bottom:-s,near:0.1,far:rad*8}); k.shadow.camera.updateProjectionMatrix();
-  Studio.ground.scale.set(rad*6,rad*6,1); Studio.ground.position.set(0,-0.02,0);
+  Studio.ground.scale.set(rad*16,rad*16,1); Studio.ground.position.set(0,-0.02,0);
+  Studio.ground.material.map.repeat.set(rad*0.5,rad*0.5);
+  Studio.scene.fog.near=rad*5; Studio.scene.fog.far=rad*14;
+  placeStudioProps(rad);
+}
+// craft-table props around the make: spare yarn balls, a pencil, a mug and a pattern sheet
+function placeStudioProps(rad){
+  if(Studio.props){ Studio.scene.remove(Studio.props); Studio.props.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
+  const g=new THREE.Group(), r=yarnRadius()*0.55, V=THREE.Vector3;
+  const span=rad;                                    // how far out to spread the props
+  rad=Math.min(rad*0.45, r*22);                      // prop size: a ball of yarn is ~20 yarn diameters
+  const others=SWATCH_COLORS.map(c=>c[1]).filter(h=>h.toLowerCase()!==settings.color.toLowerCase());
+  const ball=(hex,R,x,z)=>{ const b=makeYarnBall(R,makeYarnMaterial(hex,settings.type),r,x*7+z); b.position.set(x,R,z); b.traverse(o=>{o.castShadow=true;}); g.add(b); };
+  ball(others[2],rad*0.42,-span*0.9-rad*1.2,-span*0.5-rad*0.4);
+  ball(others[5],rad*0.36,-span*0.9-rad*2.0,-span*0.2);
+  ball(others[3],rad*0.3,span*0.9+rad*1.4,-span*0.6-rad*0.5);
+  // pattern sheet: cream paper with faint ruled lines
+  const pc=document.createElement("canvas"); pc.width=256; pc.height=340; const pcx=pc.getContext("2d");
+  pcx.fillStyle="#fbf6ea"; pcx.fillRect(0,0,256,340); pcx.strokeStyle="rgba(120,100,80,0.25)"; pcx.lineWidth=1;
+  for(let y=40;y<330;y+=18){ pcx.beginPath(); pcx.moveTo(22,y); pcx.lineTo(236,y); pcx.stroke(); }
+  pcx.strokeStyle="rgba(60,50,45,0.55)"; pcx.lineWidth=2;
+  for(let y=48;y<300;y+=36){ pcx.beginPath(); let x=28; pcx.moveTo(x,y-6); while(x<120+Math.random()*100){ x+=6; pcx.lineTo(x,y-6+Math.sin(x*0.7)*3); } pcx.stroke(); }
+  const ptex=new THREE.CanvasTexture(pc); if('SRGBColorSpace'in THREE) ptex.colorSpace=THREE.SRGBColorSpace; else ptex.encoding=THREE.sRGBEncoding;
+  const paper=new THREE.Mesh(new THREE.BoxGeometry(rad*1.5,0.04,rad*2.0),[0,1,2,3,4,5].map(i=>new THREE.MeshStandardMaterial(i===2?{map:ptex,roughness:0.95}:{color:0xf3ecdc,roughness:0.95})));
+  paper.position.set(span*0.9+rad*1.3,0.02,rad*0.3); paper.rotation.y=-0.35; paper.receiveShadow=true; paper.castShadow=true; g.add(paper);
+  // pencil lying on the sheet
+  const pencil=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(rad*0.045,rad*0.045,rad*1.3,8),new THREE.MeshStandardMaterial({color:0xf2b544,roughness:0.6})); pencil.add(body);
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(rad*0.045,rad*0.14,8),new THREE.MeshStandardMaterial({color:0xe6cfa4,roughness:0.8})); tip.position.y=-rad*0.72; tip.rotation.x=Math.PI; pencil.add(tip);
+  const lead=new THREE.Mesh(new THREE.ConeGeometry(rad*0.018,rad*0.06,8),new THREE.MeshStandardMaterial({color:0x333333,roughness:0.5})); lead.position.y=-rad*0.78; lead.rotation.x=Math.PI; pencil.add(lead);
+  const band=new THREE.Mesh(new THREE.CylinderGeometry(rad*0.05,rad*0.05,rad*0.08,8),new THREE.MeshStandardMaterial({color:0xd9d2c5,metalness:0.6,roughness:0.35})); band.position.y=rad*0.6; pencil.add(band);
+  const eraser=new THREE.Mesh(new THREE.CylinderGeometry(rad*0.046,rad*0.046,rad*0.07,8),new THREE.MeshStandardMaterial({color:0xe88aa0,roughness:0.9})); eraser.position.y=rad*0.67; pencil.add(eraser);
+  pencil.rotation.z=Math.PI/2; pencil.rotation.y=0.5; pencil.position.set(span*0.9+rad*1.4,rad*0.045+0.05,rad*0.8); pencil.traverse(o=>{o.castShadow=true;}); g.add(pencil);
+  // mug of tea, behind on the right
+  const mugMat=new THREE.MeshStandardMaterial({color:0x3fa8a0,roughness:0.35,metalness:0.02,envMapIntensity:0.6});
+  const mug=new THREE.Group();
+  const cup=new THREE.Mesh(new THREE.CylinderGeometry(rad*0.34,rad*0.3,rad*0.5,28,1,true),mugMat); cup.material.side=THREE.DoubleSide; mug.add(cup);
+  const bottom=new THREE.Mesh(new THREE.CircleGeometry(rad*0.3,28),mugMat); bottom.rotation.x=-Math.PI/2; bottom.position.y=-rad*0.24; mug.add(bottom);
+  const tea=new THREE.Mesh(new THREE.CircleGeometry(rad*0.32,28),new THREE.MeshStandardMaterial({color:0x8a4a1c,roughness:0.15,envMapIntensity:1.2})); tea.rotation.x=-Math.PI/2; tea.position.y=rad*0.17; mug.add(tea);
+  const handle=new THREE.Mesh(new THREE.TorusGeometry(rad*0.16,rad*0.04,10,24,Math.PI),mugMat); handle.position.x=rad*0.33; handle.rotation.z=-Math.PI/2; handle.rotation.y=Math.PI/2; mug.add(handle);
+  mug.position.set(span*0.9+rad*2.0,rad*0.25,-span*0.3-rad*0.9); mug.traverse(o=>{o.castShadow=true;}); g.add(mug);
+  Studio.props=g; Studio.scene.add(g);
 }
 function updateStudioProgress(){
   if(!Studio.ready||(!App.parsed&&!App.plan)) return;
@@ -3150,6 +3201,9 @@ function renderPlanPreview(adapter,plan){
   if(plan.preview.ground){const gp=plan.preview.ground;
     const base=new THREE.Mesh(new THREE.BoxGeometry(gp.w+2,0.4,gp.d+2),new THREE.MeshStandardMaterial({color:new THREE.Color(gp.color||"#3e9e57"),roughness:0.5,metalness:0.02}));
     base.position.y=-0.2;base.receiveShadow=true;Studio.group.add(base);Studio.extras.push(base);}
+  // measure with the group at the origin — the box is in world space, and the
+  // previous make's offset would otherwise seat this one above or below the floor
+  Studio.group.position.set(0,0,0); Studio.group.updateMatrixWorld(true);
   const box=new THREE.Box3().setFromObject(Studio.group),c=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
   Studio.group.position.set(-c.x,-box.min.y,-c.z);
   fitStudioScene(Math.max(size.x,size.y,size.z,6));

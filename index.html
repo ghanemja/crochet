@@ -1886,10 +1886,71 @@ function buildStudioGeometry(){
 function fitStudioScene(rad){
   const k=Studio.key, s=rad*1.6; k.position.set(-rad*0.9,rad*2.2,rad*1.4); k.target.position.set(0,0,0);
   Object.assign(k.shadow.camera,{left:-s,right:s,top:s,bottom:-s,near:0.1,far:rad*8}); k.shadow.camera.updateProjectionMatrix();
-  Studio.ground.scale.set(rad*16,rad*16,1); Studio.ground.position.set(0,-0.02,0);
-  Studio.ground.material.map.repeat.set(rad*0.5,rad*0.5);
-  Studio.scene.fog.near=rad*5; Studio.scene.fog.far=rad*14;
+  // table top is the shadow-receiving plane the make sits on
+  const W=rad*9, D=rad*6.5;
+  Studio.ground.scale.set(W,D,1); Studio.ground.position.set(0,-0.02,0);
+  Studio.ground.material.map.repeat.set(W/(rad*2.2),D/(rad*2.2));
+  Studio.scene.fog.near=rad*12; Studio.scene.fog.far=rad*40;
+  Studio.controls.maxDistance=rad*6.5;
+  buildStudioRoom(rad,W,D);
   placeStudioProps(rad);
+}
+// A small craft room around the table: table slab + legs, floor, three walls,
+// a window with daylight, a shelf of yarn and a picture. Everything scales
+// with the make so the camera always sits inside the room.
+function buildStudioRoom(rad,W,D){
+  if(Studio.room){ Studio.scene.remove(Studio.room); Studio.room.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
+  const g=new THREE.Group(), legH=rad*4.2, floorY=-legH-rad*0.3, roomW=W+rad*7, roomD=D+rad*7, roomH=legH+rad*9;
+  const wallMat=new THREE.MeshStandardMaterial({color:0xe6dccb,roughness:0.95,metalness:0});
+  const woodMat=new THREE.MeshStandardMaterial({color:0x8a6342,roughness:0.7,metalness:0});
+  const box=(w,h,d,x,y,z,mat)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; g.add(m); return m; };
+  // table: slab under the top plane, apron, four legs
+  box(W,rad*0.3,D,0,-rad*0.17,0,woodMat);
+  const legR=rad*0.18;
+  [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([sx,sz])=>{ const leg=new THREE.Mesh(new THREE.CylinderGeometry(legR*0.8,legR,legH,14),woodMat);
+    leg.position.set(sx*(W/2-rad*0.5),-rad*0.32-legH/2,sz*(D/2-rad*0.5)); leg.castShadow=true; g.add(leg); });
+  // floor: darker planks, bigger boards
+  const floorMat=new THREE.MeshStandardMaterial({color:0x9c7a58,map:Studio.ground.material.map,roughness:0.85});
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(roomW,roomD),floorMat); floor.rotation.x=-Math.PI/2; floor.position.y=floorY; floor.receiveShadow=true; g.add(floor);
+  // walls (inside faces only) + skirting board
+  const back=box(roomW,roomH,rad*0.2,0,floorY+roomH/2,-roomD/2,wallMat); back.castShadow=false;
+  const left=box(rad*0.2,roomH,roomD,-roomW/2,floorY+roomH/2,0,wallMat); left.castShadow=false;
+  const right=box(rad*0.2,roomH,roomD,roomW/2,floorY+roomH/2,0,wallMat); right.castShadow=false;
+  const skirt=new THREE.MeshStandardMaterial({color:0xf4efe6,roughness:0.6});
+  box(roomW,rad*0.45,rad*0.12,0,floorY+rad*0.22,-roomD/2+rad*0.14,skirt);
+  box(rad*0.12,rad*0.45,roomD,-roomW/2+rad*0.14,floorY+rad*0.22,0,skirt);
+  box(rad*0.12,rad*0.45,roomD,roomW/2-rad*0.14,floorY+rad*0.22,0,skirt);
+  // window on the back wall: frame, sill, glazing bars, daylight pane
+  const winW=rad*4.2, winH=rad*4.6, winY=floorY+legH+rad*4.0, winZ=-roomD/2+rad*0.12, winX=-rad*1.2;
+  const frameMat=new THREE.MeshStandardMaterial({color:0xfaf7f0,roughness:0.5});
+  const sky=document.createElement("canvas"); sky.width=64; sky.height=128; const sc=sky.getContext("2d");
+  const grd=sc.createLinearGradient(0,0,0,128); grd.addColorStop(0,"#9ec9ec"); grd.addColorStop(0.6,"#d9ecf7"); grd.addColorStop(1,"#f3f0dc"); sc.fillStyle=grd; sc.fillRect(0,0,64,128);
+  const skyTex=new THREE.CanvasTexture(sky); if('SRGBColorSpace'in THREE) skyTex.colorSpace=THREE.SRGBColorSpace; else skyTex.encoding=THREE.sRGBEncoding;
+  const pane=new THREE.Mesh(new THREE.PlaneGeometry(winW,winH),new THREE.MeshBasicMaterial({map:skyTex})); pane.position.set(winX,winY,winZ+0.02); g.add(pane);
+  const fw=rad*0.22;
+  box(winW+fw*2,fw,rad*0.25,winX,winY+winH/2+fw/2,winZ+rad*0.05,frameMat);
+  box(winW+fw*2,fw,rad*0.25,winX,winY-winH/2-fw/2,winZ+rad*0.05,frameMat);
+  box(fw,winH,rad*0.25,winX-winW/2-fw/2,winY,winZ+rad*0.05,frameMat);
+  box(fw,winH,rad*0.25,winX+winW/2+fw/2,winY,winZ+rad*0.05,frameMat);
+  box(fw*0.6,winH,rad*0.12,winX,winY,winZ+rad*0.05,frameMat);
+  box(winW,fw*0.6,rad*0.12,winX,winY,winZ+rad*0.05,frameMat);
+  box(winW+fw*3,fw*0.8,rad*0.7,winX,winY-winH/2-fw-fw*0.4,winZ+rad*0.3,frameMat);   // sill
+  g.userData.sill={x:winX,y:winY-winH/2-fw-fw*0.4+fw*0.4,z:winZ+rad*0.3};
+  // shelf with yarn on the right of the window
+  const shelfX=rad*3.2, shelfY=floorY+legH+rad*5.2, shelfZ=-roomD/2+rad*0.6;
+  box(rad*2.6,rad*0.14,rad*0.9,shelfX,shelfY,shelfZ,woodMat);
+  const r=yarnRadius()*0.55, cols=SWATCH_COLORS.map(c=>c[1]);
+  [[-0.8,0.38,cols[1]],[0.0,0.42,cols[4]],[0.8,0.34,cols[6]]].forEach(([dx,R,hex],i)=>{ const b=makeYarnBall(rad*R,makeYarnMaterial(hex,settings.type),r,11+i); b.position.set(shelfX+dx*rad,shelfY+rad*R+rad*0.07,shelfZ); b.traverse(o=>{o.castShadow=true;}); g.add(b); });
+  // a picture: frame + soft abstract wash
+  const art=document.createElement("canvas"); art.width=96; art.height=72; const ac=art.getContext("2d");
+  ac.fillStyle="#f1e9d8"; ac.fillRect(0,0,96,72); ["#e0608a","#f2a44d","#9bbf7e","#3fb0a8"].forEach((c,i)=>{ ac.fillStyle=c; ac.globalAlpha=0.75; ac.beginPath(); ac.ellipse(20+i*18,30+Math.sin(i)*14,16,11,i*0.6,0,6.283); ac.fill(); }); ac.globalAlpha=1;
+  const artTex=new THREE.CanvasTexture(art); if('SRGBColorSpace'in THREE) artTex.colorSpace=THREE.SRGBColorSpace; else artTex.encoding=THREE.sRGBEncoding;
+  const picX=-rad*5.0, picY=floorY+legH+rad*5.0, picW=rad*1.9, picH=rad*1.45;
+  box(picW+rad*0.2,picH+rad*0.2,rad*0.1,picX,picY,-roomD/2+rad*0.15,new THREE.MeshStandardMaterial({color:0x4a3626,roughness:0.6}));
+  const canvasArt=new THREE.Mesh(new THREE.PlaneGeometry(picW,picH),new THREE.MeshStandardMaterial({map:artTex,roughness:0.9})); canvasArt.position.set(picX,picY,-roomD/2+rad*0.21); g.add(canvasArt);
+  // daylight from the window: a soft area-ish light low on the back wall
+  const win=new THREE.PointLight(0xdcecff,0.55,rad*30,1.4); win.position.set(winX,winY,winZ+rad*1.5); g.add(win);
+  Studio.room=g; Studio.scene.add(g);
 }
 // craft-table props around the make: spare yarn balls, a pencil, a mug and a pattern sheet
 function placeStudioProps(rad){
@@ -1927,6 +1988,51 @@ function placeStudioProps(rad){
   const tea=new THREE.Mesh(new THREE.CircleGeometry(rad*0.32,28),new THREE.MeshStandardMaterial({color:0x8a4a1c,roughness:0.15,envMapIntensity:1.2})); tea.rotation.x=-Math.PI/2; tea.position.y=rad*0.17; mug.add(tea);
   const handle=new THREE.Mesh(new THREE.TorusGeometry(rad*0.16,rad*0.04,10,24,Math.PI),mugMat); handle.position.x=rad*0.33; handle.rotation.z=-Math.PI/2; handle.rotation.y=Math.PI/2; mug.add(handle);
   mug.position.set(span*0.9+rad*2.0,rad*0.25,-span*0.3-rad*0.9); mug.traverse(o=>{o.castShadow=true;}); g.add(mug);
+  // ---- more clutter ----
+  const std=(c,rough,extra)=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:rough==null?0.6:rough,metalness:0},extra||{}));
+  const place=(o,x,y,z,ry)=>{ o.position.set(x,y,z); if(ry) o.rotation.y=ry; o.traverse(m=>{m.castShadow=true;m.receiveShadow=true;}); g.add(o); return o; };
+  // scissors: two blades crossed at a pivot, red ring handles
+  const sciss=new THREE.Group(), steel=std(0xd8dde4,0.25,{metalness:0.9}), red=std(0xd83a3a,0.5);
+  [[-1,0.18],[1,-0.18]].forEach(([sgn,rot])=>{ const half=new THREE.Group();
+    const blade=new THREE.Mesh(new THREE.BoxGeometry(rad*0.09,rad*0.03,rad*0.95),steel); blade.position.z=rad*0.5; blade.scale.x=1; half.add(blade);
+    const tipB=new THREE.Mesh(new THREE.ConeGeometry(rad*0.05,rad*0.25,4),steel); tipB.position.z=rad*1.08; tipB.rotation.x=Math.PI/2; tipB.scale.y=0.3; half.add(tipB);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(rad*0.17,rad*0.045,10,24),red); ring.position.z=-rad*0.32; ring.rotation.x=Math.PI/2; half.add(ring);
+    half.rotation.y=rot*sgn; sciss.add(half); });
+  const pivot=new THREE.Mesh(new THREE.CylinderGeometry(rad*0.045,rad*0.045,rad*0.07,10),steel); sciss.add(pivot);
+  place(sciss,-span*0.9-rad*1.0,rad*0.04,span*0.5+rad*0.6,0.9);
+  // jar of crochet hooks
+  const jar=new THREE.Group(), glass=std(0xcfe3e8,0.1,{transparent:true,opacity:0.45,envMapIntensity:1.0,side:THREE.DoubleSide});
+  jar.add(new THREE.Mesh(new THREE.CylinderGeometry(rad*0.28,rad*0.25,rad*0.75,24,1,true),glass));
+  const jb=new THREE.Mesh(new THREE.CircleGeometry(rad*0.25,24),glass); jb.rotation.x=-Math.PI/2; jb.position.y=-rad*0.37; jar.add(jb);
+  [0xd7a86e,0xa6c8e8,0xd9d9d9,0xe6a4c4,0x8fc9a0].forEach((c,i)=>{ const h=new THREE.Mesh(new THREE.CylinderGeometry(rad*0.025,rad*0.03,rad*1.5,8),std(c,0.45,{metalness:c===0xd9d9d9?0.8:0.05}));
+    const a=i/5*6.283; h.position.set(Math.cos(a)*rad*0.1,rad*0.3,Math.sin(a)*rad*0.1); h.rotation.z=Math.cos(a)*0.16; h.rotation.x=Math.sin(a)*0.16; jar.add(h);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(rad*0.035,8,6),h.material); head.position.set(0,rad*0.76,0); h.add(head); });
+  place(jar,span*0.9+rad*2.6,rad*0.38,span*0.1,0);
+  // buttons scattered near the paper
+  const btnCols=[0x3fb0a8,0xf2a44d,0xefe2c4,0x5573b0,0xe0608a,0x42404a];
+  for(let i=0;i<7;i++){ const R=rad*(0.07+((i*7)%3)*0.015); const b=new THREE.Mesh(new THREE.CylinderGeometry(R,R,rad*0.03,18),std(btnCols[i%btnCols.length],0.4));
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(R*0.8,R*0.07,6,20),std(0x000000,0.6,{transparent:true,opacity:0.25})); ring.rotation.x=Math.PI/2; ring.position.y=rad*0.016; b.add(ring);
+    for(let k=0;k<4;k++){ const hole=new THREE.Mesh(new THREE.CylinderGeometry(R*0.1,R*0.1,rad*0.04,8),std(0x2a2a2a,0.9)); hole.position.set((k%2?1:-1)*R*0.3,0,(k<2?1:-1)*R*0.3); b.add(hole); }
+    place(b,span*0.9+rad*(0.6+Math.sin(i*2.1)*1.2),rad*0.015,span*0.2+rad*(1.6+Math.cos(i*1.7)*0.9)); }
+  // tape measure: a coiled yellow ribbon + a loose tongue
+  const tape=new THREE.Group(); const yellow=std(0xf4d35e,0.7);
+  tape.add(new THREE.Mesh(new THREE.TorusGeometry(rad*0.22,rad*0.09,10,30),yellow)); tape.children[0].rotation.x=Math.PI/2; tape.children[0].scale.z=0.55;
+  const tongue=new THREE.Mesh(new THREE.BoxGeometry(rad*1.6,rad*0.012,rad*0.14),yellow); tongue.position.set(rad*1.0,-rad*0.04,rad*0.16); tongue.rotation.y=0.25; tape.add(tongue);
+  place(tape,-span*0.9-rad*2.2,rad*0.06,span*0.3+rad*0.4,-0.6);
+  // a stack of notebooks
+  const stack=new THREE.Group(); [[0x5573b0,0],[0xefe2c4,0.08],[0x9bbf7e,-0.1]].forEach(([c,ry],i)=>{ const nb=new THREE.Mesh(new THREE.BoxGeometry(rad*1.3,rad*0.12,rad*1.7),std(c,0.8)); nb.position.y=rad*(0.06+i*0.13); nb.rotation.y=ry; stack.add(nb); });
+  place(stack,-span*0.9-rad*2.4,0,-span*0.5-rad*1.4,0.3);
+  // crochet swatch squares (little granny-style patches) in other colours
+  [[others[0],-span*0.9-rad*1.5, span*0.6+rad*1.6,0.4],[others[4], span*0.9+rad*0.9, span*0.6+rad*1.9,-0.5]].forEach(([hex,x,z,ry])=>{
+    const sw=new THREE.Mesh(new THREE.BoxGeometry(rad*0.9,rad*0.08,rad*0.9),makeYarnMaterial(hex,settings.type)); place(sw,x,rad*0.04,z,ry); });
+  // potted plant on the window sill
+  const plant=new THREE.Group(); const pot=new THREE.Mesh(new THREE.CylinderGeometry(rad*0.26,rad*0.2,rad*0.42,16),std(0xc9774e,0.85)); plant.add(pot);
+  for(let i=0;i<9;i++){ const leaf=new THREE.Mesh(new THREE.SphereGeometry(rad*0.16,10,8),std(0x5f9a4e,0.9)); const a=i/9*6.283, rr=rad*(0.1+(i%3)*0.08);
+    leaf.position.set(Math.cos(a)*rr,rad*(0.3+(i%2)*0.14),Math.sin(a)*rr); leaf.scale.set(1,0.75,1.3); leaf.rotation.y=a; plant.add(leaf); }
+  if(Studio.room){ const sill=Studio.room.userData.sill; if(sill) place(plant,sill.x+rad*1.6,sill.y+rad*0.21,sill.z,0); }
+  // loose strand trailing from the nearest spare ball
+  const tail=yarnMesh(new THREE.CatmullRomCurve3([new THREE.Vector3(-span*0.9-rad*1.2,rad*0.1,-span*0.5),new THREE.Vector3(-span*0.6-rad*0.5,rad*0.08,-span*0.2+rad*0.5),new THREE.Vector3(-span*0.5,rad*0.08,span*0.3),new THREE.Vector3(-span*0.7,rad*0.08,span*0.6+rad*0.5)],false,"catmullrom",0.5),r,false,40,makeYarnMaterial(others[2],settings.type),{halo:false});
+  g.add(tail);
   Studio.props=g; Studio.scene.add(g);
 }
 function updateStudioProgress(){
@@ -2418,8 +2524,8 @@ const HOOK_HALF=0.42;                                       // hook shaft radius
 const HOOK_DIR=new THREE.Vector3(0.66,1,-0.12).normalize();// natural diagonal lean of the shaft
 const LEARN_TIP=new THREE.Vector3(0,0.4,0);                 // hook tip / working point
 const WDOWN=new THREE.Vector3(0,-1,0), WX=new THREE.Vector3(1,0,0), WZ=new THREE.Vector3(0,0,1);
-function learnFrame(){
-  const U=HOOK_DIR.clone();
+function learnFrame(dir){
+  const U=(dir||HOOK_DIR).clone().normalize();
   let side=new THREE.Vector3().crossVectors(U,new THREE.Vector3(0,1,0));
   if(side.lengthSq()<1e-5) side.set(1,0,0); side.normalize();
   const pdown=new THREE.Vector3().crossVectors(side,U).normalize();
@@ -2537,7 +2643,7 @@ function ringPts(B,tip,d,rL,droop,sink,center){
 }
 function animateLearn3D(){
   if(!L3.ready||!Learn.key||!Learn.B) return;
-  const B=Learn.B, key=Learn.key, isChain=Learn.isChain;
+  const B0=Learn.B, key=Learn.key, isChain=Learn.isChain;   // B0: resting hook frame (fabric is laid out against it)
   const steps=STITCH_STEPS[key]||["Work the stitch"], N=steps.length;
   const moves=steps.map(classifyMove), loops=loopTimeline(steps,moves,isChain);
   const phase=Math.min(N,Learn.t/STEP_DUR);
@@ -2552,7 +2658,8 @@ function animateLearn3D(){
   // ---- geometry of the fabric under the hook ----
   const baseD=0.55, gap=0.6, rL=0.92, pitch=1.35;
   const postLen=isChain?1.6:STITCHES[key].h*1.0+1.7;
-  const rowC=LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,postLen+0.9);
+  const rowC=LEARN_TIP.clone().addScaledVector(B0.U,baseD).addScaledVector(WDOWN,postLen+0.9);
+  const anchor=LEARN_TIP.clone().addScaledVector(B0.U,baseD);   // where the fabric holds the live loop on the shaft
   const insPt=rowC.clone().addScaledVector(WDOWN,-0.25).addScaledVector(WX,-0.3);        // where the hook enters
   const prevTop=rowC.clone().addScaledVector(WX,-pitch).addScaledVector(WDOWN,-postLen-0.2); // top of the last finished post
 
@@ -2563,14 +2670,18 @@ function animateLearn3D(){
   else if(before.inserted&&(act==="pullup"||act==="through"||act==="through2")) depth=1-af;
   const inTarget=insPt.clone().addScaledVector(WZ,-0.9).addScaledVector(WDOWN,-0.15);
   const tip=LEARN_TIP.clone().lerp(inTarget,depth).addScaledVector(WZ,0.35*Math.sin(depth*Math.PI)); // arcs over the top loops, then dives in
+  // the shaft always passes through the live loop: the hook PIVOTS about the
+  // loop the fabric is holding while its head travels down into the stitch
+  const U=anchor.clone().sub(tip).normalize(), B=learnFrame(U);
   // pull-through: draw the hook back along the shaft so the loops ride off the head
   let retract=0, roll=0;
   if(act==="through"||act==="through2"){ retract=0.9*Math.sin(af*Math.PI); roll=0.9*Math.sin(af*Math.PI); }
   if(act==="yarnover") roll=-0.45*Math.sin(af*Math.PI);                     // tilt the throat up to catch the strand
   if(act==="insert") roll=-0.35*af; else if(before.inserted) roll=-0.35;      // head turned down while inside the stitch
-  tip.addScaledVector(B.U,retract);
+  tip.addScaledVector(U,retract);
   L3.hook.position.copy(tip);
-  L3.hook.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(B.U,roll).multiply(Learn.hookQ0));
+  const qAim=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),U);
+  L3.hook.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(U,-0.6+roll).multiply(qAim));
 
   // ---- loops on the hook (index 0 = nearest the tip) ----
   // stack entries: {d, r, droop, sink}; animated per act
@@ -2578,8 +2689,8 @@ function animateLearn3D(){
   const n0=before.loops;
   // loops already on the hook stay at the fabric's top edge while the shaft
   // slides through them, so they are pushed up the shaft by the dip
-  // (their rest position projected onto the current shaft line)
-  const shift=Math.max(0,LEARN_TIP.clone().sub(tip).dot(B.U));
+  // (the live loop sits at the anchor; the shaft slides through it)
+  const shift=Math.max(0,anchor.distanceTo(tip)-baseD);
   const addRing=(d,r,droop,sink,center)=>stack.push({d,r,droop,sink:sink||0,center});
   // where the loops that slip off the hook tighten into: the top of the stitch being made
   const curTop=isChain?LEARN_TIP.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,1.2)

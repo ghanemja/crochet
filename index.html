@@ -1405,7 +1405,11 @@ function parseRepeatLine(line, rows){
   return targets.map((no,i)=>{ const s=srcs[i%srcs.length]; return {label:(s.round||isRnd?"Rnd ":"Row ")+no,stitches:s.stitches.map(x=>({...x})),round:s.round,no}; });
 }
 function preprocessLines(text){
-  const raw=text.replace(/\r/g,"").split(/\n/).map(l=>l.replace(/^[\s•·\-–—*]+(?=(?:rows?|rnds?|rounds?|r)\s*\d)/i,"").trim());
+  // several labelled rows glued onto one line (PDF text, copied web pages) → split them apart
+  const raw=text.replace(/\r/g,"").split(/\n/).flatMap(l=>{
+    const parts=l.split(/(?<!\b(?:rep|repeat|as|work|for|and|to|of|from)\s*)\s+(?=(?:rows?|rnds?|rounds?)\s*\d+\s*(?:[-–]\s*\d+)?\s*[:.])/i);
+    return parts.length>1?parts:[l];
+  }).map(l=>l.replace(/^[\s•·\-–—*]+(?=(?:rows?|rnds?|rounds?|r)\s*\d)/i,"").trim());
   const out=[];
   for(let i=0;i<raw.length;i++){
     let l=raw[i]; if(!l) continue;
@@ -2400,10 +2404,20 @@ async function readPdfFile(file){
     const pdf=await lib.getDocument({data:buf}).promise;
     let txt="";
     for(let i=1;i<=pdf.numPages;i++){ const page=await pdf.getPage(i); const c=await page.getTextContent();
-      // group items into lines by their y position so rows stay intact
-      const lines={}; c.items.forEach(it=>{ const y=Math.round(it.transform[5]); (lines[y]=lines[y]||[]).push(it.str); });
-      Object.keys(lines).sort((a,b)=>b-a).forEach(y=>{ txt+=lines[y].join(" ").replace(/\s+/g," ").trim()+"\n"; });
-      txt+="\n";
+      const items=c.items.filter(it=>it.str&&it.str.trim()).map(it=>({str:it.str,x:it.transform[4],y:Math.round(it.transform[5]),w:it.width||0}));
+      if(!items.length) continue;
+      // two-column layouts: read the left column top-to-bottom, then the right,
+      // instead of gluing "Rnd 3: …   Rnd 9: …" into one line
+      const vp=page.getViewport({scale:1}), mid=vp.width/2;
+      const left=items.filter(it=>it.x+it.w<=mid+4), right=items.filter(it=>it.x>=mid-4), cross=items.length-left.length-right.length;
+      const twoCol=left.length>=items.length*0.25&&right.length>=items.length*0.25&&cross<=items.length*0.08;
+      const columns=twoCol?[left,right]:[items];
+      columns.forEach(col=>{
+        // group items into lines by their y position (±2pt) so rows stay intact
+        const lines=[]; col.sort((a,b)=>b.y-a.y||a.x-b.x).forEach(it=>{ const L=lines[lines.length-1]; if(L&&Math.abs(L.y-it.y)<=2) L.items.push(it); else lines.push({y:it.y,items:[it]}); });
+        lines.forEach(L=>{ L.items.sort((a,b)=>a.x-b.x); txt+=L.items.map(it=>it.str).join(" ").replace(/\s+/g," ").trim()+"\n"; });
+        txt+="\n";
+      });
     }
     const cleaned=extractPattern(txt)||txt;
     document.getElementById("patternInput").value=cleaned;
@@ -3120,13 +3134,17 @@ async function importFromUrl(){
 // pull out lines that look like crochet rows from arbitrary HTML/markdown
 function extractPattern(src){
   let txt=src.replace(/<script[\s\S]*?<\/script>/gi,"").replace(/<style[\s\S]*?<\/style>/gi,"");
-  txt=txt.replace(/<\/(p|div|li|br|h[1-6])>/gi,"\n").replace(/<[^>]+>/g," ");
+  txt=txt.replace(/<br\s*\/?>|<\/(p|div|li|tr|h[1-6])>/gi,"\n").replace(/<[^>]+>/g," ");
   txt=txt.replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&#?[a-z0-9]+;/gi," ");
   const lines=txt.split(/\n+/).map(l=>l.trim()).filter(Boolean);
-  const rowRe=/^(row|rnd|round|r)\s*\d+\s*[:.\-]/i;
-  const stitchRe=/\b(ch|sc|hdc|dc|tr|sl\s*st|inc|dec|mr)\b/i;
-  const keep=lines.filter(l=> (rowRe.test(l)||stitchRe.test(l)) && l.length<160 );
-  return keep.length>=2 ? keep.join("\n") : "";
+  const repeatRe=/^(?:rows?|rnds?|rounds?|r)\s*\d+.*\b(?:rep(?:eat)?|same as|work as)\b|^(?:rep(?:eat)?|work)\s+(?:rows?|rnds?|rounds?)\s*\d+/i;
+  // keep anything the parser can use: labelled rows, stitch lines, repeat
+  // instructions and short part headers (HEAD, Arms (make 2)) so multi-part
+  // patterns survive the trip through a PDF or a web page
+  const keep=lines.filter(l=> l.length<220 && !DEFN_LINE.test(l) &&
+    (ROW_LABEL.test(l)||STITCH_TOKEN.test(l)||repeatRe.test(l)||looksLikeHeader(l)) );
+  const rows=keep.filter(l=>ROW_LABEL.test(l)||STITCH_TOKEN.test(l)).length;
+  return rows>=2 ? keep.join("\n") : "";
 }
 
 // ============================================================

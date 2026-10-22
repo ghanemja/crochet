@@ -1107,6 +1107,7 @@ const STITCHES = {
 };
 const ALIAS = { ch:"ch",chain:"ch",sc:"sc","single":"sc",hdc:"hdc",dc:"dc","double":"dc",tr:"tr",trc:"tr",treble:"tr","sl":"sl",slst:"sl","sl st":"sl",ss:"sl",slip:"sl",inc:"inc",dec:"dec",mr:"mr","magic ring":"mr","magic circle":"mr",ring:"mr" };
 
+
 // Macro step sequences — used by the "Learn this stitch" close-up animation.
 // Each step: a short label + how many yarn-overs / pull-throughs, so the
 // close-up can show the hook going through the loops for sc/hdc/dc/tr/etc.
@@ -1197,13 +1198,24 @@ Sew head to body. Attach arms, legs and ears. Stuff firmly.`,
 };
 
 // ---- Parser: section-aware (Head / Body / Arms…) -----------------------
-// Real patterns (esp. amigurumi) split into named parts worked separately
-// then assembled. We detect part headers, expand round ranges (Rnd 6-9),
-// and group rows into parts so each can be laid out & assembled in 3D.
-const PART_WORDS=/\b(head|body|torso|arm|leg|foot|feet|hand|ear|tail|nose|muzzle|snout|horn|wing|eye|cheek|paw|belly|tummy|base|side|panel|square|motif|strap|handle|brim|sleeve|hood|flap|petal|leaf|beak|fin|mane|hair|bow|button|spike|spot|antenna|whisker|tooth|tongue|collar|scarf|hat|skirt|shell)\b/i;
+
+// ============================================================
+//  Pattern parser
+//  Real patterns are messy: asterisk repeats, bracket groups, "2 sc in next
+//  st", sc2tog, UK terms, "repeat rows 2-3", abbreviation tables, PDF line
+//  wraps. normalizeBody() rewrites a row into a tiny token language
+//  (stitch keys, numbers, @N / @fill / @1 / @ring placements) and
+//  expandBody() turns that into stitch units. One unit = one visual stitch:
+//  an inc is two units, a dec is one.
+// ============================================================
+const PART_WORDS=/\b(head|body|torso|arm|leg|foot|feet|hand|ear|tail|nose|muzzle|snout|horn|wing|eye|cheek|paw|belly|tummy|base|side|panel|square|motif|strap|handle|brim|sleeve|hood|flap|petal|leaf|beak|fin|mane|hair|bow|button|spike|spot|antenna|whisker|tooth|tongue|collar|scarf|hat|skirt|shell)\b/
 // lines that are pure finishing/section noise → never a stitch row, never a part
-const NOISE_LINE=/^(finishing|assembly|notes?|materials?|gauge|tension|abbreviations?|instructions?|you will need|stuff|sew|fasten off|fo\b|weave in|attach|embroider|cut |using the|with [a-z ]+sew|join |continue|repeat rnd|rep rnd|do not|turn\.?$)/i;
-const STITCH_TOKEN=/\b(ch|sc|hdc|dc|tr|trc|sl\s*st|slst|ss|inc|dec|mr|magic ring|magic circle|chain|single|double|treble|ring|loop|hook)\b/i;
+const NOISE_LINE=/^(finishing|assembly|notes?\b|materials?|gauge|tension|abbreviations?|instructions?|you will need|stuff|sew|fasten off|fo\b|weave in|attach|embroider|cut |using the|with [a-z ]+sew|join |continue|do not|turn\.?$|hook|yarn|needle|size|skill|level|difficulty|copyright|©|designed by|pattern by|http|www\.)/i;
+// "sc = single crochet", "inc – 2 sc in next st": abbreviation tables, not rows
+const DEFN_LINE=/^\s*(ch|sc|hdc|dc|tr|htr|dtr|sl\s?st|slst|ss|inc|dec|mr|mc|cc|st|sts|rnd|rnds|row|rows|yo|blo|flo|sk|sp|rs|ws|rep|tog|sc2tog|dc2tog)\s*(?:\([^)]*\))?\s*[=:–\-]\s*[a-z0-9]/i;
+const STITCH_TOKEN=/\b(ch|sc|hdc|dc|tr|trc|htr|dtr|sl\s*st|slst|ss|inc|dec|mr|magic ring|magic circle|chain|single|double|treble|ring|loop|hook|sc2tog|dc2tog)\b/i;
+const ROW_LABEL=/^(?:(rows?|rnds?|rounds?|r)\s*(\d+)\s*(?:[-–]\s*(?:rows?|rnds?|rounds?|r)?\s*(\d+))?|(\d+)(?=\s*[.):]))\s*(?:\([^)]*\))?\s*[:.)\-–]?\s*/i;
+const KEYS="ch|sc|hdc|dc|tr|sl|inc|dec|mr";
 
 function detectMake(line){ const m=line.match(/make\s*(\d+)/i)||line.match(/\bx\s*(\d+)\b/i)||line.match(/\(\s*make\s*(\d+)\s*\)/i); return m?Math.max(1,parseInt(m[1],10)):1; }
 function cleanPartName(line){
@@ -1215,7 +1227,7 @@ function looksLikeHeader(line){
   const words=line.replace(/\(.*?\)/g," ").trim();
   if(!words||words.length>46) return false;
   if(STITCH_TOKEN.test(words)) return false;                 // a stitch row, not a header
-  if(/^(row|rnd|round|r)\s*\d/i.test(words)) return false;
+  if(ROW_LABEL.test(words)) return false;
   if(NOISE_LINE.test(words)) return false;
   if(!/[a-z]/i.test(words)) return false;
   if(/\d/.test(words.replace(/make\s*\d+/i,"").replace(/x\s*\d+/i,""))) return false; // stray numbers ⇒ not a clean header
@@ -1224,45 +1236,196 @@ function looksLikeHeader(line){
   const isUpper=words===words.toUpperCase() && /[A-Z]/.test(words);
   return (isUpper && wc<=5) || (wc<=4 && /^[A-Z]/.test(words));  // short Title/UPPER line
 }
-// parse one source line → array of row objects (round ranges expand to many)
-function parseRow(rawLine, prevRows, seqNo){
-  let line=rawLine, label=null, isRnd=false, reps=1;
-  const m=line.match(/^(row|rnd|round|r)\s*(\d+)\s*(?:[-–]\s*(\d+))?\s*[:.\-]?\s*/i);
-  if(m){ isRnd=/rnd|round/i.test(m[1]); const a=+m[2], b=m[3]?+m[3]:a; reps=Math.max(1,b-a+1);
-    label=(isRnd?"Rnd ":"Row ")+(m[3]?(a+"–"+b):a); line=line.slice(m[0].length); }
-  const countMatch=line.match(/\(\s*(\d+)\s*\)\s*$/); const targetCount=countMatch?parseInt(countMatch[1],10):null;
-  line=line.replace(/\(\s*\d+\s*\)\s*$/,"").trim();
-  const stitches=[]; const clauses=line.split(/,|;/).map(s=>s.trim()).filter(Boolean);
-  for(let clause of clauses){
-    const repeatMatch=clause.match(/x\s*(\d+)/i); const repeatN=repeatMatch?parseInt(repeatMatch[1],10):1;
-    if(repeatMatch) clause=clause.replace(repeatMatch[0],"").trim();
-    let found=null,count=1;
-    const a=clause.match(/(\d+)\s+([a-z ]+?)(?:\b)/i), b=clause.match(/([a-z]+(?:\s*st)?)\s+(\d+)/i),
-          c=clause.match(/\b(ch|sc|hdc|dc|tr|trc|sl\s*st|slst|ss|inc|dec|mr|magic ring|magic circle|chain|single|double|treble|ring)\b/i);
-    const resolve=raw=>{ if(!raw)return null; const norm=raw.toLowerCase().replace(/\s+/g," ").trim(); return ALIAS[norm]||ALIAS[norm.replace(/ st$/,"")]||null; };
-    if(a&&resolve(a[2])){count=parseInt(a[1],10);found=resolve(a[2]);}
-    else if(b&&resolve(b[1])){count=parseInt(b[2],10);found=resolve(b[1]);}
-    else if(c){found=resolve(c[1]);count=1;}
-    if(!found) continue;
-    const isFill=/\b(across|in each|in every|around|in next|to end|to last)\b/i.test(clause)&&count===1&&!repeatMatch;
-    if(isFill){ const prevWidth=prevRows.length?prevRows[prevRows.length-1].stitches.length:0; const goal=targetCount||prevWidth||1;
-      const remaining=Math.max(1,goal-stitches.length); for(let i=0;i<remaining;i++) stitches.push({key:found,abbr:found}); continue; }
-    const total=count*repeatN; for(let i=0;i<total;i++) stitches.push({key:found,abbr:found});
+function detectUK(text){
+  if(/\b(us|american) (terms|terminology)\b/i.test(text)) return false;
+  if(/\b(uk|british|english) (terms|terminology)\b/i.test(text)) return true;
+  return /\b(htr|dtr)\b/i.test(text) && !/\b(hdc)\b/i.test(text);
+}
+// trailing stitch count: "(18)", "(18 sts)", "(20 sc)", "= 24", "– 30 sts", "[18]"
+function extractCount(line){
+  const re=[/[\(\[]\s*(\d+)\s*(?:sts?|stitches|sc|dc|hdc|tr|htr)?\.?\s*[\)\]]\s*\.?\s*$/i, /[-–=]\s*(\d+)\s*(?:sts?|stitches)?\.?\s*$/i, /\b(\d+)\s*(?:sts?|stitches)\.?\s*$/i];
+  for(const r of re){ const m=line.match(r); if(m) return {count:parseInt(m[1],10), line:line.slice(0,m.index).trim()}; }
+  return {count:null,line};
+}
+// rewrite a row body into the token language (lower-case, stitch keys, @placements)
+function normalizeBody(s,uk){
+  s=" "+s.toLowerCase()+" ";
+  s=s.replace(/\((?:counts?|count)\s+as[^)]*\)/g," ").replace(/\((?:rs|ws|right side|wrong side)\)/g," ");
+  s=s.replace(/\(([^()]*)\)/g,(m,inner)=>(/\d/.test(inner)||STITCH_TOKEN.test(inner))?m:" ");   // drop "(shell)"-style notes
+  s=s.replace(/\b(?:with|using|in|change to)\s+(?:colou?r|yarn|col|mc|cc)\b\s*[a-z0-9]*\b/g," ");
+  s=s.replace(/\bmagic\s+(?:ring|circle|loop)\b|\bmagic\b|\badjustable\s+(?:ring|loop)\b/g," mr ");
+  s=s.replace(/\bsl\s*sts?\b|\bslst\b|\bss\b|\bslip\s+stitch(?:es)?\b|\bslip\s+st\b/g," sl ");
+  s=s.replace(/\b(?:sc|dc|hdc|tr|htr|dtr)\s?[23]\s?tog\b|\binv(?:isible)?\s*dec(?:rease)?\b|\bdecrease\b|\bdec\b/g," dec ");
+  s=s.replace(/\bincrease\b|\binc\b/g," inc ");
+  s=s.replace(/\bhalf\s+double\s+crochets?\b|\bhalf\s+doubles?\b/g," hdc ").replace(/\bsingle\s+crochets?\b|\bsingles?\b/g," sc ")
+     .replace(/\bdouble\s+crochets?\b|\bdoubles?\b/g," dc ").replace(/\btrebles?(?:\s+crochets?)?\b|\btrc\b/g," tr ").replace(/\bchains?\b/g," ch ");
+  s=s.replace(/\b[fb]p(dc|sc|tr|hdc)\b/g," $1 ");
+  if(uk){ s=s.replace(/\bdtr\b/g," §TR ").replace(/\btr\b/g," §DC ").replace(/\bhtr\b/g," §HDC ").replace(/\bdc\b/g," §SC ")
+            .replace(/§TR/g,"tr").replace(/§DC/g,"dc").replace(/§HDC/g,"hdc").replace(/§SC/g,"sc"); }
+  else { s=s.replace(/\bhtr\b/g," hdc ").replace(/\bdtr\b/g," tr "); }
+  s=s.replace(/\b(?:bobble|puff|cluster|popcorn|shell|cl|v-?st)\b/g," dc ").replace(/\bpicot\b/g," ch ");
+  s=s.replace(/\bch[- ]?\d*\s*(?:sp|space)s?\b/g," sp ");                         // "ch-2 sp" is a place, not chains
+  s=s.replace(/\b(?:sk|skip|miss)\s+(?:next\s+)?\d*\s*[a-z-]*\b/g," ");
+  s=s.replace(/\bfrom\s+(?:the\s+)?hook\b/g," ");
+  s=s.replace(/\b(?:in|into)\s+(?:the\s+)?(?:mr|ring|loop)\b/g," @ring ");
+  s=s.replace(/\bin\s+(?:each\s+of\s+)?(?:the\s+)?(?:next|following|last|first)\s+(\d+)\b[^,;*@()\[\]{}]*/g," @$1 ");
+  s=s.replace(/\bin\s+(?:each|every)\b[^,;*@()\[\]{}]*|\bacross\b|\baround\b|\bto\s+(?:the\s+)?end\b|\bto\s+last\b[^,;*@()\[\]{}]*|\buntil\s+end\b/g," @fill ");
+  s=s.replace(/\b(?:in|into)\s+(?:the\s+)?(?:top\s+of\s+)?(?:next|same|first|last|top|\d+(?:st|nd|rd|th))\b[^,;*@()\[\]{}]*/g," @1 ");
+  return s.replace(/\s+/g," ").trim();
+}
+// one clause ("3 dc @1", "sc @fill", "inc x6") → {units:[...]} or {fill:[seq]}
+function clauseItems(clause){
+  const items=[]; let needsMr=false;
+  let mult=1; const mm=clause.match(/\b(?:x|×)\s*(\d+)\b|\b(\d+)\s*(?:x|×|times)\b/);
+  if(mm){ mult=parseInt(mm[1]||mm[2],10)||1; clause=clause.replace(mm[0]," "); }
+  const toks=clause.match(/@fill|@ring|@\d+|\d+|[a-z]+/g)||[];
+  let pending=null, cur=null;
+  const KEY=new RegExp("^("+KEYS+")$");
+  for(let ti=0;ti<toks.length;ti++){ const t=toks[ti], next=toks[ti+1];
+    if(t==="@fill"){ if(cur) cur.mode="fill"; continue; }
+    if(t==="@ring"){ needsMr=true; continue; }
+    if(t[0]==="@"){ const n=parseInt(t.slice(1),10);
+      if(cur){ if(n===1&&cur.n===2&&/^(sc|hdc|dc|tr)$/.test(cur.key)){ cur.key="inc"; cur.n=1; } else if(n>1&&cur.n===1) cur.n=n; }
+      continue; }
+    if(/^\d+$/.test(t)){ const n=parseInt(t,10);
+      const nextIsStitch=next!=null&&KEY.test(next);
+      if(cur&&cur.key!=="mr"&&cur.n===1&&cur.mode===null&&!cur.sized&&!nextIsStitch){ cur.n=n; cur.sized=true; } else pending=n; continue; }
+    if(KEY.test(t)){ cur={key:t,n:pending||1,mode:null,sized:pending!=null}; items.push(cur); pending=null; continue; }
   }
-  if(targetCount&&stitches.length&&stitches.length<targetCount){ const base=stitches.slice(); let i=0;
-    while(stitches.length<targetCount){ stitches.push({...base[i%base.length]}); i++; } }
+  const out=[];
+  for(const c of items){
+    let seq; if(c.key==="inc") seq=["inc","inc"]; else seq=[c.key];
+    if(c.mode==="fill"){ const s=c.n>=2&&c.key!=="inc"?Array(c.n).fill(c.key==="ch"?"ch":"inc"):seq; out.push({fill:s}); continue; }
+    const units=[]; for(let i=0;i<c.n;i++) units.push(...seq);
+    out.push({units});
+  }
+  if(mult>1){ const all=[]; out.forEach(o=>{ if(o.units) all.push(...o.units); }); const rep=[]; for(let i=0;i<mult;i++) rep.push(...all);
+    return {items:[{units:rep}], needsMr}; }
+  return {items:out, needsMr};
+}
+// expand groups "( … ) x6", "[ … ] 6 times", "* … * rep around" into items
+function expandBody(body){
+  let needsMr=false; const store=[];
+  const fillSuffix=/^\s*(?:,?\s*(?:rep(?:eat)?\b(?:\s+from\s+\*)?)?\s*(?:@fill|around|across|to end))/;
+  const timesSuffix=/^\s*(?:,?\s*(?:rep(?:eat)?\b(?:\s+from\s+\*)?)?\s*)?(?:(?:x|×)\s*(\d+)|(\d+)\s*(?:x|×|more\s+times|times)|(\d+)\s+more\s+times)/;
+  // asterisk repeat: "*…* rep 6 times" / "* … rep from * around" / "*…* across"
+  const star=body.indexOf("*");
+  if(star>=0){
+    const pre=body.slice(0,star); let rest=body.slice(star+1);
+    let endIdx=rest.indexOf("*"); let inner, after;
+    if(endIdx>=0){ inner=rest.slice(0,endIdx); after=rest.slice(endIdx+1); }
+    else { const rm=rest.match(/[,;]?\s*\brep(?:eat)?\b/); if(rm){ inner=rest.slice(0,rm.index); after=rest.slice(rm.index); } else { inner=rest; after=""; } }
+    const sub=expandBody(inner); needsMr=needsMr||sub.needsMr;
+    after=after.replace(/^\s*[,;]?\s*/,"");
+    const tm=after.match(timesSuffix), fm=after.match(fillSuffix);
+    let item, consumed=0;
+    if(tm){ let n=parseInt(tm[1]||tm[2]||tm[3],10); if(/more/.test(tm[0])) n+=1; item={units:repeatItems(sub.items,n)}; consumed=tm[0].length; }
+    else if(fm){ item={fillGroup:flatUnits(sub.items)}; consumed=fm[0].length; }
+    else item={fillGroup:flatUnits(sub.items)};
+    store.push(item);
+    body=pre+" #"+(store.length-1)+"# "+after.slice(consumed).replace(/^\s*(?:rep(?:eat)?\s+from\s+\*)?\s*,?/,"");
+  }
+  const groupRe=/[\(\[\{]([^\(\)\[\]\{\}]*)[\)\]\}]/;
+  let guard=0;
+  while(guard++<50){
+    const g=body.match(groupRe); if(!g) break;
+    const inner=g[1]; const after=body.slice(g.index+g[0].length);
+    const sub=expandBody(inner); needsMr=needsMr||sub.needsMr;
+    let consumed=0, item;
+    const tm=after.match(timesSuffix), fm=after.match(fillSuffix);
+    if(tm){ let n=parseInt(tm[1]||tm[2]||tm[3],10); if(/more/.test(tm[0])) n+=1; item={units:repeatItems(sub.items,n)}; consumed=tm[0].length; }
+    else if(fm){ item={fillGroup:flatUnits(sub.items)}; consumed=fm[0].length; }
+    else item={units:flatUnits(sub.items)};
+    store.push(item);
+    body=body.slice(0,g.index)+" #"+(store.length-1)+"# "+after.slice(consumed);
+  }
+  const items=[];
+  body.split(/[,;]|\.\s|\.$/).map(c=>c.trim()).filter(Boolean).forEach(clause=>{
+    const parts=clause.split(/(#\d+#)/).filter(Boolean);
+    parts.forEach(p=>{ const pm=p.match(/^#(\d+)#$/);
+      if(pm){ items.push(store[+pm[1]]); return; }
+      const r=clauseItems(p); needsMr=needsMr||r.needsMr; items.push(...r.items); });
+  });
+  return {items,needsMr};
+}
+function flatUnits(items){ const u=[]; items.forEach(i=>{ if(i.units) u.push(...i.units); else if(i.fill) u.push(...i.fill); else if(i.fillGroup) u.push(...i.fillGroup); }); return u; }
+function repeatItems(items,n){ const base=flatUnits(items), out=[]; for(let i=0;i<Math.max(1,n);i++) out.push(...base); return out; }
+function rowWidth(row){ const n=row.stitches.filter(s=>s.key!=="ch"&&s.key!=="mr").length; return n||row.stitches.length; }
+
+// parse one source line → array of row objects (round ranges expand to many)
+function parseRow(rawLine, prevRows, seqNo, uk){
+  let line=rawLine.trim(), label=null, isRnd=false, reps=1, startNo=null;
+  const m=line.match(ROW_LABEL);
+  if(m&&(m[2]||m[4])){ isRnd=/rnd|round/i.test(m[1]||""); const a=+(m[2]||m[4]), b=m[3]?+m[3]:a; reps=Math.max(1,b-a+1); startNo=a;
+    label=(isRnd?"Rnd ":"Row ")+(m[3]?(a+"–"+b):a); line=line.slice(m[0].length); }
+  const ec=extractCount(line); const targetCount=ec.count; line=ec.line;
+  const body=normalizeBody(line,uk);
+  const {items,needsMr}=expandBody(body);
+  // resolve fills against the target count (or the previous row's width)
+  const fixedNonCh=items.reduce((n,i)=>n+(i.units?i.units.filter(k=>k!=="ch"&&k!=="mr").length:0),0);
+  const chInRow=items.reduce((n,i)=>n+(i.units?i.units.filter(k=>k==="ch").length:0),0);
+  const prevWidth=prevRows.length?rowWidth(prevRows[prevRows.length-1]):0;
+  const goal=targetCount||prevWidth||(chInRow>=3?chInRow-1:0);
+  const nFills=items.filter(i=>i.fill||i.fillGroup).length;
+  let remaining=Math.max(0,goal-fixedNonCh);
+  const keys=[];
+  items.forEach(i=>{
+    if(i.units){ keys.push(...i.units); return; }
+    const share=nFills>1?Math.round(remaining/nFills):remaining;
+    if(i.fill){ const seq=i.fill; const n=Math.max(seq.length,share); for(let k=0;k<n;k++) keys.push(seq[k%seq.length]); }
+    else if(i.fillGroup){ const seq=i.fillGroup; if(!seq.length) return; const reps2=Math.max(1,Math.round(share/seq.length)); for(let r=0;r<reps2;r++) keys.push(...seq); }
+  });
+  if(needsMr&&!keys.includes("mr")) keys.unshift("mr");
+  let stitches=keys.map(k=>({key:k,abbr:k}));
+  const nonCh=()=>stitches.filter(s=>s.key!=="ch"&&s.key!=="mr").length;
+  if(targetCount&&stitches.length){
+    if(nonCh()<targetCount){ const base=stitches.filter(s=>s.key!=="ch"&&s.key!=="mr"); if(base.length){ let i=0; while(nonCh()<targetCount){ stitches.push({...base[i%base.length]}); i++; } } }
+    else if(nonCh()>targetCount&&nFills){ for(let i=stitches.length-1;i>=0&&nonCh()>targetCount;i--){ if(stitches[i].key!=="ch"&&stitches[i].key!=="mr") stitches.splice(i,1); } }
+  }
   if(!stitches.length) return [];
   const result=[];
-  for(let k=0;k<reps;k++){ const lab=label?(reps>1?label.replace(/–.*/,"")+(m&&m[3]?" #"+(k+1):""):label):("Row "+(seqNo+k));
-    result.push({label:reps>1?(isRnd?"Rnd ":"Row ")+((m?+m[2]:seqNo)+k):lab,stitches:stitches.map(s=>({...s})),round:isRnd}); }
+  for(let k=0;k<reps;k++){
+    let lab; if(label){ lab=reps>1?(isRnd?"Rnd ":"Row ")+(startNo+k):label; }
+    else lab=(stitches.every(s=>s.key==="ch")&&!prevRows.length)?"Foundation":("Row "+(seqNo+k));
+    result.push({label:lab,stitches:stitches.map(s=>({...s})),round:isRnd,no:label?startNo+k:null});
+  }
   return result;
 }
+// "Rows 4-12: repeat rows 2-3" / "Repeat row 2 until …" / "Row 13: rep row 2"
+function parseRepeatLine(line, rows){
+  const byNo={}; rows.forEach(r=>{ if(r.no!=null&&!(r.no in byNo)) byNo[r.no]=r; });
+  let m=line.match(/^(?:rows?|rnds?|rounds?|r)\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*[:.\-]?\s*(?:rep(?:eat)?|work as|same as|as)\s+(?:for\s+)?(?:rows?|rnds?|rounds?|r)\s*(\d+)(?:\s*(?:[-–]|and|&|,|to)\s*(\d+))?/i);
+  let targets=null, srcA, srcB, isRnd=/rnd|round/i.test(line);
+  if(m){ const a=+m[1], b=m[2]?+m[2]:a; targets=[]; for(let i=a;i<=b;i++) targets.push(i); srcA=+m[3]; srcB=m[4]?+m[4]:srcA; }
+  else { m=line.match(/^(?:rep(?:eat)?|work)\s+(?:rows?|rnds?|rounds?|r)\s*(\d+)(?:\s*(?:[-–]|and|&|,|to)\s*(\d+))?\s*(?:(\d+)\s*(?:more\s+)?(?:times|x)|until|for)?/i);
+    if(!m) return null; srcA=+m[1]; srcB=m[2]?+m[2]:srcA; let n=m[3]?parseInt(m[3],10):6; if(/more/.test(m[0])) n+=1;
+    const last=rows.length?(rows[rows.length-1].no||rows.length):0; targets=[]; const span=srcB-srcA+1; for(let i=0;i<n*span;i++) targets.push(last+1+i); }
+  const srcs=[]; for(let i=srcA;i<=srcB;i++) if(byNo[i]) srcs.push(byNo[i]);
+  if(!srcs.length) return null;
+  return targets.map((no,i)=>{ const s=srcs[i%srcs.length]; return {label:(s.round||isRnd?"Rnd ":"Row ")+no,stitches:s.stitches.map(x=>({...x})),round:s.round,no}; });
+}
+function preprocessLines(text){
+  const raw=text.replace(/\r/g,"").split(/\n/).map(l=>l.replace(/^[\s•·\-–—*]+(?=(?:rows?|rnds?|rounds?|r)\s*\d)/i,"").trim());
+  const out=[];
+  for(let i=0;i<raw.length;i++){
+    let l=raw[i]; if(!l) continue;
+    // "Rnd 3:" alone on a line (PDF wrap) → glue to the next non-empty line
+    if(/^(?:rows?|rnds?|rounds?|r)\s*\d+(?:\s*[-–]\s*\d+)?\s*[:.\-–]?\s*$/i.test(l)){ let j=i+1; while(j<raw.length&&!raw[j]) j++; if(j<raw.length){ l=l+" "+raw[j]; i=j; } }
+    out.push(l);
+  }
+  return out;
+}
 function parsePattern(text){
-  const lines=text.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  const uk=detectUK(text);
+  const lines=preprocessLines(text);
   const parts=[]; let cur=null, seq=0;
   const newPart=(name,count)=>{ cur={name:name||null,count:count||1,rows:[]}; parts.push(cur); seq=0; };
   for(let raw of lines){
-    const rowObjs=parseRow(raw, cur?cur.rows:[], seq+1);
+    if(DEFN_LINE.test(raw)) continue;
+    if(NOISE_LINE.test(raw)&&!ROW_LABEL.test(raw)) { if(looksLikeHeader(raw)) newPart(cleanPartName(raw), detectMake(raw)); continue; }
+    const rep=parseRepeatLine(raw, cur?cur.rows:[]);
+    if(rep){ if(!cur) newPart(null,1); rep.forEach(r=>{cur.rows.push(r);seq++;}); continue; }
+    const rowObjs=parseRow(raw, cur?cur.rows:[], seq+1, uk);
     if(rowObjs.length){ if(!cur) newPart(null,1); rowObjs.forEach(r=>{cur.rows.push(r);seq++;}); continue; }
     if(looksLikeHeader(raw)) newPart(cleanPartName(raw), detectMake(raw));
     // otherwise: notes / finishing — ignored
@@ -1273,7 +1436,7 @@ function parsePattern(text){
   realParts.forEach((p,pi)=>{ p.index=pi; p.flat=[];
     p.rows.forEach(r=>{ const ri=rows.length; r.part=pi; rows.push(r);
       r.stitches.forEach((s,si)=>{ const f={...s,row:ri,idxInRow:si,part:pi,partName:p.name}; flat.push(f); p.flat.push(f); }); }); });
-  return {parts:realParts, rows, flat, multi:realParts.length>1};
+  return {parts:realParts, rows, flat, multi:realParts.length>1, uk};
 }
 
 // ---- colour helpers ----------------------------------------------------
@@ -2068,7 +2231,7 @@ function updateStudioProgress(){
   // section labels show once anything is worked
   (Studio.labels||[]).forEach(spr=>{ spr.visible = App.progress>0; });
   const idx=Math.min(complete,meshes.length-1),lay=App.lay3d;
-  if(!App.plan&&lay&&Studio.hook){const p=lay.positions[idx];const t=(complete<meshes.length)?Math.max(0.05,frac):1;const topY=p.y+p.h*t;const wob=Math.sin(performance.now()/220)*0.35;
+  if(!App.plan&&lay&&Studio.hook&&lay.positions[idx]){const p=lay.positions[idx];const t=(complete<meshes.length)?Math.max(0.05,frac):1;const topY=p.y+p.h*t;const wob=Math.sin(performance.now()/220)*0.35;
     // sit the hook tip in the working loop, handle angled up toward the crocheter
     Studio.hook.position.set(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6);
     Studio.hook.visible=complete<meshes.length;
@@ -2870,7 +3033,35 @@ function currentState(){
     yarn:{color:settings.color,type:settings.type,weightIdx:settings.weightIdx,hook:settings.hook},
     paint:App.paint, meta:App.meta };
 }
+// Validate anything that arrives from outside (share links, community rows)
+// so a malformed or malicious state can't corrupt settings or throw mid-apply.
+function sanitizeState(st){
+  if(!st||typeof st!=="object") return null;
+  const out={};
+  if(typeof st.pattern==="string") out.pattern=st.pattern.slice(0,20000);
+  if(st.yarn&&typeof st.yarn==="object"){
+    const y={};
+    if(typeof st.yarn.color==="string"&&/^#[0-9a-f]{6}$/i.test(st.yarn.color)) y.color=st.yarn.color.toLowerCase();
+    if(typeof st.yarn.type==="string"&&YARN_TYPES[st.yarn.type]) y.type=st.yarn.type;
+    const wi=Number(st.yarn.weightIdx); if(Number.isInteger(wi)&&wi>=0&&wi<WEIGHTS.length) y.weightIdx=wi;
+    const hk=Number(st.yarn.hook); if(Number.isFinite(hk)&&hk>=1&&hk<=25) y.hook=Math.round(hk*2)/2;
+    out.yarn=y;
+  }
+  if(st.paint&&typeof st.paint==="object"&&!Array.isArray(st.paint)){
+    const p={}; let n=0;
+    for(const k in st.paint){ if(n++>20000) break; const v=st.paint[k];
+      if(/^\d+$/.test(k)&&typeof v==="string"&&/^#[0-9a-f]{6}$/i.test(v)) p[k]=v.toLowerCase(); }
+    out.paint=p;
+  }
+  if(st.meta&&typeof st.meta==="object"&&!Array.isArray(st.meta)){
+    const m={}; ["author","title","parentIssue","parentId"].forEach(k=>{ const v=st.meta[k];
+      if(typeof v==="string") m[k]=v.slice(0,120); else if(typeof v==="number"&&Number.isFinite(v)) m[k]=v; });
+    out.meta=m;
+  }
+  return out;
+}
 function applyState(st){
+  st=sanitizeState(st);
   if(!st) return;
   if(st.yarn){ settings.color=st.yarn.color||settings.color; settings.type=st.yarn.type||settings.type;
     settings.weightIdx=st.yarn.weightIdx??settings.weightIdx; settings.hook=st.yarn.hook??settings.hook;
@@ -3229,17 +3420,63 @@ function buildIR(source,{res=22,maxColors=8,cellAspect=1}={}){
   // shorter than they are wide); IR rows compensate so the result isn't squashed
   const iw=source.naturalWidth||source.width,ih=source.naturalHeight||source.height;
   const w=Math.max(2,Math.round(res)),h=Math.max(2,Math.round(res*(ih/iw)/cellAspect));
+  // 1) progressive half-steps: one big drawImage from a 4000px photo to a 22px
+  //    grid samples a handful of pixels per cell (noisy); halving first averages.
+  let src=source,sw=iw,sh=ih;
+  while(sw>=w*4&&sh>=h*4){ const c2=document.createElement("canvas");c2.width=Math.max(1,Math.round(sw/2));c2.height=Math.max(1,Math.round(sh/2));
+    const x=c2.getContext("2d");x.imageSmoothingEnabled=true;x.imageSmoothingQuality="high";x.drawImage(src,0,0,c2.width,c2.height);src=c2;sw=c2.width;sh=c2.height; }
   const cv=document.createElement("canvas");cv.width=w;cv.height=h;
   const c=cv.getContext("2d",{willReadFrequently:true});
   c.imageSmoothingEnabled=true;c.imageSmoothingQuality="high";
-  c.drawImage(source,0,0,w,h);
+  c.drawImage(src,0,0,w,h);
   const d=c.getImageData(0,0,w,h).data,px=[];
   for(let i=0;i<w*h;i++){const a=d[i*4+3];px.push(a<128?null:[d[i*4],d[i*4+1],d[i*4+2]]);}
-  const opaque=px.filter(Boolean);
-  const pal=medianCut(opaque,Math.max(2,maxColors));
+  // 2) background: if the border is one colour (photo on a wall, logo on white),
+  //    flood-fill it from the edges and drop it so the palette goes to the subject.
+  const isBg=new Uint8Array(w*h);
+  (function detectBackground(){
+    const border=[]; for(let x=0;x<w;x++){border.push(x,(h-1)*w+x);} for(let y=1;y<h-1;y++){border.push(y*w,y*w+w-1);}
+    const bpx=border.map(i=>px[i]).filter(Boolean); if(bpx.length<4) return;
+    const med=[0,1,2].map(k=>{const v=bpx.map(p=>p[k]).sort((a,b)=>a-b);return v[v.length>>1];});
+    const TOL=42, dist=p=>Math.sqrt(colorDist2(p,med));
+    const agree=bpx.filter(p=>dist(p)<TOL).length/bpx.length; if(agree<0.6) return;
+    const stack=border.filter(i=>px[i]&&dist(px[i])<TOL); stack.forEach(i=>isBg[i]=1);
+    while(stack.length){ const i=stack.pop(),x=i%w,y=(i-x)/w;
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{const nx=x+dx,ny=y+dy; if(nx<0||ny<0||nx>=w||ny>=h) return; const j=ny*w+nx;
+        if(!isBg[j]&&px[j]&&dist(px[j])<TOL){isBg[j]=1;stack.push(j);} }); }
+    const bgN=isBg.reduce((a,b)=>a+b,0); if(bgN>w*h*0.97){ isBg.fill(0); } // whole image is "background" → keep it all
+  })();
+  const fg=[]; for(let i=0;i<w*h;i++) if(px[i]&&!isBg[i]) fg.push(px[i]);
+  const opaque=fg.length?fg:px.filter(Boolean);
+  // 3) quantize, then merge near-duplicates and absorb colours that cover <2% of cells
+  let pal=medianCut(opaque,Math.max(2,maxColors));
+  pal=mergePalette(pal,opaque,26,0.02);
   const grid=new Int16Array(w*h);
-  for(let i=0;i<w*h;i++) grid[i]=px[i]?nearestPalette(pal,px[i]):-1;
-  return {w,h,palette:pal.map(p=>rgbToHex(p[0],p[1],p[2])),grid};
+  for(let i=0;i<w*h;i++) grid[i]=(px[i]&&!isBg[i])?nearestPalette(pal,px[i]):-1;
+  // 4) 3×3 majority filter: kills lone speckles that would be one odd stitch
+  const sm=new Int16Array(grid);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){ const cnt={}; let best=grid[y*w+x],bn=0;
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=x+dx,ny=y+dy; if(nx<0||ny<0||nx>=w||ny>=h) continue; const g=grid[ny*w+nx]; cnt[g]=(cnt[g]||0)+1; if(cnt[g]>bn){bn=cnt[g];best=g;}}
+    if(bn>=6&&cnt[grid[y*w+x]]<=2) sm[y*w+x]=best; }
+  return {w,h,palette:pal.map(p=>rgbToHex(p[0],p[1],p[2])),grid:sm};
+}
+function colorDist2(a,b){const dr=a[0]-b[0],dg=a[1]-b[1],db=a[2]-b[2];return dr*dr*0.9+dg*dg*1.2+db*db*0.8;}
+// merge palette entries closer than `tol` and absorb tiny ones, by population
+function mergePalette(pal,pixels,tol,minShare){
+  if(pal.length<=2) return pal;
+  const pop=new Array(pal.length).fill(0); pixels.forEach(p=>pop[nearestPalette(pal,p)]++);
+  let entries=pal.map((c,i)=>({c:c.slice(),n:pop[i]})).filter(e=>e.n>0);
+  const total=pixels.length||1;
+  let changed=true;
+  while(changed&&entries.length>2){ changed=false;
+    let bi=-1,bj=-1,bd=1e9;
+    for(let i=0;i<entries.length;i++)for(let j=i+1;j<entries.length;j++){const d=Math.sqrt(colorDist2(entries[i].c,entries[j].c)); if(d<bd){bd=d;bi=i;bj=j;}}
+    const smallest=entries.reduce((m,e,i)=>e.n<entries[m].n?i:m,0);
+    if(bd<tol){ const A=entries[bi],B=entries[bj],n=A.n+B.n; A.c=A.c.map((v,k)=>Math.round((v*A.n+B.c[k]*B.n)/n)); A.n=n; entries.splice(bj,1); changed=true; }
+    else if(entries[smallest].n/total<minShare){ const S=entries[smallest]; entries.splice(smallest,1);
+      let ni=0,nd=1e9; entries.forEach((e,i)=>{const d=colorDist2(e.c,S.c); if(d<nd){nd=d;ni=i;}}); entries[ni].n+=S.n; changed=true; }
+  }
+  return entries.map(e=>e.c);
 }
 // median-cut colour quantization: recursively split the pixel set along its
 // widest RGB channel, then average each box.

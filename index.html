@@ -279,6 +279,30 @@
   @media (max-width: 1000px) { .left-col { position: static; } }
   .stage-wrap { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 
+  /* ---------- Right panel: community makes + stitch tutorials ---------- */
+  .side-col { display: none; position: sticky; top: 88px; flex-direction: column; gap: 14px; min-width: 0; }
+  @media (min-width: 1320px) {
+    .workspace { grid-template-columns: 344px minmax(0,1fr) 296px; }
+    .side-col { display: flex; }
+  }
+  .side-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg-2, rgba(0,0,0,.05)); }
+  .side-tabs button { flex: 1; border: 0; background: transparent; color: var(--text-3); font: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 8px; border-radius: 9px; cursor: pointer; }
+  .side-tabs button.on { background: var(--card, #fff); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .side-list { display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 230px); overflow-y: auto; padding-right: 2px; }
+  .side-make { display: grid; grid-template-columns: 78px 1fr; gap: 10px; align-items: center; padding: 8px; border-radius: 12px; cursor: pointer; border: 1px solid transparent; transition: background .15s, border-color .15s; }
+  .side-make:hover { background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.06); }
+  .side-make canvas { width: 78px; height: 60px; border-radius: 8px; display: block; }
+  .side-make .t { font-size: 13px; font-weight: 600; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .side-make .s { font-size: 11.5px; color: var(--text-3); margin-top: 3px; }
+  .side-fam { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); margin: 6px 2px 0; }
+  .side-stitch { display: flex; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 10px; cursor: pointer; border: 0; background: transparent; text-align: left; font: inherit; color: var(--text); width: 100%; }
+  .side-stitch:hover { background: rgba(0,0,0,.04); }
+  .side-stitch .ab { width: 38px; height: 28px; border-radius: 8px; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; flex: none; }
+  .side-stitch .n { font-size: 13px; font-weight: 600; }
+  .side-stitch .d { font-size: 11.5px; color: var(--text-3); line-height: 1.3; }
+  .side-foot { display: flex; gap: 8px; }
+  .side-foot .mini-btn { flex: 1; text-align: center; }
+
   /* ---------- Card: a vibrancy material ---------- */
   .card {
     background: var(--surface);
@@ -3794,6 +3818,61 @@ document.querySelectorAll(".card.acc .card-head").forEach(h=>{
   h.addEventListener("click",toggle);
   h.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(); } });
 });
+// ---- right panel: published makes + stitch tutorials ----------------------
+// Appended to the workspace at runtime (no HTML surgery); shown from 1320px
+// up via .side-col. The Community modal stays as the full view.
+const SidePanel={tab:"makes",posts:null};
+(function initSidePanel(){
+  const ws=document.querySelector(".workspace"); if(!ws) return;
+  const aside=document.createElement("aside"); aside.className="side-col";
+  aside.innerHTML=`<section class="card"><div class="card-body">
+      <div class="side-tabs"><button data-tab="makes" class="on">Makes</button><button data-tab="tutorials">Tutorials</button></div>
+      <div class="side-list" id="sideList" style="margin-top:10px"></div>
+      <div class="side-foot" id="sideFoot" style="margin-top:10px">
+        <button class="mini-btn" id="sideRefresh">↻ Refresh</button>
+        <button class="mini-btn" id="sideAll">See all</button>
+      </div>
+    </div></section>`;
+  ws.appendChild(aside);
+  aside.querySelectorAll(".side-tabs button").forEach(b=>b.addEventListener("click",()=>{
+    aside.querySelectorAll(".side-tabs button").forEach(x=>x.classList.toggle("on",x===b));
+    SidePanel.tab=b.dataset.tab; renderSidePanel(); }));
+  document.getElementById("sideRefresh").addEventListener("click",()=>{ SidePanel.posts=null; renderSidePanel(true); });
+  document.getElementById("sideAll").addEventListener("click",()=>{ if(SidePanel.tab==="makes") openCommunity(); else openGlossary(); });
+  // lazy: only fetch when the panel is actually visible
+  const mq=window.matchMedia("(min-width: 1320px)");
+  const kick=()=>{ if(mq.matches) renderSidePanel(); };
+  mq.addEventListener?mq.addEventListener("change",kick):mq.addListener(kick); kick();
+})();
+function renderSidePanel(force){
+  const list=document.getElementById("sideList"), foot=document.getElementById("sideFoot"); if(!list) return;
+  if(SidePanel.tab==="tutorials"){
+    foot.style.display="none";
+    const fams={}; Object.keys(STITCHES).forEach(k=>{ const f=STITCH_FAMILY[k]||"Other"; (fams[f]=fams[f]||[]).push(k); });
+    list.innerHTML=Object.entries(fams).map(([fam,keys])=>`<div class="side-fam">${escapeHtml(fam)}</div>`+keys.map(k=>
+      `<button class="side-stitch" data-learn="${k}"><span class="ab" style="background:${STITCHES[k].color}">${k.toUpperCase()}</span>
+        <span><div class="n">${escapeHtml(STITCHES[k].name)}</div><div class="d">${escapeHtml(STITCHES[k].desc)}</div></span></button>`).join("")).join("");
+    list.querySelectorAll("[data-learn]").forEach(b=>b.addEventListener("click",()=>openLearn(b.dataset.learn)));
+    return;
+  }
+  foot.style.display="";
+  if(SidePanel.posts&&!force){ paintSideMakes(SidePanel.posts); return; }
+  list.innerHTML=`<div class="feed-empty" style="padding:28px 10px">Loading makes…</div>`;
+  fetchCommunity().then(posts=>{ SidePanel.posts=posts; if(SidePanel.tab==="makes") paintSideMakes(posts); })
+    .catch(err=>{ list.innerHTML=`<div class="feed-empty" style="padding:28px 10px">Couldn't load the feed.<br><span style="font-size:11.5px">${escapeHtml(err.message)}</span></div>`; });
+}
+function paintSideMakes(posts){
+  const list=document.getElementById("sideList");
+  const shown=posts.filter(p=>p.state).slice(0,24);
+  if(!shown.length){ list.innerHTML=`<div class="feed-empty" style="padding:28px 10px">No makes yet —<br>be the first to <b>Publish</b>.</div>`; return; }
+  list.innerHTML=shown.map((p,i)=>`<div class="side-make" data-i="${i}" title="Open in YarnFlow">
+      <canvas width="156" height="120"></canvas>
+      <div><div class="t">${escapeHtml(p.title)}</div><div class="s">${escapeHtml(p.author||"someone")} · ${timeAgo(p.ts)}${p.reactions?" · ♥ "+p.reactions:""}</div></div>
+    </div>`).join("");
+  list.querySelectorAll(".side-make").forEach(el=>{ const p=shown[+el.dataset.i];
+    renderThumb(el.querySelector("canvas"),p.state);
+    el.addEventListener("click",()=>{ applyState(p.state); toast("Loaded “"+p.title+"”"); window.scrollTo({top:0,behavior:"smooth"}); }); });
+}
 // ---- boot --------------------------------------------------------------
 updateGaugeReadout();requestAnimationFrame(masterLoop);
 initStudio();resize3D();

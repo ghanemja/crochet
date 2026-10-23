@@ -1151,15 +1151,20 @@ Row 2: sc in 2nd ch from hook, sc across (13)
 Row 3: ch 1, turn, sc across (13)
 Row 4: ch 1, turn, hdc across (13)
 Row 5: ch 1, turn, dc across (13)`,
-  "Granny start":`Row 1: ch 6, sl st to join
-Row 2: ch 3, dc 11 into ring
-Row 3: ch 3, dc 11
-Row 4: ch 3, dc 11`,
+  "Flat coaster":`Rnd 1: mr, 6 sc in ring (6)
+Rnd 2: inc x6 (12)
+Rnd 3: (sc, inc) x6 (18)
+Rnd 4: (2 sc, inc) x6 (24)
+Rnd 5: (3 sc, inc) x6 (30)
+Rnd 6: (4 sc, inc) x6 (36)`,
   "Amigurumi ball":`Rnd 1: mr, 6 sc in ring (6)
 Rnd 2: inc x6 (12)
-Rnd 3: sc, inc, repeat (18)
-Rnd 4: sc 2, inc, repeat (24)
-Rnd 5: sc across (24)`,
+Rnd 3: (sc, inc) x6 (18)
+Rnd 4: (2 sc, inc) x6 (24)
+Rnd 5-7: sc around (24)
+Rnd 8: (2 sc, dec) x6 (18)
+Rnd 9: (sc, dec) x6 (12)
+Rnd 10: dec x6 (6)`,
   "Mesh row":`Row 1: ch 20
 Row 2: ch 4, turn, dc, ch 1, skip 1, dc across
 Row 3: ch 4, turn, dc, ch 1, dc across`,
@@ -1767,6 +1772,8 @@ function yarnGeometry(curve,radius,closed,segs,opts){
   let turns=len/pitch; if(closed) turns=Math.max(1,Math.round(turns));
   segs=Math.max(4,segs|0);
   const frames=curve.computeFrenetFrames(segs,closed);
+  // keep consecutive frames on the same side: a flipped normal twists the strip
+  for(let i=1;i<=segs;i++){ if(frames.normals[i].dot(frames.normals[i-1])<0){ frames.normals[i].negate(); frames.binormals[i].negate(); } }
   const rho=P===1?0:radius*(P===2?0.42:P===3?0.5:0.56), rp=P===1?radius:radius*(P===2?0.72:P===3?0.62:0.56);
   const pos=[],nor=[],uv=[],idx=[], V=THREE.Vector3;
   const rad=new V(),n2=new V(),ctr=new V(),d=new V(),C=new V();
@@ -1807,6 +1814,37 @@ function yarnGeometry(curve,radius,closed,segs,opts){
   g.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
   g.setIndex(idx); g.computeBoundingSphere(); return g;
 }
+// Spline for any yarn path. Near-duplicate control points are dropped (a
+// zero-length step gives the Frenet frame a garbage tangent), and the
+// centripetal parameterisation has no cusps or overshoot at hairpins — a
+// stitch path turns back on itself at the top of every loop, and with the
+// uniform spline the tangent flipped there, twisting the ring of tube
+// vertices into long thin triangles that read as breaks in the yarn.
+function yarnCurve(pts,closed,radius){
+  const clean=[pts[0]]; for(let i=1;i<pts.length;i++){ if(pts[i].distanceToSquared(clean[clean.length-1])>1e-6) clean.push(pts[i]); }
+  if(closed&&clean.length>2&&clean[0].distanceToSquared(clean[clean.length-1])<1e-6) clean.pop();
+  let curve=new THREE.CatmullRomCurve3(clean,closed,"centripetal");
+  if(!radius||clean.length<3) return curve;
+  // A tube can't bend tighter than its own radius without folding through
+  // itself (the inside of the bend turns inside out and renders as sliced
+  // sheets). Resample the path finely and box-smooth it until its bends are
+  // no tighter than the yarn — what a real strand of this thickness does.
+  const len=curve.getLength(), step=Math.max(radius*0.2,len/160), n=Math.max(12,Math.round(len/step));
+  const P=[]; for(let i=0;i<=n-(closed?1:0);i++) P.push(curve.getPointAt(Math.min(1,i/n)));
+  const passes=Math.min(60,Math.round(Math.pow(radius*1.0/step,2)));
+  const m=P.length, Q=P.map(v=>v.clone());
+  for(let k=0;k<passes;k++){
+    for(let i=0;i<m;i++){
+      if(!closed&&(i===0||i===m-1)){ Q[i].copy(P[i]); continue; }
+      const a=P[(i-1+m)%m], b=P[(i+1)%m];
+      Q[i].set((a.x+b.x)*0.25+P[i].x*0.5,(a.y+b.y)*0.25+P[i].y*0.5,(a.z+b.z)*0.25+P[i].z*0.5);
+    }
+    for(let i=0;i<m;i++) P[i].copy(Q[i]);
+  }
+  return new THREE.CatmullRomCurve3(P,closed,"centripetal");
+}
+// segments by arc length so hairpins get enough rings to stay round
+function yarnSegs(curve,radius,min,max){ return Math.max(min||16,Math.min(max||200,Math.round(curve.getLength()/(radius*0.8)))); }
 // soft fibre halo geometry (single fat sleeve around the same curve)
 function haloGeometry(curve,radius,closed,segs){ return yarnGeometry(curve,radius*1.3,closed,Math.max(4,Math.round(segs*0.6)),{plies:1,radial:10}); }
 // A yarn mesh: plied strand + optional fuzz halo child for hairy fibres.
@@ -2036,8 +2074,8 @@ function buildStudioGeometry(){
   if(!App.parsed) return;
   const lay=App.lay3d, radius=yarnRadius()*0.5, pos=lay.positions;
   const byPart={};
-  pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p,nextEntryLocal(pos,i));const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
-    const seg=Math.max(14,Math.round(pts.length*2.6));
+  pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p,nextEntryLocal(pos,i));const curve=yarnCurve(pts,closed,radius);
+    const seg=yarnSegs(curve,radius,16,96);
     const useMat=App.paint[i]?matFor(App.paint[i]):Studio.yarnMat;
     const mesh=yarnMesh(curve,radius,closed,seg,useMat);mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
     mesh.userData.stitchIndex=i;
@@ -2547,8 +2585,8 @@ function initLearn3D(){
   Object.assign(L3,{ready:true,renderer,scene,camera,controls});
 }
 function tubeFor(p,radius,seg){ const{pts,closed}=stitchCurve3D(p);
-  const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
-  return yarnGeometry(curve,radius,closed,seg||Math.max(20,pts.length*3)); }
+  const curve=yarnCurve(pts,closed,radius);
+  return yarnGeometry(curve,radius,closed,seg||yarnSegs(curve,radius,20,120)); }
 
 // ---- Verlet / position-based yarn (a real physical rope) ----------------
 // Nodes are point masses; we keep them a fixed distance apart (inextensible
@@ -2612,7 +2650,7 @@ function resolveCollisions(loopPins,workPins){
     for(const N of list){ if(N.pin)continue; hookCollidePoint(N.p); if(Sim.postTop>0.3) postCollidePoint(N.p); }
   }
 }
-function ropeTube(rope,mesh){ const curve=new THREE.CatmullRomCurve3(rope.p,rope.closed,"catmullrom",0.5);
+function ropeTube(rope,mesh){ const curve=yarnCurve(rope.p,rope.closed,rope.radius);
   setYarnCurve(mesh,curve,rope.radius,rope.closed,rope.n*3); }
 // a hand holding the hook (pencil grip). Local +Y runs up the shaft; the
 // shaft sits at the origin, so fingers curl around radius ~0.8 to grip it.
@@ -2741,8 +2779,16 @@ function learnGetRing(i,accent){ while(L3.rings.length<=i) L3.rings.push(learnMk
 function learnGetFab(i,accent){ while(L3.fabric.length<=i) L3.fabric.push(learnMkMesh()); return learnSetMat(L3.fabric[i],accent); }
 function setTube(mesh,pts,closed,radius){
   if(!pts||pts.length<3){ mesh.visible=false; return; }
-  const curve=new THREE.CatmullRomCurve3(pts,closed,"catmullrom",0.5);
-  setYarnCurve(mesh,curve,radius||YR,closed,Math.max(28,pts.length*4)); mesh.visible=true;
+  // Near-duplicate control points give the spline zero-length steps (NaN
+  // tangents → shard triangles), so drop them first.
+  const curve=yarnCurve(pts,closed,(radius||YR)*0.8);
+  if(curve.points.length<3){ mesh.visible=false; return; }
+  // Segments by arc length, not point count: the working yarn runs a long way
+  // from the ball, and a fixed budget left the tight wrap at the throat with
+  // a few flat facets that cut through the plies.
+  const r=radius||YR, len=curve.getLength();
+  const segs=Math.max(28,Math.min(400,Math.round(len/(r*0.5))));
+  setYarnCurve(mesh,curve,r,closed,segs); mesh.visible=true;
 }
 function ovalRing(center,axisL,axisS,rL,rS){ const pts=[];
   for(let k=0;k<16;k++){ const a=k/16*Math.PI*2;
@@ -3623,7 +3669,7 @@ function geomFor(gm){
   switch(gm.type){
     case "box": return new THREE.BoxGeometry(gm.w,gm.h,gm.d);
     case "cylinder": return new THREE.CylinderGeometry(gm.r,gm.r,gm.h,18);
-    case "tube": {const curve=new THREE.CatmullRomCurve3(gm.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2])),!!gm.closed,"catmullrom",0.5);
+    case "tube": {const curve=yarnCurve(gm.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2])),!!gm.closed);
       return yarnGeometry(curve,gm.radius,!!gm.closed,Math.max(12,gm.pts.length*3));}
     default: return new THREE.BoxGeometry(1,1,1);
   }
@@ -3697,6 +3743,17 @@ const PlanUI={img:null};
   ["dragenter","dragover"].forEach(ev=>idz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();idz.classList.add("drag");}));
   ["dragleave","drop"].forEach(ev=>idz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();idz.classList.remove("drag");}));
   idz.addEventListener("drop",e=>handleImageFile(e.dataTransfer.files[0]));
+  // Dropping a file anywhere else used to make the browser navigate to it.
+  // Catch it at the window: images go to the image pipeline, text/PDF to the
+  // pattern reader — the page is the dropzone.
+  window.addEventListener("dragover",e=>{ e.preventDefault(); });
+  window.addEventListener("drop",e=>{
+    if(e.target.closest&&e.target.closest("#imgDrop,#dropzone,textarea")) return;
+    e.preventDefault(); const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(!f) return;
+    if(/^image\//.test(f.type)){ handleImageFile(f); toast("Image ready — pick a medium and tap Generate"); document.getElementById("imgDrop").scrollIntoView({behavior:"smooth",block:"center"}); }
+    else if(/\.pdf$/i.test(f.name)||f.type==="application/pdf"||/\.(txt|md|crochet|json)$/i.test(f.name)||/^text\//.test(f.type)){ handleFile(f); }
+    else toast("Drop an image, a .txt/.pdf pattern, or a .crochet file");
+  });
   document.getElementById("genPlanBtn").addEventListener("click",()=>{
     if(!PlanUI.img){toast("Drop an image first");return;}
     generateFromImage(PlanUI.img,sel.value,+res.value);
@@ -3725,6 +3782,7 @@ function generateFromImage(source,mediumId,res){
     renderPlanPreview(ad,plan);
   }
   toast(ad.label+" — "+((plan.meta&&plan.meta.summary)||"plan ready"));
+  const stage=document.getElementById("stage")||document.querySelector(".stage-wrap"); if(stage&&window.innerWidth<=1000) stage.scrollIntoView({behavior:"smooth",block:"start"}); else window.scrollTo({top:0,behavior:"smooth"});
   return plan;
 }
 

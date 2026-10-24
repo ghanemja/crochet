@@ -1577,11 +1577,11 @@ function placeParts(parts,laid,sp){
   const head=headIdx>=0?{idx:headIdx,top:off[headIdx].y+laid[headIdx].height,r:laid[headIdx].maxR,y:off[headIdx].y}:null;
   parts.forEach((p,i)=>{ if(i===bodyIdx||i===headIdx) return; const role=partRole(p.name), L=laid[i], mir=p.count>1;
     switch(role){
-      case "ear":   off[i]={x:(head?head.r:bodyR)*0.7, y:(head?head.top:bodyTop)-L.height*0.4, z:0, mirror:mir}; break;
+      case "ear":   off[i]={x:(head?head.r:bodyR)*0.72, y:(head?head.top:bodyTop)-L.maxR*0.55, z:0, mirror:mir, rx:Math.PI/2, rz:-0.35}; break;   // stands upright, faces forward, leans out
       case "horn":  off[i]={x:(head?head.r:bodyR)*0.4, y:(head?head.top:bodyTop)-L.height*0.2, z:0, mirror:mir}; break;
       case "eye":   off[i]={x:(head?head.r:bodyR)*0.42, y:head?head.y+head.r*0.9:bodyTop, z:(head?head.r:bodyR)*0.78, mirror:mir}; break;
       case "nose":  off[i]={x:0, y:head?head.y+head.r*0.7:bodyTop*0.8, z:(head?head.r:bodyR)*0.92, mirror:false}; break;
-      case "arm":   off[i]={x:bodyR+L.maxR*0.5, y:bodyTop*0.55, z:0, mirror:mir}; break;
+      case "arm":   off[i]={x:bodyR+L.maxR*0.35, y:bodyTop*0.4, z:bodyR*0.15, mirror:mir, rz:-0.55}; break;   // hangs from the shoulder, angled outward
       case "leg":   off[i]={x:bodyR*0.5, y:-L.height*0.9, z:bodyR*0.2, mirror:mir}; break;
       case "tail":  off[i]={x:0, y:bodyTop*0.3, z:-(bodyR+L.maxR*0.5), mirror:false}; break;
       default:      { const dir=otherDir[otherN%2]; otherX+=L.maxR*2+sp*2;
@@ -1598,7 +1598,9 @@ function layout3D(parsed){
   const {off}=placeParts(parts,laid,sp);
   const positions=[];
   parts.forEach((p,pi)=>{ const o=off[pi];
-    laid[pi].positions.forEach(lp=>positions.push({...lp, x:lp.x+o.x, y:lp.y+o.y, z:lp.z+o.z, part:pi, mirror:o.mirror, mirrorAxis:o.x})); });
+    const q=(o.rx||o.rz)?new THREE.Quaternion().setFromEuler(new THREE.Euler(o.rx||0,0,o.rz||0)):null, v=new THREE.Vector3();
+    laid[pi].positions.forEach(lp=>{ v.set(lp.x,lp.y,lp.z); if(q) v.applyQuaternion(q);
+      positions.push({...lp, x:v.x+o.x, y:v.y+o.y, z:v.z+o.z, part:pi, mirror:o.mirror, mirrorAxis:o.x, preQ:q}); }); });
   const height=Math.max(...parts.map((p,i)=>off[i].y+laid[i].height),1);
   return {positions,sp,unit,height,round:true,multi:true,laid,off};
 }
@@ -2088,9 +2090,11 @@ function stitchCurve3D(p,nextLocal){
 }
 function stitchQuat(p){
   const faceY=new THREE.Quaternion().setFromAxisAngle(_STITCH_UP,p.rotY||0);
+  let q=faceY;
   if(p.tilt){ const ax=new THREE.Vector3(Math.sin(p.a),0,-Math.cos(p.a));
-    return new THREE.Quaternion().setFromAxisAngle(ax,p.tilt).multiply(faceY); }
-  return faceY;
+    q=new THREE.Quaternion().setFromAxisAngle(ax,p.tilt).multiply(faceY); }
+  if(p.preQ) q=p.preQ.clone().multiply(q);     // whole-part rotation (upright ears, angled arms)
+  return q;
 }
 // the next stitch's entry point expressed in this stitch's local frame (or null)
 function nextEntryLocal(pos,i){
@@ -2157,12 +2161,7 @@ function makeLabelSprite(text){
 // about the ring's tangential axis derived from p.a. Local +Y is the post's growth
 // axis (progressive reveal scales scale.y), so tilting keeps reveal correct.
 const _STITCH_UP=new THREE.Vector3(0,1,0);
-function orientStitch(mesh,p){
-  const faceY=new THREE.Quaternion().setFromAxisAngle(_STITCH_UP,p.rotY||0);
-  if(p.tilt){ const ax=new THREE.Vector3(Math.sin(p.a),0,-Math.cos(p.a));
-    mesh.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(ax,p.tilt).multiply(faceY)); }
-  else mesh.quaternion.copy(faceY);
-}
+function orientStitch(mesh,p){ mesh.quaternion.copy(stitchQuat(p)); }
 // remove every current "make" (stitch meshes, clones, labels, extras, props)
 // from the studio — shared by the pattern path and the medium-plan viewer.
 function clearStudioMakes(){

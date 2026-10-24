@@ -1173,8 +1173,8 @@ const SAMPLES = {
   "Scarf swatch":`Row 1: ch 14
 Row 2: sc in 2nd ch from hook, sc across (13)
 Row 3: ch 1, turn, sc across (13)
-Row 4: ch 1, turn, hdc across (13)
-Row 5: ch 1, turn, dc across (13)`,
+Row 4: ch 2, turn, hdc across (13)
+Row 5: ch 3, turn, dc across (13)`,
   "Flat coaster":`Rnd 1: mr, 6 sc in ring (6)
 Rnd 2: inc x6 (12)
 Rnd 3: (sc, inc) x6 (18)
@@ -1190,8 +1190,9 @@ Rnd 8: (2 sc, dec) x6 (18)
 Rnd 9: (sc, dec) x6 (12)
 Rnd 10: dec x6 (6)`,
   "Mesh row":`Row 1: ch 20
-Row 2: ch 4, turn, dc, ch 1, skip 1, dc across
-Row 3: ch 4, turn, dc, ch 1, dc across`,
+Row 2: dc in 6th ch from hook, *ch 1, skip 1 ch, dc in next ch* across (8 dc)
+Row 3: ch 4, turn, *dc in next dc, ch 1* across, dc in top of turning ch (8 dc)
+Row 4: ch 4, turn, *dc in next dc, ch 1* across, dc in top of turning ch (8 dc)`,
   "Teddy (multi-part)":`HEAD
 Rnd 1: mr, 6 sc in ring (6)
 Rnd 2: inc x6 (12)
@@ -1388,7 +1389,14 @@ function parseRow(rawLine, prevRows, seqNo, uk){
   if(m&&(m[2]||m[4])){ isRnd=/rnd|round/i.test(m[1]||""); const a=+(m[2]||m[4]), b=m[3]?+m[3]:a; reps=Math.max(1,b-a+1); startNo=a;
     label=(isRnd?"Rnd ":"Row ")+(m[3]?(a+"–"+b):a); line=line.slice(m[0].length); }
   const ec=extractCount(line); const targetCount=ec.count; line=ec.line;
-  const body=normalizeBody(line,uk);
+  let body=normalizeBody(line,uk);
+  // turning chain: "ch 1, turn, sc across" / "turn, ch 3, dc across". It is not a
+  // stitch of its own — ch 3+ stands in for the row's first tall stitch, shorter
+  // ones are dropped from the stitch list (they never count in the stated total).
+  let turnCh=0;
+  { const tm=body.match(/^\s*(?:turn[\s,]*)?ch\s+(\d+)(?:\s*[,;]?\s*turn\b)?[\s,;]*/);
+    const hasTurn=/\bturn\b/i.test(rawLine), rest=tm?body.slice(tm[0].length):"";
+    if(tm&&(hasTurn||(!isRnd&&prevRows.length))&&/\b(sc|hdc|dc|tr|sl|inc|dec)\b/.test(rest)){ turnCh=parseInt(tm[1],10); body=rest; } }
   const {items,needsMr}=expandBody(body);
   // resolve fills against the target count (or the previous row's width)
   const fixedNonCh=items.reduce((n,i)=>n+(i.units?i.units.filter(k=>k!=="ch"&&k!=="mr").length:0),0);
@@ -1410,6 +1418,12 @@ function parseRow(rawLine, prevRows, seqNo, uk){
   if(targetCount&&stitches.length){
     if(nonCh()<targetCount){ const base=stitches.filter(s=>s.key!=="ch"&&s.key!=="mr"); if(base.length){ let i=0; while(nonCh()<targetCount){ stitches.push({...base[i%base.length]}); i++; } } }
     else if(nonCh()>targetCount&&nFills){ for(let i=stitches.length-1;i>=0&&nonCh()>targetCount;i--){ if(stitches[i].key!=="ch"&&stitches[i].key!=="mr") stitches.splice(i,1); } }
+  }
+  if(turnCh>=3&&stitches.length){
+    const tall=stitches.find(s=>/^(hdc|dc|tr)$/.test(s.key));
+    if(tall){ // the turning chain stands as the first tall stitch; keep the stated count
+      const li=stitches.map(s=>s.key).lastIndexOf(tall.key); if(targetCount&&li>0) stitches.splice(li,1);
+      stitches.unshift({key:tall.key,abbr:tall.key,turning:true}); }
   }
   if(!stitches.length) return [];
   const result=[];

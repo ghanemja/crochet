@@ -1510,6 +1510,14 @@ function layoutPart(part,sp,unit){
       R.push(Math.max(stitchN,3)*sp/(2*Math.PI));
       HH.push(Math.max(...r.stitches.map(s=>STITCHES[s.key].h)));
     });
+    // Fabric relaxes: a round's radius is pulled toward its neighbours (yarn
+    // stretches across increase/decrease rounds), so the profile is a smooth
+    // dome rather than a stack of flat discs and straight cylinders.
+    if(R.length>2){ for(let pass=0;pass<2;pass++){ const S=R.slice();
+      for(let i=1;i<R.length-1;i++) S[i]=(R[i-1]+2*R[i]+R[i+1])/4;
+      S[R.length-1]=(R[R.length-2]+2*R[R.length-1])/3;
+      for(let i=1;i<R.length;i++) R[i]=S[i]; } }
+    R[0]*=0.7;                                   // the magic ring pulls tight
     // Domed meridian: each round rises by Δy = √(L² − Δr²), where L is the stitch
     // arc-length. Fast increases (Δr≈L) lean the wall almost flat (disc bottom);
     // plain rounds (Δr=0) rise vertically; decreases (Δr<0) curve back inward — so
@@ -1831,6 +1839,28 @@ function haloMaterial(hex,typeKey){
 // line at distance rho, turning with the twist. Ply "slub" modulation keeps
 // the strand from looking machined. UV u is arc-length in circumferences,
 // so fibre texels stay square on any length of yarn.
+// Rotation-minimising frames (parallel transport). Frenet frames spin around the
+// tangent at every inflection, which twists the tube's rings against each other
+// and leaves blade-like slivers; transporting the normal along the curve keeps
+// consecutive rings aligned. Closed loops get the residual twist spread evenly.
+function rmfFrames(curve,segs,closed){
+  const V=THREE.Vector3, tangents=[],normals=[],binormals=[];
+  for(let i=0;i<=segs;i++){ const t=curve.getTangentAt(Math.min(1,i/segs)).normalize(); if(t.lengthSq()<1e-8) t.set(0,1,0); tangents.push(t); }
+  // seed normal: anything perpendicular to the first tangent
+  const t0=tangents[0]; let n=new V(0,1,0); if(Math.abs(t0.dot(n))>0.9) n.set(1,0,0);
+  n.sub(t0.clone().multiplyScalar(t0.dot(n))).normalize();
+  normals.push(n); binormals.push(new V().crossVectors(t0,n).normalize());
+  for(let i=1;i<=segs;i++){ const t=tangents[i], prev=normals[i-1];
+    const nn=prev.clone().sub(t.clone().multiplyScalar(t.dot(prev)));
+    if(nn.lengthSq()<1e-8){ nn.copy(binormals[i-1]).sub(t.clone().multiplyScalar(t.dot(binormals[i-1]))); }
+    nn.normalize(); normals.push(nn); binormals.push(new V().crossVectors(t,nn).normalize()); }
+  if(closed){ // rotate the frames progressively so the last one meets the first
+    const a=normals[segs], b=normals[0], t=tangents[0];
+    let ang=Math.atan2(new V().crossVectors(a,b).dot(t), a.dot(b));
+    for(let i=1;i<=segs;i++){ const th=ang*i/segs, c=Math.cos(th), sn=Math.sin(th), N=normals[i], B=binormals[i];
+      const nx=N.clone().multiplyScalar(c).add(B.clone().multiplyScalar(sn)); normals[i]=nx.normalize(); binormals[i]=new V().crossVectors(tangents[i],normals[i]).normalize(); } }
+  return {tangents,normals,binormals};
+}
 function yarnGeometry(curve,radius,closed,segs,opts){
   opts=opts||{}; const t=YARN_TYPES[opts.type||settings.type];
   const P=opts.plies||t.plies||3, R=opts.radial||(P===1?12:8);
@@ -1838,10 +1868,16 @@ function yarnGeometry(curve,radius,closed,segs,opts){
   const pitch=radius*2*(2.0+(1-t.twist)*3.0);
   let turns=len/pitch; if(closed) turns=Math.max(1,Math.round(turns));
   segs=Math.max(4,segs|0);
-  const frames=curve.computeFrenetFrames(segs,closed);
-  // keep consecutive frames on the same side: a flipped normal twists the strip
-  for(let i=1;i<=segs;i++){ if(frames.normals[i].dot(frames.normals[i-1])<0){ frames.normals[i].negate(); frames.binormals[i].negate(); } }
+  const frames=rmfFrames(curve,segs,closed);
   const rho=P===1?0:radius*(P===2?0.42:P===3?0.5:0.56), rp=P===1?radius:radius*(P===2?0.72:P===3?0.62:0.56);
+  // A tube folds through itself when its radius exceeds the bend radius of the
+  // path. Measure curvature at each sample and shrink the strand there so the
+  // inner wall never inverts (real yarn flattens into tight bends the same way).
+  const ds=len/segs, outer=rho+rp, kScale=new Float32Array(segs+1);
+  for(let i=0;i<=segs;i++){ const a=frames.tangents[Math.max(0,i-1)], b=frames.tangents[Math.min(segs,i+1)];
+    const span=(Math.min(segs,i+1)-Math.max(0,i-1))*ds; const kap=Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z)/Math.max(1e-6,span);
+    kScale[i]=kap>1e-6?Math.min(1,(0.9/kap)/outer):1; }
+  for(let pass=0;pass<2;pass++) for(let i=1;i<segs;i++) kScale[i]=Math.min(kScale[i],(kScale[i-1]+kScale[i]+kScale[i+1])/3+0.02);
   const pos=[],nor=[],uv=[],idx=[], V=THREE.Vector3;
   const rad=new V(),n2=new V(),ctr=new V(),d=new V(),C=new V();
   const uScale=1/(6.283*rp);
@@ -1854,8 +1890,9 @@ function yarnGeometry(curve,radius,closed,segs,opts){
       const cx=Math.cos(th),sy=Math.sin(th);
       rad.set(Nn.x*cx+B.x*sy,Nn.y*cx+B.y*sy,Nn.z*cx+B.z*sy);
       n2.crossVectors(T,rad).normalize();
-      ctr.copy(C).addScaledVector(rad,rho);
-      const rr=rp*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
+      const ks=Math.max(0.5,kScale[i]);
+      ctr.copy(C).addScaledVector(rad,rho*ks);
+      const rr=rp*ks*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
       for(let j=0;j<=R;j++){ const ph=j/R*6.283, c2=Math.cos(ph), s2=Math.sin(ph);
         d.set(rad.x*c2+n2.x*s2,rad.y*c2+n2.y*s2,rad.z*c2+n2.z*s2);
         pos.push(ctr.x+d.x*rr,ctr.y+d.y*rr,ctr.z+d.z*rr); nor.push(d.x,d.y,d.z); uv.push(u*len*uScale+p*0.37,j/R); }
@@ -1868,8 +1905,9 @@ function yarnGeometry(curve,radius,closed,segs,opts){
         const T=frames.tangents[i],Nn=frames.normals[i],B=frames.binormals[i];
         const th=p/P*6.283+u*turns*6.283, cx=Math.cos(th),sy=Math.sin(th);
         rad.set(Nn.x*cx+B.x*sy,Nn.y*cx+B.y*sy,Nn.z*cx+B.z*sy);
-        const rr=rp*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
-        ctr.copy(C).addScaledVector(rad,rho).addScaledVector(T,dir*rr*0.6);
+        const ks=Math.max(0.5,kScale[i]);
+        const rr=rp*ks*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
+        ctr.copy(C).addScaledVector(rad,rho*ks).addScaledVector(T,dir*rr*0.6);
         const ci=pos.length/3; pos.push(ctr.x,ctr.y,ctr.z); nor.push(T.x*dir,T.y*dir,T.z*dir); uv.push(u*len*uScale+p*0.37,0.5);
         for(let j=0;j<R;j++){ const a=base+i*(R+1)+j, b=base+i*(R+1)+j+1; if(dir<0) idx.push(ci,a,b); else idx.push(ci,b,a); }
       });
@@ -2142,7 +2180,7 @@ function buildStudioGeometry(){
   const lay=App.lay3d, radius=yarnRadius()*0.5, pos=lay.positions;
   const byPart={};
   pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p,nextEntryLocal(pos,i));const curve=yarnCurve(pts,closed,radius);
-    const seg=yarnSegs(curve,radius,16,96);
+    const seg=yarnSegs(curve,radius,28,140);
     const useMat=App.paint[i]?matFor(App.paint[i]):Studio.yarnMat;
     const mesh=yarnMesh(curve,radius,closed,seg,useMat);mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
     mesh.userData.stitchIndex=i;

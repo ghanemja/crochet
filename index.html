@@ -1865,7 +1865,8 @@ function rmfFrames(curve,segs,closed){
 }
 function yarnGeometry(curve,radius,closed,segs,opts){
   opts=opts||{}; const t=YARN_TYPES[opts.type||settings.type];
-  const P=opts.plies||t.plies||3, R=opts.radial||(P===1?12:8);
+  const P=opts.plies||t.plies||3, R=opts.radial||(P===1?16:12);
+  const F=opts.fibres|0;                       // fibre strands per ply (0 = smooth plies)
   const len=Math.max(1e-4,curve.getLength());
   const pitch=radius*2*(2.0+(1-t.twist)*3.0);
   let turns=len/pitch; if(closed) turns=Math.max(1,Math.round(turns));
@@ -1894,7 +1895,7 @@ function yarnGeometry(curve,radius,closed,segs,opts){
       n2.crossVectors(T,rad).normalize();
       const ks=Math.max(0.5,kScale[i]);
       ctr.copy(C).addScaledVector(rad,rho*ks);
-      const rr=rp*ks*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
+      const rr=rp*ks*(F?0.86:1)*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
       for(let j=0;j<=R;j++){ const ph=j/R*6.283, c2=Math.cos(ph), s2=Math.sin(ph);
         d.set(rad.x*c2+n2.x*s2,rad.y*c2+n2.y*s2,rad.z*c2+n2.z*s2);
         pos.push(ctr.x+d.x*rr,ctr.y+d.y*rr,ctr.z+d.z*rr); nor.push(d.x,d.y,d.z); uv.push(u*len*uScale+p*0.37,j/R); }
@@ -1913,6 +1914,32 @@ function yarnGeometry(curve,radius,closed,segs,opts){
         const ci=pos.length/3; pos.push(ctr.x,ctr.y,ctr.z); nor.push(T.x*dir,T.y*dir,T.z*dir); uv.push(u*len*uScale+p*0.37,0.5);
         for(let j=0;j<R;j++){ const a=base+i*(R+1)+j, b=base+i*(R+1)+j+1; if(dir<0) idx.push(ci,a,b); else idx.push(ci,b,a); }
       });
+    }
+  }
+  // ---- fibres: thin strands spiralling around each ply (twisted the other way),
+  // the way spun yarn is built — this is what reads as "yarn" instead of "tube"
+  if(F>0){
+    const FR=5, fr=rp*0.27, fTurns=turns*0.85, e1=new V(), e2=new V(), fc=new V(), fd=new V(), fdir=new V();
+    for(let p=0;p<P;p++) for(let f=0;f<F;f++){
+      const base=pos.length/3;
+      for(let i=0;i<=segs;i++){
+        const u=i/segs; curve.getPointAt(Math.min(1,u),C);
+        const T=frames.tangents[i],Nn=frames.normals[i],B=frames.binormals[i];
+        const th=p/P*6.283+u*turns*6.283, cx=Math.cos(th),sy=Math.sin(th);
+        rad.set(Nn.x*cx+B.x*sy,Nn.y*cx+B.y*sy,Nn.z*cx+B.z*sy); n2.crossVectors(T,rad).normalize();
+        const ks=Math.max(0.5,kScale[i]);
+        ctr.copy(C).addScaledVector(rad,rho*ks);
+        const phi=f/F*6.283+u*fTurns*6.283+p*1.7, cp=Math.cos(phi), sp=Math.sin(phi);   // spun with the ply, not against it
+        const orbit=rp*ks*0.74*(1+0.05*Math.sin(u*len*5.3+f));
+        fdir.set(rad.x*cp+n2.x*sp,rad.y*cp+n2.y*sp,rad.z*cp+n2.z*sp);      // fibre's radial direction from the ply core
+        fc.copy(ctr).addScaledVector(fdir,orbit);
+        e1.copy(fdir); e2.crossVectors(T,e1).normalize();
+        const frr=fr*ks*(0.8+0.4*((f*7+p*3)%5)/5);
+        for(let j=0;j<=FR;j++){ const ph=j/FR*6.283, c2=Math.cos(ph), s2=Math.sin(ph);
+          fd.set(e1.x*c2+e2.x*s2,e1.y*c2+e2.y*s2,e1.z*c2+e2.z*s2);
+          pos.push(fc.x+fd.x*frr,fc.y+fd.y*frr,fc.z+fd.z*frr); nor.push(fd.x,fd.y,fd.z); uv.push(u*len*uScale*3+f*0.21,j/FR); }
+      }
+      for(let i=0;i<segs;i++)for(let j=0;j<FR;j++){ const a=base+i*(FR+1)+j,b=a+FR+1; idx.push(a,b,a+1,b,b+1,a+1); }
     }
   }
   const g=new THREE.BufferGeometry();
@@ -1957,14 +1984,15 @@ function haloGeometry(curve,radius,closed,segs){ return yarnGeometry(curve,radiu
 // A yarn mesh: plied strand + optional fuzz halo child for hairy fibres.
 function yarnMesh(curve,radius,closed,segs,mat,opts){
   opts=opts||{}; const typeKey=opts.type||settings.type, t=YARN_TYPES[typeKey];
-  const m=new THREE.Mesh(yarnGeometry(curve,radius,closed,segs,{type:typeKey}),mat);
+  const m=new THREE.Mesh(yarnGeometry(curve,radius,closed,segs,{type:typeKey,fibres:opts.fibres|0}),mat);
+  m.userData.fibres=opts.fibres|0;
   m.castShadow=true; m.receiveShadow=true;
   // (no fuzz halo sleeve: it shredded into shards wherever strands crossed; sheen carries the softness)
   return m;
 }
 // swap the geometry of an existing yarn mesh (and its halo) for a new curve
 function setYarnCurve(mesh,curve,radius,closed,segs){
-  if(mesh.geometry) mesh.geometry.dispose(); mesh.geometry=yarnGeometry(curve,radius,closed,segs);
+  if(mesh.geometry) mesh.geometry.dispose(); mesh.geometry=yarnGeometry(curve,radius,closed,segs,{fibres:mesh.userData.fibres|0});
   const h=mesh.getObjectByName("halo"); if(h){ h.geometry.dispose(); h.geometry=haloGeometry(curve,radius,closed,segs); }
 }
 function disposeYarnMesh(m){ m.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
@@ -1979,7 +2007,7 @@ function makeYarnBall(r,mat,strandR,seed){
     const e1=new V().crossVectors(ax,u).normalize(), e2=new V().crossVectors(ax,e1);
     const off=(rnd()-0.5)*r*0.5, rr=Math.sqrt(Math.max(0.1,r*r-off*off))-strandR*0.3;
     const pts=[]; for(let i=0;i<24;i++){ const a=i/24*6.283; pts.push(new V().addScaledVector(ax,off).addScaledVector(e1,Math.cos(a)*rr).addScaledVector(e2,Math.sin(a)*rr)); }
-    const m=yarnMesh(new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.5),strandR,true,48,mat,{halo:false}); g.add(m);
+    const m=yarnMesh(new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.5),strandR,true,48,mat,{halo:false,fibres:3}); g.add(m);
   }
   return g;
 }
@@ -2177,11 +2205,12 @@ function buildStudioGeometry(){
   App.plan=null;               // a text pattern replaces any image-derived plan
   if(!App.parsed) return;
   const lay=App.lay3d, radius=yarnRadius()*0.5, pos=lay.positions;
+  const fibreN=pos.length<=420?7:pos.length<=900?4:0;   // spun-fibre detail where the GPU can afford it
   const byPart={};
   pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p,nextEntryLocal(pos,i));const curve=yarnCurve(pts,closed,radius);
     const seg=yarnSegs(curve,radius,28,140);
     const useMat=App.paint[i]?matFor(App.paint[i]):Studio.yarnMat;
-    const mesh=yarnMesh(curve,radius,closed,seg,useMat);mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
+    const mesh=yarnMesh(curve,radius,closed,seg,useMat,{fibres:fibreN});mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
     mesh.userData.stitchIndex=i;
     Studio.group.add(mesh);Studio.stitchMeshes.push(mesh);
     (byPart[p.part]=byPart[p.part]||[]).push({mesh,p,i});});
@@ -2875,7 +2904,7 @@ function learnFrame(dir){
   if(nrm.z<0) nrm.negate();
   return {U,side,pdown,nrm};
 }
-function learnMkMesh(){ const m=yarnMesh(new THREE.LineCurve3(new THREE.Vector3(),new THREE.Vector3(0,1,0)),YR,false,4,L3.yarnMat);
+function learnMkMesh(){ const m=yarnMesh(new THREE.LineCurve3(new THREE.Vector3(),new THREE.Vector3(0,1,0)),YR,false,4,L3.yarnMat,{fibres:6});
   m.visible=false; L3.scene.add(m); L3.managed.push(m); return m; }
 function learnSetMat(m,accent){ const mat=accent?L3.newMat:L3.yarnMat; if(m.material!==mat){ m.material=mat;
   const h=m.getObjectByName("halo"); if(h) h.material=haloMaterial(mat.userData.yarnHex,settings.type); } return m; }

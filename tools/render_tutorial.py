@@ -23,7 +23,11 @@ ap.add_argument("--hdri", default="build/hdri/studio_small_09_2k.hdr")
 ap.add_argument("--lens", type=float, default=100.0)      # mm on a 24 mm-tall sensor (long lens)
 ap.add_argument("--fstop", type=float, default=4.0)
 ap.add_argument("--skip-existing", action="store_true")
-ap.add_argument("--fibres", type=int, default=7)          # spun fibres per ply (0 = plies only)
+ap.add_argument("--lookdev", action="store_true")           # one strand in close-up (yarn look development)
+ap.add_argument("--zoom", type=float, default=1.0)         # look-dev: >1 moves the camera in on the stitch, focus on the target
+ap.add_argument("--fray", type=float, default=0.35)         # share of staple ends that lift out of the ply
+ap.add_argument("--fibres", type=int, default=220)        # staple fibres per ply
+ap.add_argument("--shape", default="RIBBONS")              # Cycles curve shape: RIBBONS (fast, tapered strips) | THICK
 ap.add_argument("--sss", type=float, default=0.0)          # subsurface doubles the frame time on CPU
 ap.add_argument("--bounces", type=int, default=6)
 ap.add_argument("--view", default="AgX")
@@ -62,7 +66,7 @@ sc.render.image_settings.color_mode = "RGBA"
 sc.view_settings.view_transform = A.view
 if A.view == "AgX": sc.view_settings.look = "AgX - Punchy"
 sc.view_settings.exposure = A.exposure
-sc.cycles_curves.shape = "THICK"
+sc.cycles_curves.shape = A.shape
 sc.cycles_curves.subdivisions = 2
 
 world = bpy.data.worlds.new("W"); sc.world = world; world.use_nodes = True
@@ -73,17 +77,17 @@ if os.path.exists(A.hdri):
     mp = wn.new("ShaderNodeMapping"); tc = wn.new("ShaderNodeTexCoord")
     mp.inputs["Rotation"].default_value = (0, 0, math.radians(110))
     wl.new(tc.outputs["Generated"], mp.inputs["Vector"]); wl.new(mp.outputs["Vector"], env.inputs["Vector"])
-    wl.new(env.outputs["Color"], bg.inputs["Color"]); bg.inputs["Strength"].default_value = 0.35
+    wl.new(env.outputs["Color"], bg.inputs["Color"]); bg.inputs["Strength"].default_value = 0.18
 else:
     print("no HDRI at", A.hdri, "- using a flat warm environment")
     bg.inputs["Color"].default_value = (0.85, 0.8, 0.74, 1); bg.inputs["Strength"].default_value = 0.8
 
 # key: big soft area light up and to the left (matches the app's key at (8,16,12) mirrored for the long lens)
 key = bpy.data.objects.new("Key", bpy.data.lights.new("Key", "AREA")); sc.collection.objects.link(key)
-key.data.shape = "DISK"; key.data.size = 0.35; key.data.energy = 6; key.data.color = (1.0, 0.95, 0.9)
+key.data.shape = "DISK"; key.data.size = 0.35; key.data.energy = 9; key.data.color = (1.0, 0.95, 0.9)
 key.location = to_bl((-14, 18, 16)); key.rotation_euler = (to_bl((0, 0, 0)) - key.location).to_track_quat("-Z", "Y").to_euler()
 rim = bpy.data.objects.new("Rim", bpy.data.lights.new("Rim", "AREA")); sc.collection.objects.link(rim)
-rim.data.size = 0.2; rim.data.energy = 3; rim.data.color = (1.0, 0.9, 0.8)
+rim.data.size = 0.25; rim.data.energy = 9; rim.data.color = (1.0, 0.9, 0.8)
 rim.location = to_bl((6, 10, -16)); rim.rotation_euler = (to_bl((0, 0, 0)) - rim.location).to_track_quat("-Z", "Y").to_euler()
 
 # floor: shadow catcher. The app's ground (y=-3.4) only draws shadows, so the working
@@ -98,7 +102,7 @@ cd = cam.data; cd.sensor_fit = "VERTICAL"; cd.sensor_height = 24; cd.sensor_widt
 vf = 2 * math.atan(12 / A.lens)
 P = Vector(D["camera"]["pos"]); T = Vector(D["camera"]["target"])
 k = math.tan(math.radians(D["camera"]["fov"]) / 2) / math.tan(vf / 2)
-cam.location = to_bl(T + (P - T) * k); tgt = to_bl(T)
+cam.location = to_bl(T + (P - T) * k / A.zoom); tgt = to_bl(T)
 cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
 cd.dof.use_dof = True; cd.dof.aperture_fstop = A.fstop; cd.dof.aperture_blades = 7
 cam_fwd = (tgt - cam.location).normalized()
@@ -109,8 +113,8 @@ def yarn_mat(name, hexcol, fibre=False):
     n = m.node_tree.nodes; l = m.node_tree.links; b = n["Principled BSDF"]
     base = srgb_lin(hexcol)
     hi = n.new("ShaderNodeHairInfo"); ramp = n.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].color = [c * 0.78 for c in base[:3]] + [1]
-    ramp.color_ramp.elements[1].color = [min(1, c * 1.12 + 0.01) for c in base[:3]] + [1]
+    ramp.color_ramp.elements[0].color = [c * 0.4 for c in base[:3]] + [1]   # ply core, seen only between fibres
+    ramp.color_ramp.elements[1].color = [c * 0.6 for c in base[:3]] + [1]
     l.new(hi.outputs["Random"], ramp.inputs["Fac"])
     # darker toward the ply core (Intercept runs along the curve; use it lightly for streaks)
     l.new(ramp.outputs["Color"], b.inputs["Base Color"])
@@ -134,8 +138,24 @@ def fuzz_mat(name, hexcol):
     l.new(h.outputs["BSDF"], n["Material Output"].inputs["Surface"])
     return m
 
-MAT = {False: (yarn_mat("Yarn", D["yarn"]), yarn_mat("YarnFibre", D["yarn"], True), fuzz_mat("YarnFuzz", D["yarn"])),
-       True: (yarn_mat("Accent", D["accent"]), yarn_mat("AccentFibre", D["accent"], True), fuzz_mat("AccentFuzz", D["accent"]))}
+def fibre_mat(name, hexcol):
+    """Principled Hair (Chiang) — the silky per-fibre highlights; per-fibre tone jitter via Random."""
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    n = m.node_tree.nodes; l = m.node_tree.links
+    n.remove(n["Principled BSDF"])
+    h = n.new("ShaderNodeBsdfHairPrincipled"); h.parametrization = "COLOR"
+    base = [c ** 1.7 for c in srgb_lin(hexcol)[:3]]          # hair scatters light many times: pre-darken so it lands on the yarn colour
+    hi = n.new("ShaderNodeHairInfo"); ramp = n.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = [c * 0.4 for c in base] + [1]
+    ramp.color_ramp.elements[1].color = [min(1, c * 1.25) for c in base] + [1]
+    l.new(hi.outputs["Random"], ramp.inputs["Fac"]); l.new(ramp.outputs["Color"], h.inputs["Color"])
+    h.inputs["Roughness"].default_value = 0.22; h.inputs["Radial Roughness"].default_value = 0.4
+    h.inputs["Coat"].default_value = 0.15; h.inputs["IOR"].default_value = 1.55
+    l.new(h.outputs["BSDF"], n["Material Output"].inputs["Surface"])
+    return m
+
+MAT = {False: (yarn_mat("Yarn", D["yarn"]), fibre_mat("YarnFibre", D["yarn"]), fibre_mat("YarnFuzz", D["yarn"])),
+       True: (yarn_mat("Accent", D["accent"]), fibre_mat("AccentFibre", D["accent"]), fibre_mat("AccentFuzz", D["accent"]))}
 
 steel = bpy.data.materials.new("Steel"); steel.use_nodes = True
 sb = steel.node_tree.nodes["Principled BSDF"]
@@ -197,6 +217,38 @@ def rng_at(seed, j):   # cheap deterministic hash -> [0,1)
     x ^= x >> 31; x = (x * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF; x ^= x >> 29
     return (x & 0xFFFFFF) / float(0xFFFFFF)
 
+def ply_fibres(seed, pc, n, b, s, th, rply, R, closed, L):
+    """A.fibres staple fibres following one ply: each sits at a random depth in the ply,
+    twists with it, wanders a little (frizz) and, at the ends of its staple, frays out
+    and lifts off the surface. Seeded and anchored by arc length -> stable between frames."""
+    NF = A.fibres
+    if NF <= 0: return []
+    rng = np.random.default_rng(seed)
+    rho0 = rng.uniform(0.55, 1.0, NF) ** 0.5 * 0.98          # depth in the ply (0 = core)
+    ph0 = rng.uniform(0, 2 * math.pi, NF)
+    wob_f = rng.uniform(0.6, 1.6, NF) / R; wob_p = rng.uniform(0, 2 * math.pi, NF)
+    ang = ph0[:, None] + th[None, :] * 1.08 + 0.12 * np.sin(s[None, :] * wob_f[:, None] + wob_p[:, None])
+    rho = rho0[:, None] * (1 + 0.07 * np.sin(s[None, :] * wob_f[:, None] * 1.7 + wob_p[:, None] * 2))
+    out = []
+    for f in range(NF):
+        # staples 4–11 R long; the first starts before the strand so the cuts are spread out
+        x = -rng.uniform(0, 11 * R); cuts = []
+        while x < L:
+            ln = rng.uniform(4, 11) * R; cuts.append((x, x + ln, rng.uniform(0.4, 1.6) if rng.uniform() < A.fray else 0.06, rng.uniform(-1, 1))); x += ln
+        for (x0, x1, amp, curl) in cuts:
+            i0 = int(np.searchsorted(s, max(0.0, x0))); i1 = int(np.searchsorted(s, min(L, x1)))
+            if i1 - i0 < 3: continue
+            ss = s[i0:i1]
+            # fray: within ~1 R of a staple end the fibre leaves the ply and curls outward
+            e0 = np.clip(1 - (ss - x0) / (1.2 * R), 0, 1) ** 2 if x0 > 0 else 0 * ss
+            e1 = np.clip(1 - (x1 - ss) / (1.2 * R), 0, 1) ** 2 if x1 < L else 0 * ss
+            e = np.maximum(e0, e1); fr = e * amp
+            r = rply[i0:i1] * (rho[f, i0:i1] + fr)
+            a = ang[f, i0:i1] + fr * curl
+            pts = pc[i0:i1] + r[:, None] * (np.cos(a)[:, None] * n[i0:i1] + np.sin(a)[:, None] * b[i0:i1])
+            out.append((pts, R * 0.009 * (1 - 0.6 * e)))          # tapers toward the frayed tips
+    return out
+
 def strand_curves(si_idx, st):
     """-> dict(kind -> list of (points (n,3) app units, radii (n,)))"""
     R = st["radius"]; closed = st["closed"]
@@ -204,35 +256,30 @@ def strand_curves(si_idx, st):
     n, b = frames_rmf(c, closed)
     twist = 2 * math.pi / (R * 4.2)                       # one ply turn per ~4 yarn radii
     if closed: twist = 2 * math.pi * max(1, round(L * twist / (2 * math.pi))) / L
-    rp, rply = R * 0.5, R * 0.56
+    rp, rply = R * 0.52, R * 0.52
     out = {"ply": [], "fibre": [], "fuzz": []}
     # taper the free ends a touch so cut ends read as yarn, not pipes
     taper = np.ones(len(s)) if closed else np.clip(np.minimum(s, L - s) / (R * 0.8), 0.55, 1)
-    F = A.fibres; rf = rply * 0.86; fr = rply * 0.3; ftw = -2 * math.pi / (R * 2.3)
     for k in range(PLIES):
         th = 2 * math.pi * k / PLIES + s * twist
         pc = c + rp * (np.cos(th)[:, None] * n + np.sin(th)[:, None] * b) * taper[:, None]
-        out["ply"].append((pc, rply * 0.8 * taper))
-        for j in range(F):
-            ph = 2 * math.pi * j / F + s * ftw + th
-            jit = 1 + 0.06 * np.sin(s / R * (3 + j) + k)
-            pf = pc + rf * jit[:, None] * (np.cos(ph)[:, None] * n + np.sin(ph)[:, None] * b) * taper[:, None]
-            out["fibre"].append((pf, fr * taper))
-    # flyaways: anchored by absolute arc length so they don't swim between frames
-    spacing = R * 0.35; seed = 1009 * (si_idx + 1)
+        out["ply"].append((pc, rply * 0.72 * taper))           # solid core under the fibres
+        out["fibre"] += ply_fibres(si_idx * 7 + k, pc, n, b, s, th, rply * taper, R, closed, L)
+    # flyaways: thin curly wisps, anchored by absolute arc length so they don't swim between frames
+    spacing = R * 0.12; seed = 1009 * (si_idx + 1); q = np.linspace(0, 1, 14)[:, None]
     for j in range(int(L / spacing)):
         u = (j + rng_at(seed, j)) * spacing
         if u >= L: break
-        r1, r2, r3 = rng_at(seed + 1, j), rng_at(seed + 2, j), rng_at(seed + 3, j)
+        r1, r2, r3, r4 = (rng_at(seed + m, j) for m in (1, 2, 3, 4))
         i = min(len(s) - 1, int(np.searchsorted(s, u)))
         a = r1 * 2 * math.pi; d = math.cos(a) * n[i] + math.sin(a) * b[i]
         t = c[(i + 1) % len(c)] - c[i - 1]; t /= np.linalg.norm(t) + 1e-12
-        ln = R * (0.35 + 1.1 * r2 ** 2)
-        lean = (r3 - 0.5) * 1.6
-        base = c[i] + d * R * 0.92
-        pts = np.array([base + (d * (0.35 + 0.65 * q) + t * lean * q + d * 0.0) * ln * q for q in np.linspace(0, 1, 5)])
-        pts[:, :] += np.outer(np.linspace(0, 1, 5) ** 2, np.cross(t, d)) * ln * 0.25 * (r1 - 0.5)
-        out["fuzz"].append((pts, np.linspace(R * 0.022, R * 0.008, 5)))
+        w = np.cross(t, d)
+        ln = R * (0.4 + 1.8 * r2 ** 3)                        # mostly short, a few long strays
+        k = (2 + 5 * r3) * math.pi                             # curl
+        out_ = d * (0.25 + 0.5 * r4) + t * (r3 - 0.5) * 1.2    # leaves the surface at a shallow angle
+        pts = c[i] + d * R * 0.9 + (out_ * q + (np.cos(k * q) - 1) * d * 0.18 + np.sin(k * q) * w * 0.25) * ln
+        out["fuzz"].append((pts, (R * 0.011 * (1 - 0.7 * q)).ravel()))
     return out
 
 def build_curves(name, items, mat):
@@ -266,6 +313,14 @@ def set_yarn(fr):
                 od = old.data; old.data = data; bpy.data.hair_curves.remove(od)
 
 # ---------------------------------------------------------------- frames
+if A.lookdev:   # a single lazy S of yarn across the frame, camera square on, focus on it
+    R0 = 0.36; xs = np.linspace(-9, 9, 120)
+    D["frames"] = [{"t": 0, "hook": {"pos": [0, 500, 0], "quat": [0, 0, 0, 1]},
+                    "strands": [{"visible": True, "closed": False, "radius": R0, "accent": False,
+                                 "pts": [[x, 0.9 * math.sin(x * 0.35), 0.6 * math.cos(x * 0.5)] for x in xs]}]}]
+    cam.location = to_bl((1.5, 2.0, 11.0)); tgt = to_bl((1.5, 0.3, 0)); cd.lens = 100
+    cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler(); cam_fwd = (tgt - cam.location).normalized()
+    cd.dof.aperture_fstop = 32; hook.hide_render = True; A.zoom = 2
 nF = len(D["frames"])
 a, b_, st_ = (A.frames.split(":") + ["", "", ""])[:3]
 f0 = int(a or 0); f1 = int(b_ or -1); f1 = nF if f1 < 0 else min(nF, f1 + 1); step = int(st_ or 1)
@@ -279,7 +334,7 @@ for fi in range(f0, f1, step):
     hook.rotation_quaternion = CQ @ Quaternion((qw, qx, qy, qz)) @ CQ.inverted()
     set_yarn(fr); t1 = time.time()
     # focus on the hook head (the tip sits at the hook's origin)
-    cd.dof.focus_distance = max(0.05, (hook.location - cam.location).dot(cam_fwd))
+    cd.dof.focus_distance = max(0.05, ((hook.location if A.zoom == 1 else tgt) - cam.location).dot(cam_fwd))
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
     print("frame %d/%d  %.1fs (build %.1fs)" % (fi, nF - 1, time.time() - t0, t1 - t0), flush=True)

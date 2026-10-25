@@ -1720,6 +1720,24 @@ function drawYarnBall2D(cx,cy,t){ctx.save();const r=30;const g=ctx.createRadialG
 // ============================================================
 //  3D studio
 // ============================================================
+// Whole-make triangle budget for the studio. Starts generous and adapts: after a
+// build the loop measures real frame rate and halves the budget (rebuilding) until
+// the scene holds ~30 fps; the result is remembered per device.
+let STUDIO_TRI_BUDGET=(()=>{ try{ const v=+localStorage.getItem("yf_tri_budget"); if(v>=100000&&v<=2000000) return v; }catch(e){} return 900000; })();
+const StudioPerf={probe:null};
+function startPerfProbe(){
+  StudioPerf.probe={t0:null,n:0,done:false};
+}
+function perfProbeTick(t){
+  const P=StudioPerf.probe; if(!P||P.done) return; if(P.t0===null){ P.t0=t; return; } P.n++;
+  const el=t-P.t0; if(el<1800) return; P.done=true;
+  const fps=P.n/(el/1000);
+  if(document.hidden) return;
+  if(fps<28&&STUDIO_TRI_BUDGET>150000){ STUDIO_TRI_BUDGET=Math.max(120000,Math.round(STUDIO_TRI_BUDGET*0.55));
+    try{ localStorage.setItem("yf_tri_budget",String(STUDIO_TRI_BUDGET)); }catch(e){}
+    if(App.parsed){ buildStudioGeometry(); updateStudioProgress(); startPerfProbe(); } }
+  else if(fps>55&&STUDIO_TRI_BUDGET<900000){ try{ localStorage.setItem("yf_tri_budget",String(STUDIO_TRI_BUDGET)); }catch(e){} }
+}
 const Studio={ready:false,renderer:null,scene:null,camera:null,controls:null,group:null,stitchMeshes:[],hook:null,ball:null,strand:null,yarnMat:null,tex:null,env:null};
 
 // ------------------------------------------------------------
@@ -1819,13 +1837,27 @@ function applyYarnTex(m){
 }
 function makeYarnMaterial(hex,typeKey){
   const t=YARN_TYPES[typeKey], maps=makeYarnMaps(hex,typeKey);
-  const m=new THREE.MeshPhysicalMaterial({color:new THREE.Color(0xffffff),map:maps.map,
+  const m=new THREE.MeshPhysicalMaterial({color:new THREE.Color(0xffffff),map:maps.map,vertexColors:true,
     normalMap:maps.normal,normalScale:new THREE.Vector2(0.14+t.fuzz*0.1,0.14+t.fuzz*0.1),
     roughnessMap:maps.rough,roughness:1.0,metalness:t.metalness,envMapIntensity:t.env,
     clearcoat:typeKey==="acrylic"?0.18:0,clearcoatRoughness:0.7});
   // Charlie sheen = the soft rim glow of fuzzy fibres catching light
   if(t.fuzz>0.3){ m.sheen=new THREE.Color(hex).convertSRGBToLinear().lerp(new THREE.Color(0xffffff),0.25).multiplyScalar(0.6); }
   m.userData.yarnHex=hex; m.userData.yarnType=typeKey;
+  m.envMapIntensity=Math.max(t.env,0.6);
+  // Fibres let light through: wrap the diffuse term around the terminator and add a
+  // view-dependent rim so back-lit edges glow instead of going black (a cheap stand-in
+  // for the hair scattering an offline renderer would do).
+  m.onBeforeCompile=sh=>{
+    sh.uniforms.uWrap={value:0.35+t.fuzz*0.25}; sh.uniforms.uRim={value:0.22+t.fuzz*0.18};
+    sh.fragmentShader=sh.fragmentShader
+      .replace("#include <common>","#include <common>\nuniform float uWrap; uniform float uRim;")
+      .replace("#include <lights_fragment_begin>","#include <lights_fragment_begin>\n"+
+        "{ vec3 vdir=normalize(vViewPosition); float fr=pow(1.0-saturate(dot(normal,vdir)),3.0);\n"+
+        "  totalEmissiveRadiance += diffuseColor.rgb * fr * uRim * (0.4 + 0.6*reflectedLight.directDiffuse.g/max(diffuseColor.g,0.05));\n"+
+        "  reflectedLight.directDiffuse += diffuseColor.rgb * uWrap * 0.25 * (1.0-fr); }");
+  };
+  m.customProgramCacheKey=()=>"yarn-wrap-"+typeKey;
   if(YarnTex.ready) applyYarnTex(m); else YarnTex.mats.push(m);   // photo fibres replace the procedural maps once loaded
   m.needsUpdate=true; return m;
 }
@@ -1881,8 +1913,12 @@ function yarnGeometry(curve,radius,closed,segs,opts){
     const span=(Math.min(segs,i+1)-Math.max(0,i-1))*ds; const kap=Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z)/Math.max(1e-6,span);
     kScale[i]=kap>1e-6?Math.min(1,(0.9/kap)/outer):1; }
   for(let pass=0;pass<2;pass++) for(let i=1;i<segs;i++) kScale[i]=Math.min(kScale[i],(kScale[i-1]+kScale[i]+kScale[i+1])/3+0.02);
-  const pos=[],nor=[],uv=[],idx=[], V=THREE.Vector3;
+  const pos=[],nor=[],uv=[],idx=[],col=[], V=THREE.Vector3;
   const rad=new V(),n2=new V(),ctr=new V(),d=new V(),C=new V();
+  // subtle per-ply hue drift and per-fibre brightness, like dyed spun yarn (the
+  // tutorial's "slight hue variation per strand")
+  const PLY_TINT=[[1.0,0.955,0.965],[0.965,1.0,0.975],[1.0,0.985,0.945],[0.975,0.975,1.0]];
+  const tint=(p,b)=>{ const t=PLY_TINT[p%PLY_TINT.length]; col.push(t[0]*b,t[1]*b,t[2]*b); };
   const uScale=1/(6.283*rp);
   for(let p=0;p<P;p++){
     const base=pos.length/3;
@@ -1898,7 +1934,7 @@ function yarnGeometry(curve,radius,closed,segs,opts){
       const rr=rp*ks*(F?0.86:1)*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
       for(let j=0;j<=R;j++){ const ph=j/R*6.283, c2=Math.cos(ph), s2=Math.sin(ph);
         d.set(rad.x*c2+n2.x*s2,rad.y*c2+n2.y*s2,rad.z*c2+n2.z*s2);
-        pos.push(ctr.x+d.x*rr,ctr.y+d.y*rr,ctr.z+d.z*rr); nor.push(d.x,d.y,d.z); uv.push(u*len*uScale+p*0.37,j/R); }
+        pos.push(ctr.x+d.x*rr,ctr.y+d.y*rr,ctr.z+d.z*rr); nor.push(d.x,d.y,d.z); uv.push(u*len*uScale+p*0.37,j/R); tint(p,1.0); }
     }
     for(let i=0;i<segs;i++)for(let j=0;j<R;j++){ const a=base+i*(R+1)+j,b=a+R+1; idx.push(a,b,a+1,b,b+1,a+1); }
     if(!closed){
@@ -1911,7 +1947,7 @@ function yarnGeometry(curve,radius,closed,segs,opts){
         const ks=Math.max(0.5,kScale[i]);
         const rr=rp*ks*(1+0.07*Math.sin(u*len*2.3+p*2.1)+0.04*Math.sin(u*len*7.1+p));
         ctr.copy(C).addScaledVector(rad,rho*ks).addScaledVector(T,dir*rr*0.6);
-        const ci=pos.length/3; pos.push(ctr.x,ctr.y,ctr.z); nor.push(T.x*dir,T.y*dir,T.z*dir); uv.push(u*len*uScale+p*0.37,0.5);
+        const ci=pos.length/3; pos.push(ctr.x,ctr.y,ctr.z); nor.push(T.x*dir,T.y*dir,T.z*dir); uv.push(u*len*uScale+p*0.37,0.5); tint(p,1.0);
         for(let j=0;j<R;j++){ const a=base+i*(R+1)+j, b=base+i*(R+1)+j+1; if(dir<0) idx.push(ci,a,b); else idx.push(ci,b,a); }
       });
     }
@@ -1919,7 +1955,7 @@ function yarnGeometry(curve,radius,closed,segs,opts){
   // ---- fibres: thin strands spiralling around each ply (twisted the other way),
   // the way spun yarn is built — this is what reads as "yarn" instead of "tube"
   if(F>0){
-    const FR=5, fr=rp*0.27, fTurns=turns*0.85, e1=new V(), e2=new V(), fc=new V(), fd=new V(), fdir=new V();
+    const FR=opts.fibreRadial||5, fr=rp*0.27, fTurns=turns*0.85, e1=new V(), e2=new V(), fc=new V(), fd=new V(), fdir=new V();
     for(let p=0;p<P;p++) for(let f=0;f<F;f++){
       const base=pos.length/3;
       for(let i=0;i<=segs;i++){
@@ -1937,7 +1973,7 @@ function yarnGeometry(curve,radius,closed,segs,opts){
         const frr=fr*ks*(0.8+0.4*((f*7+p*3)%5)/5);
         for(let j=0;j<=FR;j++){ const ph=j/FR*6.283, c2=Math.cos(ph), s2=Math.sin(ph);
           fd.set(e1.x*c2+e2.x*s2,e1.y*c2+e2.y*s2,e1.z*c2+e2.z*s2);
-          pos.push(fc.x+fd.x*frr,fc.y+fd.y*frr,fc.z+fd.z*frr); nor.push(fd.x,fd.y,fd.z); uv.push(u*len*uScale*3+f*0.21,j/FR); }
+          pos.push(fc.x+fd.x*frr,fc.y+fd.y*frr,fc.z+fd.z*frr); nor.push(fd.x,fd.y,fd.z); uv.push(u*len*uScale*3+f*0.21,j/FR); tint(p,0.88+0.22*(((f*5+p*3)%7)/7)); }
       }
       for(let i=0;i<segs;i++)for(let j=0;j<FR;j++){ const a=base+i*(FR+1)+j,b=a+FR+1; idx.push(a,b,a+1,b,b+1,a+1); }
     }
@@ -1946,6 +1982,7 @@ function yarnGeometry(curve,radius,closed,segs,opts){
   g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
   g.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
+  g.setAttribute("color",new THREE.Float32BufferAttribute(col,3));
   g.setIndex(idx); g.computeBoundingSphere(); return g;
 }
 // Spline for any yarn path. Near-duplicate control points are dropped (a
@@ -1984,44 +2021,65 @@ function haloGeometry(curve,radius,closed,segs){ return yarnGeometry(curve,radiu
 // A yarn mesh: plied strand + optional fuzz halo child for hairy fibres.
 function yarnMesh(curve,radius,closed,segs,mat,opts){
   opts=opts||{}; const typeKey=opts.type||settings.type, t=YARN_TYPES[typeKey];
-  const m=new THREE.Mesh(yarnGeometry(curve,radius,closed,segs,{type:typeKey,fibres:opts.fibres|0}),mat);
-  m.userData.fibres=opts.fibres|0;
+  const m=new THREE.Mesh(yarnGeometry(curve,radius,closed,segs,{type:typeKey,fibres:opts.fibres|0,radial:opts.radial,fibreRadial:opts.fibreRadial}),mat);
+  m.userData.fibres=opts.fibres|0; m.userData.radial=opts.radial; m.userData.fibreRadial=opts.fibreRadial;
   m.castShadow=true; m.receiveShadow=true;
-  // (no fuzz halo sleeve: it shredded into shards wherever strands crossed; sheen carries the softness)
+  // flyaway hairs: a few stray fibres per strand, drawn as lines (cheap, no sorting trouble)
+  const hairN=opts.hairs!=null?opts.hairs:(t.fuzz>0.3?Math.round(6+t.fuzz*10):t.fuzz>0.1?3:0);
+  if(hairN>0&&m.geometry.attributes.position.count>0){
+    const hp=[], L=Math.max(1e-3,curve.getLength()), pts=Math.max(2,Math.round(L/(radius*1.2)));
+    const C=new THREE.Vector3(), T=new THREE.Vector3(), N=new THREE.Vector3(), Bv=new THREE.Vector3();
+    let seed=Math.floor(L*97+radius*31)|0; const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+    for(let h=0;h<hairN*pts;h++){ const u=rnd(); curve.getPointAt(u,C); curve.getTangentAt(u,T).normalize();
+      N.set(T.y,-T.x,0).normalize(); if(N.lengthSq()<0.5) N.set(1,0,0); Bv.crossVectors(T,N).normalize();
+      const a=rnd()*6.283, out=N.clone().multiplyScalar(Math.cos(a)).addScaledVector(Bv,Math.sin(a));
+      const len=radius*(0.6+rnd()*1.6), bend=rnd()*0.8-0.4;
+      const p0=C.clone().addScaledVector(out,radius*0.95), p1=p0.clone().addScaledVector(out,len*0.5).addScaledVector(T,bend*len*0.5), p2=p1.clone().addScaledVector(out,len*0.5*(0.4+rnd()*0.6)).addScaledVector(T,bend*len);
+      hp.push(p0.x,p0.y,p0.z,p1.x,p1.y,p1.z,p1.x,p1.y,p1.z,p2.x,p2.y,p2.z); }
+    const hg=new THREE.BufferGeometry(); hg.setAttribute("position",new THREE.Float32BufferAttribute(hp,3));
+    const hex=(mat.userData&&mat.userData.yarnHex)||settings.color;
+    const hm=new THREE.LineBasicMaterial({color:new THREE.Color(hex).convertSRGBToLinear().lerp(new THREE.Color(0xffffff),0.35),transparent:true,opacity:0.42,depthWrite:false});
+    const hl=new THREE.LineSegments(hg,hm); hl.name="hairs"; hl.renderOrder=3; m.add(hl);
+  }
   return m;
 }
 // swap the geometry of an existing yarn mesh (and its halo) for a new curve
 function setYarnCurve(mesh,curve,radius,closed,segs){
-  if(mesh.geometry) mesh.geometry.dispose(); mesh.geometry=yarnGeometry(curve,radius,closed,segs,{fibres:mesh.userData.fibres|0});
-  const h=mesh.getObjectByName("halo"); if(h){ h.geometry.dispose(); h.geometry=haloGeometry(curve,radius,closed,segs); }
+  if(mesh.geometry) mesh.geometry.dispose(); mesh.geometry=yarnGeometry(curve,radius,closed,segs,{fibres:mesh.userData.fibres|0,radial:mesh.userData.radial,fibreRadial:mesh.userData.fibreRadial});
+  const h=mesh.getObjectByName("hairs"); if(h){ mesh.remove(h); h.geometry.dispose(); }
 }
 function disposeYarnMesh(m){ m.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
 // A wound ball of yarn: core sphere wrapped in many slightly-off-axis strands.
 function makeYarnBall(r,mat,strandR,seed){
   const g=new THREE.Group(); let s=(seed||3)*2654435761>>>0; const rnd=()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
   const core=new THREE.Mesh(new THREE.SphereGeometry(r*0.93,28,20),mat); core.castShadow=true; g.add(core);
-  const V=THREE.Vector3, n=22;
+  const V=THREE.Vector3, n=14;                       // set dressing: keep it light
   for(let k=0;k<n;k++){
     const ax=new V(rnd()-0.5,rnd()-0.5,rnd()-0.5).normalize();
     const u=new V(0,1,0); if(Math.abs(ax.dot(u))>0.9) u.set(1,0,0);
     const e1=new V().crossVectors(ax,u).normalize(), e2=new V().crossVectors(ax,e1);
     const off=(rnd()-0.5)*r*0.5, rr=Math.sqrt(Math.max(0.1,r*r-off*off))-strandR*0.3;
     const pts=[]; for(let i=0;i<24;i++){ const a=i/24*6.283; pts.push(new V().addScaledVector(ax,off).addScaledVector(e1,Math.cos(a)*rr).addScaledVector(e2,Math.sin(a)*rr)); }
-    const m=yarnMesh(new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.5),strandR,true,48,mat,{halo:false,fibres:3}); g.add(m);
+    const m=yarnMesh(new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.5),strandR,true,30,mat,{halo:false,fibres:0,radial:7,hairs:0}); g.add(m);
   }
   return g;
 }
 // procedural studio environment (equirect) for real reflections
 function makeEnvironment(renderer){
-  const S=512,cv=document.createElement("canvas");cv.width=S;cv.height=S/2;const c=cv.getContext("2d");
+  const S=1024,cv=document.createElement("canvas");cv.width=S;cv.height=S/2;const c=cv.getContext("2d");
+  // sky-to-floor gradient (cool above, warm bounce below)
   const g=c.createLinearGradient(0,0,0,S/2);
-  g.addColorStop(0,"#fdf6ec");g.addColorStop(0.45,"#d9c9b4");g.addColorStop(0.7,"#6f6353");g.addColorStop(1,"#2a241d");
+  g.addColorStop(0,"#cfe0f4");g.addColorStop(0.42,"#f3efe8");g.addColorStop(0.55,"#d8c9b4");g.addColorStop(0.8,"#8c7b66");g.addColorStop(1,"#3a3128");
   c.fillStyle=g;c.fillRect(0,0,S,S/2);
-  // soft studio lights for specular glints
-  const blobs=[[S*0.28,S*0.16,90,"rgba(255,255,255,0.95)"],[S*0.72,S*0.12,70,"rgba(255,238,214,0.8)"],[S*0.5,S*0.34,120,"rgba(255,255,255,0.35)"]];
-  blobs.forEach(([x,y,r,col])=>{const rg=c.createRadialGradient(x,y,0,x,y,r);rg.addColorStop(0,col);rg.addColorStop(1,"rgba(255,255,255,0)");c.fillStyle=rg;c.fillRect(x-r,y-r,r*2,r*2);});
+  // softboxes: one large key, a cooler fill, and a hard-ish back light for rim glints
+  const box=(x,y,w,h,col,a)=>{ const rg=c.createRadialGradient(x,y,0,x,y,Math.max(w,h)); rg.addColorStop(0,col.replace("A",a)); rg.addColorStop(0.55,col.replace("A",a*0.6)); rg.addColorStop(1,col.replace("A",0));
+    c.save(); c.translate(x,y); c.scale(w/Math.max(w,h),h/Math.max(w,h)); c.translate(-x,-y); c.fillStyle=rg; c.fillRect(x-Math.max(w,h),y-Math.max(w,h),Math.max(w,h)*2,Math.max(w,h)*2); c.restore(); };
+  box(S*0.30,S*0.15,170,120,"rgba(255,250,240,A)",1.0);     // key
+  box(S*0.78,S*0.20,120,90,"rgba(214,228,255,A)",0.55);     // fill
+  box(S*0.55,S*0.12,80,60,"rgba(255,232,200,A)",1.0);       // back rim
+  box(S*0.05,S*0.30,90,70,"rgba(255,240,224,A)",0.35);      // window bounce
   const tex=new THREE.CanvasTexture(cv);tex.mapping=THREE.EquirectangularReflectionMapping;
-  if('SRGBColorSpace'in THREE) tex.colorSpace=THREE.SRGBColorSpace;
+  if('SRGBColorSpace'in THREE) tex.colorSpace=THREE.SRGBColorSpace; else tex.encoding=THREE.sRGBEncoding;
   const pmrem=new THREE.PMREMGenerator(renderer);const env=pmrem.fromEquirectangular(tex).texture;
   tex.dispose();pmrem.dispose();return env;
 }
@@ -2049,7 +2107,7 @@ function initStudio(){
   if(Studio.ready) return;
   const cv=document.getElementById("stage3d");
   const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true,preserveDrawingBuffer:true});
-  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.setPixelRatio(Math.min(1.5,window.devicePixelRatio||1));
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   if('outputColorSpace'in renderer)renderer.outputColorSpace=THREE.SRGBColorSpace; else if('outputEncoding'in renderer)renderer.outputEncoding=THREE.sRGBEncoding;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.9;
@@ -2062,10 +2120,11 @@ function initStudio(){
   const env=makeEnvironment(renderer);scene.environment=env;Studio.env=env;
   // photo-studio lighting: large warm key, cool fill, back rim that catches the fibre halo
   const hemi=new THREE.HemisphereLight(0xfff1e0,0x241d17,0.38);scene.add(hemi);
-  const key=new THREE.DirectionalLight(0xfff0e0,1.35);key.position.set(-14,26,20);key.castShadow=true;
+  const key=new THREE.DirectionalLight(0xfff0e0,1.25);key.position.set(-14,26,20);key.castShadow=true;
   key.shadow.mapSize.set(2048,2048);key.shadow.bias=-0.0002;key.shadow.normalBias=0.08;key.shadow.radius=4;scene.add(key);scene.add(key.target);
   const fill=new THREE.DirectionalLight(0xcfdcff,0.3);fill.position.set(20,10,10);scene.add(fill);
-  const rim=new THREE.DirectionalLight(0xffe0c0,0.7);rim.position.set(6,16,-26);scene.add(rim);
+  const rim=new THREE.DirectionalLight(0xffe6cc,1.3);rim.position.set(8,18,-26);scene.add(rim);
+  const rim2=new THREE.DirectionalLight(0xd6e4ff,0.6);rim2.position.set(-22,12,-16);scene.add(rim2);
   const ground=makeGround();scene.add(ground);
   const group=new THREE.Group();scene.add(group);
   Object.assign(Studio,{ready:true,renderer,scene,camera,controls,group,key,ground});
@@ -2205,12 +2264,24 @@ function buildStudioGeometry(){
   App.plan=null;               // a text pattern replaces any image-derived plan
   if(!App.parsed) return;
   const lay=App.lay3d, radius=yarnRadius()*0.5, pos=lay.positions;
-  const fibreN=pos.length<=420?7:pos.length<=900?4:0;   // spun-fibre detail where the GPU can afford it
+  // Detail budget: pick the richest yarn (fibres, ring resolution, path density)
+  // whose estimated triangle count for the WHOLE make fits the GPU budget.
+  const curves=pos.map((p,i)=>{ const {pts,closed}=stitchCurve3D(p,nextEntryLocal(pos,i)); return {curve:yarnCurve(pts,closed,radius),closed}; });
+  const plies=(YARN_TYPES[settings.type].plies||3), LODS=[
+    {fibres:7,fibreRadial:5,radial:12,segK:0.8,hairs:true},{fibres:5,fibreRadial:4,radial:10,segK:1.0,hairs:true},
+    {fibres:3,fibreRadial:4,radial:8,segK:1.2,hairs:false},{fibres:2,fibreRadial:3,radial:8,segK:1.4,hairs:false},
+    {fibres:0,fibreRadial:3,radial:8,segK:1.4,hairs:false},{fibres:0,fibreRadial:3,radial:6,segK:1.8,hairs:false}];
+  const BUDGET=STUDIO_TRI_BUDGET, segsFor=(c,k)=>Math.max(12,Math.min(96,Math.round(c.getLength()/(radius*k))));
+  let lod=LODS[LODS.length-1];
+  for(const L of LODS){ let tris=0; for(const {curve} of curves){ const sg=segsFor(curve,L.segK); tris+=plies*sg*L.radial*2+plies*L.fibres*sg*L.fibreRadial*2; }
+    if(tris<=BUDGET){ lod=L; break; } }
+  const fibreN=lod.fibres; Studio.lod=lod; Studio.triBudgetUsed=BUDGET;
+  if(!StudioPerf.probe||StudioPerf.probe.done) startPerfProbe();
   const byPart={};
-  pos.forEach((p,i)=>{const{pts,closed}=stitchCurve3D(p,nextEntryLocal(pos,i));const curve=yarnCurve(pts,closed,radius);
-    const seg=yarnSegs(curve,radius,28,140);
+  pos.forEach((p,i)=>{const {curve,closed}=curves[i];
+    const seg=segsFor(curve,lod.segK);
     const useMat=App.paint[i]?matFor(App.paint[i]):Studio.yarnMat;
-    const mesh=yarnMesh(curve,radius,closed,seg,useMat,{fibres:fibreN});mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
+    const mesh=yarnMesh(curve,radius,closed,seg,useMat,{fibres:fibreN,fibreRadial:lod.fibreRadial,radial:lod.radial,hairs:lod.hairs?undefined:0});mesh.position.set(p.x,p.y,p.z);orientStitch(mesh,p);mesh.visible=false;
     mesh.userData.stitchIndex=i;
     Studio.group.add(mesh);Studio.stitchMeshes.push(mesh);
     (byPart[p.part]=byPart[p.part]||[]).push({mesh,p,i});});
@@ -2236,7 +2307,7 @@ function buildStudioGeometry(){
   const ball=makeYarnBall(lay.sp*0.7,Studio.yarnMat,radius,7);
   ball.position.set(-size.x/2-lay.sp*1.6,lay.sp*0.7,lay.sp*1.5);Studio.ball=ball;Studio.group.add(ball);
   // working strand (a real plied strand from the ball to the hook)
-  Studio.strand=yarnMesh(new THREE.LineCurve3(new THREE.Vector3(),new THREE.Vector3(0,1,0)),radius,false,8,Studio.yarnMat,{halo:false});Studio.group.add(Studio.strand);
+  Studio.strand=yarnMesh(new THREE.LineCurve3(new THREE.Vector3(),new THREE.Vector3(0,1,0)),radius,false,8,Studio.yarnMat,{halo:false,fibres:0,radial:8,hairs:0});Studio.group.add(Studio.strand);
   // frame camera so the whole make fits (fov 40°, allow for figure height)
   const distH=size.y*1.374, distW=size.x*0.793, dist=Math.max(distH,distW,8)*1.14+size.z*0.6;
   Studio.camera.position.set(dist*0.28,size.y*0.52,dist);
@@ -2391,7 +2462,7 @@ function placeStudioProps(rad){
     leaf.position.set(Math.cos(a)*rr,rad*(0.3+(i%2)*0.14),Math.sin(a)*rr); leaf.scale.set(1,0.75,1.3); leaf.rotation.y=a; plant.add(leaf); }
   if(Studio.room){ const sill=Studio.room.userData.sill; if(sill) place(plant,sill.x+rad*1.6,sill.y+rad*0.21,sill.z,0); }
   // loose strand trailing from the nearest spare ball
-  const tail=yarnMesh(new THREE.CatmullRomCurve3([new THREE.Vector3(-span*0.9-rad*1.2,rad*0.1,-span*0.5),new THREE.Vector3(-span*0.6-rad*0.5,rad*0.08,-span*0.2+rad*0.5),new THREE.Vector3(-span*0.5,rad*0.08,span*0.3),new THREE.Vector3(-span*0.7,rad*0.08,span*0.6+rad*0.5)],false,"catmullrom",0.5),r,false,40,makeYarnMaterial(others[2],settings.type),{halo:false});
+  const tail=yarnMesh(new THREE.CatmullRomCurve3([new THREE.Vector3(-span*0.9-rad*1.2,rad*0.1,-span*0.5),new THREE.Vector3(-span*0.6-rad*0.5,rad*0.08,-span*0.2+rad*0.5),new THREE.Vector3(-span*0.5,rad*0.08,span*0.3),new THREE.Vector3(-span*0.7,rad*0.08,span*0.6+rad*0.5)],false,"catmullrom",0.5),r,false,40,makeYarnMaterial(others[2],settings.type),{halo:false,fibres:0,radial:8,hairs:0});
   g.add(tail);
   Studio.props=g; Studio.scene.add(g);
 }
@@ -2441,7 +2512,7 @@ function masterLoop(t){
   requestAnimationFrame(masterLoop);
   const T=totalUnits();
   if(App.playing&&T){if(!App.lastT)App.lastT=t;const dt=(t-App.lastT)/1000;App.lastT=t;App.progress+=dt*1.6*App.speed;if(App.progress>=T){App.progress=T;pause();}}else App.lastT=t;
-  if(Studio.ready){Studio.controls.update();updateStudioProgress();updateHUD();Studio.renderer.render(Studio.scene,Studio.camera);}
+  if(Studio.ready){Studio.controls.update();updateStudioProgress();updateHUD();Studio.renderer.render(Studio.scene,Studio.camera);perfProbeTick(t);}
 }
 
 // ---- HUD / steps -------------------------------------------------------
@@ -2704,15 +2775,16 @@ function initLearn3D(){
   if('outputColorSpace'in renderer)renderer.outputColorSpace=THREE.SRGBColorSpace; else if('outputEncoding'in renderer)renderer.outputEncoding=THREE.sRGBEncoding;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
   const scene=new THREE.Scene();
-  const camera=new THREE.PerspectiveCamera(38,16/10,0.1,500);camera.position.set(6,6,12);
+  const camera=new THREE.PerspectiveCamera(24,16/10,0.1,500);camera.position.set(6,6,12);
   const controls=new THREE.OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.1;controls.enablePan=false;controls.minDistance=6;controls.maxDistance=40;
   const env=makeEnvironment(renderer);scene.environment=env;L3.env=env;
   scene.background=new THREE.Color(0xf3ece3);
   scene.add(new THREE.HemisphereLight(0xfff4ea,0x8a7f72,0.75));
-  const kl=new THREE.DirectionalLight(0xffffff,1.7);kl.position.set(8,16,12);kl.castShadow=true;
+  const kl=new THREE.DirectionalLight(0xfff3e6,1.5);kl.position.set(8,16,12);kl.castShadow=true;
   kl.shadow.mapSize.set(1024,1024);kl.shadow.camera.near=1;kl.shadow.camera.far=60;
   kl.shadow.camera.left=-16;kl.shadow.camera.right=16;kl.shadow.camera.top=16;kl.shadow.camera.bottom=-16;kl.shadow.bias=-0.0003;kl.shadow.normalBias=0.05;kl.shadow.radius=3;scene.add(kl);
-  const fl=new THREE.DirectionalLight(0xffd9c2,0.45);fl.position.set(-10,5,-6);scene.add(fl);
+  const fl=new THREE.DirectionalLight(0xd6e4ff,0.5);fl.position.set(-10,5,-6);scene.add(fl);
+  const bl=new THREE.DirectionalLight(0xffe6cc,1.2);bl.position.set(4,10,-14);scene.add(bl);
   const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.ShadowMaterial({opacity:0.26}));
   ground.rotation.x=-Math.PI/2;ground.position.y=-3.4;ground.receiveShadow=true;scene.add(ground);
   Object.assign(L3,{ready:true,renderer,scene,camera,controls});
@@ -2957,7 +3029,7 @@ function buildLearnScene(key){
   L3.work=learnMkMesh();
   const tall=Math.max(0,(STITCHES[key]?STITCHES[key].h:1)-1);           // dc/tr need a wider frame
   const focus=LEARN_TIP.clone().add(new THREE.Vector3(0.2,-0.6-tall*0.7,0));   // the hook head and the stitch under it
-  L3.camera.position.set(focus.x+2.0, focus.y+3.6+tall*0.5, focus.z+10.5+tall*2.2);
+  L3.camera.position.set(focus.x+3.2, focus.y+5.6+tall*0.8, focus.z+16.5+tall*3.4);
   L3.controls.target.copy(focus); L3.controls.update();
 }
 

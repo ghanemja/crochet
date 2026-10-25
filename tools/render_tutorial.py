@@ -184,6 +184,30 @@ try: hm.set_sharp_from_angle(angle=math.radians(50))
 except Exception: pass
 hook = bpy.data.objects.new("Hook", hm); sc.collection.objects.link(hook); hook.rotation_mode = "QUATERNION"
 
+# ---------------------------------------------------------------- hands (only in views that ask for them)
+# D["hands"]: [{"glb", "parent": "hook"|"world", "matrix": 4×4 row-major in the app frame}] —
+# for "hook" the matrix is in the hook's local frame, so the hand turns with the wrist.
+skin = bpy.data.materials.new("Skin"); skin.use_nodes = True
+kb = skin.node_tree.nodes["Principled BSDF"]
+kb.inputs["Base Color"].default_value = srgb_lin("#d9a382"); kb.inputs["Roughness"].default_value = 0.55
+kb.inputs["Subsurface Weight"].default_value = 0.35; kb.inputs["Subsurface Radius"].default_value = (1.0, 0.35, 0.2)
+kb.inputs["Subsurface Scale"].default_value = 0.004; kb.inputs["Sheen Weight"].default_value = 0.15
+CM = C.to_4x4() if hasattr(C, "to_4x4") else C
+if (D["views"][A.angle] if "views" in D else {}).get("hands") and not A.lookdev:
+    for hd in D.get("hands", []):
+        before = set(bpy.data.objects)
+        bpy.ops.import_scene.gltf(filepath=os.path.abspath(hd["glb"]))
+        parts = [o for o in bpy.data.objects if o not in before and o.type == "MESH"]
+        for o in parts:     # bake the importer's transform into the mesh (it already maps glTF Y-up to Z-up)
+            o.data.transform(o.matrix_world); o.matrix_world = Matrix.Identity(4)
+        M = Matrix([hd["matrix"][r * 4:r * 4 + 4] for r in range(4)])
+        X = Matrix.Scale(S, 4) @ CM @ M @ CM.inverted()
+        for o in parts:
+            o.data.transform(X); o.data.materials.clear(); o.data.materials.append(skin)
+            if X.determinant() < 0: o.data.flip_normals()          # a mirrored (left) hand
+            for poly in o.data.polygons: poly.use_smooth = True
+            if hd.get("parent") == "hook": o.parent = hook
+
 # ---------------------------------------------------------------- yarn as hair curves
 PLIES = 3
 def frames_rmf(c, closed):

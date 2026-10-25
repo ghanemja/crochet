@@ -17,6 +17,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("out"); ap.add_argument("--fps", type=int, default=30)
+ap.add_argument("--hands", action="store_true")   # draw hands in the guided take (work in progress)
 ap.add_argument("--cues", default="")      # also write the freeze-frame callouts (assets/tutorials/<key>.cues.json)
 A = ap.parse_args()
 
@@ -297,36 +298,70 @@ def app(c):
     return [[round(float(x), 4) for x in p] for p in c]
 
 # ---------------------------------------------------------------- cameras
-# 100 mm lens (13.7° vertical) aimed at the stitch being made, from several sides
+# 100 mm lens (13.7° vertical). The fixed angles aim at the stitch being made; the guided
+# camera follows the action (a smoothed point between the stitch and the hook head) so
+# nothing important leaves the frame.
+FOV = 13.69; DIST = 84 * R
 look = v(-0.8 * P, 0.0, -0.4 * H)
 FRONT, SIDE, BACK = v(0.3, -1.0, 0.8), v(-1.0, -0.3, 0.55), v(0.15, 1.0, 0.65)
-def eye_of(d): return look + nrm(d) * 72 * R
-def cam(d): return {"pos": app([eye_of(d)])[0], "target": app([look])[0], "fov": 13.69, "aspect": 1.6}
+def cam(d, tgt=None, zoom=1.0):
+    tgt = look if tgt is None else tgt
+    return {"pos": app([tgt + nrm(d) * DIST * zoom])[0], "target": app([tgt])[0], "fov": FOV, "aspect": 1.6}
+
+# ---------------------------------------------------------------- hands (guided take only)
+# assets/hand-right.glb is posed in a crochet grip with its grip pocket at HAND_GRIP along its
+# local x. Life size: about 25 yarn-widths long (scale 90 in app units).
+HAND_GRIP, HAND_SCALE = np.array([0, 0.041, 0.017]), 90.0
+def m_T(t): M = np.eye(4); M[:3, 3] = t; return M
+def m_S(x, y, z): return np.diag([x, y, z, 1.0])
+def m_R(axis, ang):
+    c, s_ = math.cos(ang), math.sin(ang); M = np.eye(4)
+    i, j = {"x": (1, 2), "y": (2, 0), "z": (0, 1)}[axis]
+    M[i, i], M[i, j], M[j, i], M[j, j] = c, -s_, s_, c; return M
+def hand_matrix(grip_at, rot, mirror=False):
+    """app-frame matrix that puts the hand's grip pocket at grip_at, rotated by rot (4×4)."""
+    M = rot @ m_S(-HAND_SCALE if mirror else HAND_SCALE, HAND_SCALE, HAND_SCALE)
+    off = (M @ np.append(HAND_GRIP, 1))[:3]
+    return m_T(np.asarray(grip_at) - off) @ M
+# right hand: round the shaft ~34 yarn radii up from the tip (out of the close-ups) (hook-local app frame; shaft = +y)
+RIGHT = hand_matrix([0, 34 * APP_R, 0], m_R("y", HAND_ROLL := math.radians(200)) @ m_R("z", -math.pi / 2))
+# left hand: pinching the work to the left of the stitch, from behind, fingers over the top
+LEFT_AT = v(-5.6 * P, 2.2, -1.7 * H)
+LEFT = hand_matrix(app([LEFT_AT])[0], m_R("y", math.radians(-20)) @ m_R("z", math.pi / 2), mirror=True)
+HANDS = [{"glb": "assets/hand-right.glb", "parent": "hook", "matrix": [round(x, 6) for x in RIGHT.ravel()]},
+         {"glb": "assets/hand-right.glb", "parent": "world", "matrix": [round(x, 6) for x in LEFT.ravel()]}]
 
 # ---------------------------------------------------------------- the guided take
-# Filmed like a tutorial: show where the hook goes, do the move, swing the camera to
-# where the result can be seen, freeze on it. Each shot: (seconds, action from, action to,
-# camera from, camera to, callout at its end or None). Action time is the choreography's
-# clock (steps of STEP_DUR, each moving for MOVE_SHARE then holding).
+# Filmed like a tutorial: show where the hook goes, do the move, swing the camera to where
+# the result can be seen, freeze on it. Each shot: (seconds, action from, action to, camera
+# from, camera to, callout at its end or None). Action time is the choreography's clock
+# (steps of STEP_DUR, each moving for MOVE_SHARE then holding).
 def mv(k): return k * STEP_DUR, k * STEP_DUR + STEP_DUR * MOVE_SHARE      # step k's move
 SHOTS = [
-    (1.0, 0.0, 0.0, FRONT, FRONT, ("hole", "Insert the hook here — under both loops of the next stitch")),
+    (1.6, 0.0, 0.0, FRONT, FRONT, None, (1.8, 1.8)),        # establishing: the hook, the work and the yarn
+    (1.4, 0.0, 0.0, FRONT, FRONT, ("stitch", 0, "Go into this stitch — under both top loops"), (1.8, 1.0)),
     (2.0, *mv(0), FRONT, FRONT, None),
-    (1.8, mv(0)[1], STEP_DUR, FRONT, BACK, ("tip", "The hook comes out the back of the stitch")),
-    (2.0, *mv(1), BACK, BACK, ("throat", "Yarn over: catch the yarn in the hook's throat")),
-    (2.6, mv(2)[0], mv(2)[1] + 0.3, BACK, SIDE, ("loops", "Pull up a loop — 2 loops on the hook")),
-    (2.0, *mv(3), SIDE, SIDE, ("throat", "Yarn over again")),
-    (2.8, mv(4)[0], 5 * STEP_DUR, SIDE, FRONT, ("done", "Pull through both loops — 1 loop left, stitch done")),
+    (1.8, mv(0)[1], STEP_DUR, FRONT, BACK, ("tip", 0, "The hook pokes out the back")),
+    (2.0, *mv(1), BACK, BACK, ("throat", 1, "Wrap the yarn over your hook")),
+    (2.6, mv(2)[0], mv(2)[1] + 0.3, BACK, SIDE, ("loops", 2, "Pull it back through — 2 loops on your hook")),
+    (2.0, *mv(3), SIDE, SIDE, ("throat", 3, "Wrap the yarn over again")),
+    (2.8, mv(4)[0], 5 * STEP_DUR, SIDE, FRONT, ("done", 4, "Pull through both loops — done!")),
     (0.8, 5 * STEP_DUR, 5 * STEP_DUR, FRONT, FRONT, None),
 ]
 def at_video(tv):
-    """video time -> (action time, camera direction)"""
+    """video time -> (action time, camera direction, camera distance factor)"""
     t0 = 0.0
-    for dur, a0, a1, c0, c1, _ in SHOTS:
-        if tv <= t0 + dur or (dur, a0) == SHOTS[-1][:2]:
-            q = ease(min(1.0, (tv - t0) / dur)); qa = min(1.0, (tv - t0) / dur)
-            return lerp(a0, a1, qa), slerp_dir(c0, c1, q)
+    for i, (dur, a0, a1, c0, c1, *rest) in enumerate(SHOTS):
+        if tv <= t0 + dur or i == len(SHOTS) - 1:
+            qa = min(1.0, max(0.0, (tv - t0) / dur)); z0, z1 = rest[1] if len(rest) > 1 else (1.0, 1.0)
+            return lerp(a0, a1, qa), slerp_dir(c0, c1, ease(qa)), lerp(z0, z1, ease(qa))
         t0 += dur
+def action_focus(ta):
+    _, _, hk = hook_pose(ta); return lerp(look, hk.at(2.0), 0.5)
+def guided_target(tv):
+    """where the guided camera aims: the action focus averaged over ±0.5 s of video, so it glides."""
+    ts = np.linspace(tv - 0.5, tv + 0.5, 9)
+    return np.mean([action_focus(at_video(min(max(0.0, x), total))[0]) for x in ts], axis=0)
 total = sum(sh[0] for sh in SHOTS)
 n = int(round(total * A.fps)) + 1
 
@@ -334,48 +369,53 @@ FIXED = [("Front", FRONT), ("Side", SIDE), ("Behind", BACK)]   # the free-look a
 cache = {}
 frames = []
 for i in range(n):
-    tv = i / A.fps; ta, cdir = at_video(tv); key = round(ta, 4)
+    tv = i / A.fps; ta, cdir, zoom = at_video(tv); key = round(ta, 4)
     if key not in cache: cache[key] = frame_strands(ta)
     hk, strands = cache[key]
-    frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir),
+    frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir, guided_target(tv), zoom),
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 
 # ---------------------------------------------------------------- callouts
-# At the end of each shot that has one, the app freezes for "hold" seconds and draws a ring on
-# what matters (and an arrow along the move) over whichever tile is showing; x, y, r are
-# fractions of the frame (x of width, y and r of height).
-def project(view_dir, pts):
-    eye = eye_of(view_dir); f = nrm(look - eye); r = nrm(np.cross(f, v(0, 0, 1))); u = np.cross(r, f)
-    th = math.tan(math.radians(13.69) / 2); out = []
+# At the end of each shot that has one, the app freezes for "hold" seconds and draws, over
+# whichever tile is showing: a ring on what matters, the stitch to work into traced in a
+# bright line, and an arrow along the hook's path. x, y, r are fractions of the frame
+# (x of width, y and r of height).
+def project(d, tgt, pts, zoom=1.0):
+    eye = tgt + nrm(d) * DIST * zoom; f = nrm(tgt - eye); r = nrm(np.cross(f, v(0, 0, 1))); u = np.cross(r, f)
+    th = math.tan(math.radians(FOV) / 2); out = []
     for p in pts:
         q = p - eye; z = q @ f
         out.append([round(0.5 + (q @ r) / z / th / 1.6 / 2, 4), round(0.5 - (q @ u) / z / th / 2, 4)])
-    return out, 72 * R * th                                     # half the frame height in world units at the target
+    return out, DIST * zoom * th                                       # half the frame height in world units at the target
+TARGET_V = spline(sc_static(-P, -H)[:6], 0.4 * R)              # the two top loops of the stitch we go into
+INSERT_PATH = [hook_pose(STEP_DUR * MOVE_SHARE * k / 11)[2].tip for k in range(12)]
 def target(kind, ta):
     _, _, hk = hook_pose(ta)
-    if kind == "hole": return HOLE, 2.6, None
-    if kind == "tip": return hk.at(1.2), 2.4, None
-    if kind == "throat": return hk.axis_centre(THROAT_D), 2.2, None
+    if kind == "stitch": return HOLE + v(0, 0, 0.9), 3.0, TARGET_V, INSERT_PATH[4:]
+    if kind == "tip": return hk.at(1.0), 2.2, TARGET_V, None
+    if kind == "throat": return hk.axis_centre(THROAT_D), 2.2, None, None
     if kind == "loops":
-        dA = loop_d(hk, ANCHOR, D_A_MIN); return hk.at((dA + D_B) / 2), (dA - D_B) / 2 + 2.4, None
-    dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN); return hk.at(dC), 2.4, None
+        dA = loop_d(hk, ANCHOR, D_A_MIN); return hk.at((dA + D_B) / 2), (dA - D_B) / 2 + 2.4, None, None
+    dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN); return hk.at(dC), 2.4, None, None
 cues, t0, timeline = [], 0.0, [[0.0, 0.0]]
-for dur, a0, a1, c0, c1, cue in SHOTS:
+for dur, a0, a1, c0, c1, cue, *_ in SHOTS:
     t0 += dur; timeline.append([round(t0, 3), round(a1, 3)])
     if not cue: continue
-    tc = t0 - 0.5 / A.fps; ta, cdir = at_video(tc); c, rad, arrow = target(cue[0], ta)
+    tc = t0 - 0.5 / A.fps; ta, cdir, zoom = at_video(tc); c, rad, trace, arrow = target(cue[0], ta)
     views = []
-    for d in [cdir] + [d for _, d in FIXED]:
-        (xy,), half = project(d, [c])
-        views.append({"x": xy[0], "y": xy[1], "r": round(rad / half / 2, 4), "arrow": None})
-    cues.append({"t": round(tc, 3), "text": cue[1], "views": views})
+    for d, tgt, z in [(cdir, guided_target(tc), zoom)] + [(d, look, 1.0) for _, d in FIXED]:
+        (xy,), half = project(d, tgt, [c], z)
+        views.append({"x": xy[0], "y": xy[1], "r": round(rad / half / 2, 4),
+                      "trace": project(d, tgt, trace, z)[0] if trace is not None else None,
+                      "arrow": project(d, tgt, arrow, z)[0] if arrow else None})
+    cues.append({"t": round(tc, 3), "step": cue[1], "text": cue[2], "views": views})
 if A.cues:
     # timeline: [video time, action time] knots, so the app can follow the step list
-    json.dump({"key": "sc", "hold": 2.2, "stepDur": STEP_DUR, "timeline": timeline, "cues": cues}, open(A.cues, "w"), indent=1)
+    json.dump({"key": "sc", "hold": 2.4, "steps": len(STEPS), "stepDur": STEP_DUR, "timeline": timeline, "cues": cues}, open(A.cues, "w"), indent=1)
     print("wrote", A.cues)
 
 json.dump({"key": "sc", "fps": A.fps, "stepDur": STEP_DUR, "steps": STEPS, "total": total,
            "yarn": TUTORIAL_FABRIC, "accent": TUTORIAL_WORKING, "type": "wool",
-           "camera": cam(FRONT), "views": [dict(cam(FRONT), name="Guided", moving=True)] + [dict(cam(d), name=nm) for nm, d in FIXED],
+           "camera": cam(FRONT), "hands": HANDS, "views": [dict(cam(FRONT), name="Guided", moving=True, hands=A.hands)] + [dict(cam(d), name=nm) for nm, d in FIXED],
            "ball": None, "ground": -40, "hookMesh": hook_mesh(), "frames": frames}, open(A.out, "w"))
 print("wrote", A.out, n, "frames,", len(cache), "distinct poses")

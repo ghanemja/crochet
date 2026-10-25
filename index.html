@@ -720,6 +720,8 @@
   .gloss-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 36px; }
 
   /* learn */
+  .learn-video { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 10px; display: block; background: var(--stage-bg); }
+  .learn-video[hidden] { display: none; }
   .learn-readout { font-size: 12px; font-weight: 600; color: var(--accent); margin: 10px 0 0; text-align: center; letter-spacing: -.01em; }
   .learn-scrub-row { display: flex; align-items: center; gap: 12px; margin: 10px 0 2px; }
   .learn-play {
@@ -1066,6 +1068,7 @@
     </div>
     <div class="modal-body">
       <canvas id="learnCanvas" style="width:100%;border-radius:10px;display:block;background:var(--stage-bg)"></canvas>
+      <video id="learnVideo" class="learn-video" playsinline muted loop preload="auto" hidden></video>
       <div id="learnReadout" class="learn-readout"></div>
       <div class="learn-scrub-row">
         <button class="learn-play" id="learnPlay" title="Play / pause">⏸</button>
@@ -2994,6 +2997,7 @@ function setTube(mesh,pts,closed,radius){
   const r=radius||YR, len=curve.getLength();
   const segs=Math.max(28,Math.min(400,Math.round(len/(r*0.5))));
   setYarnCurve(mesh,curve,r,closed,segs); mesh.visible=true;
+  mesh.userData.curve=curve; mesh.userData.closed=!!closed; mesh.userData.r=r;   // read back by exportLearnPaths
 }
 function ovalRing(center,axisL,axisS,rL,rS){ const pts=[];
   for(let k=0;k<16;k++){ const a=k/16*Math.PI*2;
@@ -3216,10 +3220,16 @@ function animateLearn3D(){
   }
   for(let k=fi;k<L3.fabric.length;k++) L3.fabric[k].visible=false;
 
-  // readout
-  const ro=document.getElementById("learnReadout");
-  const shownLoops=done?after.loops:before.loops;
-  if(ro) ro.textContent=shownLoops+" loop"+(shownLoops===1?"":"s")+" on hook · "+(MOVE_LABEL[act]||"");
+  const ro=document.getElementById("learnReadout"); if(ro) ro.textContent=learnReadoutAt(key,Learn.t);
+}
+// "2 loops on hook · pull a loop up" at time t of a stitch's tutorial
+function learnReadoutAt(key,t){
+  const steps=STITCH_STEPS[key]||["Work the stitch"], N=steps.length, phase=Math.min(N,t/STEP_DUR);
+  const acts=[], actStart=[];
+  steps.map(stepActs).forEach((as,si)=>as.forEach((a,k)=>{ acts.push(a); actStart.push(si+k/as.length); }));
+  let ai=acts.length-1; for(let i=0;i<acts.length;i++){ if(phase>=actStart[i]) ai=i; }
+  const shown=(phase>=N?simulateActs(acts,ai+1):simulateActs(acts,ai)).loops;
+  return shown+" loop"+(shown===1?"":"s")+" on hook · "+(MOVE_LABEL[acts[ai]]||"");
 }
 
 
@@ -3233,35 +3243,90 @@ function openLearn(key){
   setText("learnDesc",STITCHES[key].desc);
   const steps=STITCH_STEPS[key]||["Work the stitch"];
   document.getElementById("learnSteps").innerHTML=steps.map((s,i)=>`<li data-i="${i}">${s}</li>`).join("");
+  cancelAnimationFrame(Learn.raf); Learn._last=null;
+  if(learnVideoOk()) learnStartVideo(key); else learnStartLive(key);
+}
+// Pre-rendered tutorials: assets/tutorials/<key>.webm|.mp4|.jpg (tools/render_tutorial.py), rendered in
+// the default Rose wool. Other yarns, missing files or a failed load use the live 3D scene.
+const TUTORIAL_YARN={color:"#e0608a",type:"wool"};
+function learnVideoOk(){ return !Learn.noVideo&&String(App.paintColor||settings.color).toLowerCase()===TUTORIAL_YARN.color&&settings.type===TUTORIAL_YARN.type; }
+function learnShowVideo(on){ const v=document.getElementById("learnVideo");
+  document.getElementById("learnCanvas").style.display=on?"none":"block"; v.hidden=!on; if(!on){ v.pause(); v.removeAttribute("src"); v.innerHTML=""; v.load(); } }
+function learnStartLive(key){
+  Learn.mode="live"; learnShowVideo(false);
   initLearn3D(); buildLearnScene(key); fitLearn3D();
   setLearnPlaying(true);
   Learn._last=null; cancelAnimationFrame(Learn.raf); learnLoop();
 }
-function closeLearn(){Learn.playing=false;cancelAnimationFrame(Learn.raf);document.getElementById("learnModal").classList.remove("open");}
+function learnStartVideo(key){
+  const v=document.getElementById("learnVideo"), base="assets/tutorials/"+key;
+  Learn.mode="video"; learnShowVideo(true);
+  v.poster=base+".jpg";
+  v.innerHTML=`<source src="${base}.webm" type="video/webm"><source src="${base}.mp4" type="video/mp4">`;
+  // with <source> children the failure lands on the last source, not the video
+  const fail=()=>{ if(Learn.key===key&&Learn.mode==="video"&&document.getElementById("learnModal").classList.contains("open")){ Learn.t=0; learnStartLive(key); } };
+  v.lastElementChild.addEventListener("error",fail,{once:true});
+  v.onerror=fail;
+  v.load(); setLearnPlaying(true); learnLoop();
+}
+function closeLearn(){Learn.playing=false;cancelAnimationFrame(Learn.raf);const v=document.getElementById("learnVideo");if(v)v.pause();document.getElementById("learnModal").classList.remove("open");}
 document.getElementById("learnClose").addEventListener("click",closeLearn);
-document.getElementById("learnReplay").addEventListener("click",()=>{Learn.t=0;setLearnPlaying(true);Learn._last=null;cancelAnimationFrame(Learn.raf);learnLoop();});
+document.getElementById("learnReplay").addEventListener("click",()=>{Learn.t=0;if(Learn.mode==="video")document.getElementById("learnVideo").currentTime=0;setLearnPlaying(true);Learn._last=null;cancelAnimationFrame(Learn.raf);learnLoop();});
 document.getElementById("learnModal").addEventListener("click",e=>{if(e.target.id==="learnModal")closeLearn();});
-document.getElementById("learnPlay").addEventListener("click",()=>{ if(!Learn.playing && Learn.t>=learnTotal()) Learn.t=0; setLearnPlaying(!Learn.playing); });
+document.getElementById("learnPlay").addEventListener("click",()=>{ if(!Learn.playing && Learn.t>=learnTotal()&&Learn.mode!=="video") Learn.t=0; setLearnPlaying(!Learn.playing); });
 (function(){ const sc=document.getElementById("learnScrub");
-  const seek=()=>{ setLearnPlaying(false); Learn.scrubbing=true; Learn.t=(+sc.value/1000)*learnTotal(); };
+  const seek=()=>{ setLearnPlaying(false); Learn.scrubbing=true; Learn.t=(+sc.value/1000)*learnTotal();
+    if(Learn.mode==="video"){ const v=document.getElementById("learnVideo"); v.currentTime=Math.min(Learn.t,(v.duration||Infinity)-0.01); } };
   sc.addEventListener("input",seek);
   sc.addEventListener("pointerdown",()=>{Learn.scrubbing=true;});
   window.addEventListener("pointerup",()=>{Learn.scrubbing=false;}); })();
 function learnLoop(ts){
+  if(Learn.mode==="video"){ const v=document.getElementById("learnVideo");
+    if(!Learn.scrubbing) Learn.t=v.currentTime;
+    learnSyncUI(); Learn.raf=requestAnimationFrame(learnLoop); return; }
   if(!L3.ready)return;
   const N=(STITCH_STEPS[Learn.key]||[""]).length, total=N*STEP_DUR;
   if(Learn._last==null)Learn._last=ts||performance.now();
   const dt=Math.min(0.05,((ts||performance.now())-Learn._last)/1000); Learn._last=ts||performance.now();
   if(Learn.playing){ Learn.t+=dt; if(Learn.t>total+1.6) Learn.t=0; }   // gentle hold, then loop
   animateLearn3D(); L3.controls.update(); L3.renderer.render(L3.scene,L3.camera);
+  learnSyncUI(); Learn.raf=requestAnimationFrame(learnLoop);
+}
+// step highlight + scrubber (+ readout for the video; the live scene writes its own) from Learn.t
+function learnSyncUI(){
+  const N=(STITCH_STEPS[Learn.key]||[""]).length, total=N*STEP_DUR;
   const cur=Math.min(N-1,Math.floor(Learn.t/STEP_DUR));
   document.querySelectorAll("#learnSteps li").forEach(li=>li.classList.toggle("on",+li.dataset.i===cur));
   const scrub=document.getElementById("learnScrub");
   if(scrub && !Learn.scrubbing) scrub.value=Math.round(Math.min(1,Learn.t/total)*1000);
-  Learn.raf=requestAnimationFrame(learnLoop);
+  if(Learn.mode==="video"){ const ro=document.getElementById("learnReadout"); if(ro) ro.textContent=learnReadoutAt(Learn.key,Learn.t); }
+}
+// Strand paths per frame for the offline (Blender) tutorial render — see tools/render_tutorial.py.
+// exportLearnPaths("sc") returns {key,fps,frames:[{t,hook:{pos,quat},strands:[{pts,closed,radius,accent,visible}]}],camera,hookMesh,...}
+function exportLearnPaths(key,fps){
+  fps=fps||30; Learn.noVideo=true; openLearn(key); setLearnPlaying(false); cancelAnimationFrame(Learn.raf);
+  const r4=v=>Math.round(v*1e4)/1e4, vec=v=>[r4(v.x),r4(v.y),r4(v.z)];
+  // hook geometry once, in the hook's local frame, split by material (steel / handle)
+  const hookMesh=[]; L3.hook.updateMatrixWorld(true);
+  const inv=new THREE.Matrix4().copy(L3.hook.matrixWorld).invert();
+  L3.hook.traverse(o=>{ if(!o.isMesh||!o.visible) return; const g=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld));
+    hookMesh.push({metal:(o.material.metalness||0)>0.5,color:"#"+o.material.color.getHexString(),pos:Array.from(g.attributes.position.array,r4)}); g.dispose(); });
+  const total=learnTotal(), n=Math.round(total*fps)+1, frames=[];
+  for(let i=0;i<n;i++){ Learn.t=i/fps; animateLearn3D();
+    frames.push({t:r4(Learn.t),readout:(document.getElementById("learnReadout")||{}).textContent||"",
+      hook:{pos:vec(L3.hook.position),quat:[r4(L3.hook.quaternion.x),r4(L3.hook.quaternion.y),r4(L3.hook.quaternion.z),r4(L3.hook.quaternion.w)]},
+      strands:L3.managed.map(m=>{ const u=m.userData; if(!m.visible||!u.curve) return {visible:false};
+        const segs=Math.max(24,Math.min(240,Math.round(u.curve.getLength()/(u.r*0.6))));
+        return {visible:true,closed:u.closed,radius:r4(u.r),accent:m.material===L3.newMat,pts:u.curve.getSpacedPoints(segs).map(vec)}; })}); }
+  const cam=L3.camera;
+  return {key,fps,stepDur:STEP_DUR,steps:STITCH_STEPS[key],total,yarn:L3.yarnMat.userData.yarnHex||settings.color,accent:L3.accentHex,type:settings.type,
+    camera:{pos:vec(cam.position),target:vec(L3.controls.target),fov:cam.fov,aspect:16/10},
+    ball:L3.ball?{pos:vec(L3.ball.position),radius:1.4}:null,ground:-3.4,hookMesh,frames};
 }
 function learnTotal(){ return (STITCH_STEPS[Learn.key]||[""]).length*STEP_DUR; }
-function setLearnPlaying(on){ Learn.playing=on; const b=document.getElementById("learnPlay"); if(b) b.textContent=on?"⏸":"▶"; }
+function setLearnPlaying(on){ Learn.playing=on; const b=document.getElementById("learnPlay"); if(b) b.textContent=on?"⏸":"▶";
+  if(Learn.mode==="video"){ const v=document.getElementById("learnVideo"); if(on) v.play().catch(()=>{}); else v.pause(); } }
 // Classify a written step into the real hand motion it represents.
 function classifyMove(text){
   const t=text.toLowerCase();

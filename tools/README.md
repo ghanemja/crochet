@@ -31,3 +31,38 @@ blender --background --python tools/make_hand_blender.py
 ```
 
 After regenerating with either script, commit `assets/hand-right.glb`.
+
+## Stitch tutorials (`assets/tutorials/<key>.webm|.mp4|.jpg`)
+
+The **Learn this stitch** modal plays a pre-rendered video when one exists for
+the stitch and the yarn is the default Rose wool (`TUTORIAL_YARN` in
+`index.html`); otherwise — or if the file fails to load — it falls back to the
+live three.js scene. The scrubber, step list and loop readout follow
+`video.currentTime` (`learnSyncUI`, `learnReadoutAt`).
+
+Both routes need the repo served on :8765 (`python3 -m http.server 8765`) and
+Playwright's Chromium.
+
+**Route A — capture the live scene** (fallback quality, ~2.5 s/frame on CPU):
+
+```bash
+node tools/capture_tutorials.mjs [keys...]    # 1280×800 @ 30 fps -> assets/tutorials/
+```
+
+**Route B — Cycles render** of the same choreography:
+
+```bash
+node tools/export_paths.mjs [keys...]         # build/paths/<key>.json (exportLearnPaths in index.html)
+curl -o build/hdri/studio_small_09_2k.hdr \
+  https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/studio_small_09_2k.hdr   # CC0, optional
+BLENDER=/path/to/blender OUT=assets/tutorials tools/render_all.sh "sc:30 dc:30 ch:15 ..."
+```
+
+`render_tutorial.py` rebuilds every strand per frame as hair curves — three
+twisted plies, spun fibres around each ply, flyaways anchored by arc length —
+with an HDRI + area lights, a 100 mm lens with f/4 depth of field focused on
+the hook, a shadow-catcher floor and transparent film; `encode_tutorial.sh`
+composites onto the cream stage and encodes (two-pass VP9 aimed at ~1.35 MB,
+H.264 MP4 for Safari, poster at 80%). Defaults (800×500, 16 samples +
+OpenImageDenoise, no subsurface) take ~13 s/frame on 4 CPU cores; `key:15`
+renders every other frame. Rendering is resumable (`--skip-existing`).

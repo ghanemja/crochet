@@ -24,6 +24,9 @@ STEP_DUR = 2.6
 R, RH = 1.0, 1.15                  # yarn radius, hook shaft radius
 P, H, B = 4.6, 4.4, 1.45           # stitch pitch, row height, half-depth of a V
 APP_R = 0.36                       # app yarn radius (export scale)
+# teaching colours: blue fabric, orange working yarn — mid-tones that show the fibres,
+# and a pair that stays distinct for every common colour-vision deficiency
+TUTORIAL_FABRIC, TUTORIAL_WORKING = "#4f7fc4", "#f0862a"
 F = np.array([-3.4 * P, 10.0, 16.0])   # the index finger the working yarn runs over (off-screen)
 
 def v(*a): return np.array(a, float)
@@ -114,6 +117,14 @@ def sc_static(x, z, closed_left=True):
             v(x - 0.15 * P, 1.0, z - 2.2), v(x - 0.3 * P, -0.95, z - 1.4),       # second leg
             v(x - 0.5 * P, -0.25, z + 0.15)]
 
+def chain(xs, z):
+    """the foundation chain: a run of V's with nothing below, so the lowest legs end in something."""
+    pts = []
+    for x in xs:
+        pts += [v(x + 0.5 * P, -0.25, z + 0.1), v(x + 0.2 * P, -B, z + 0.3), v(x - 0.25 * P, -B * 0.8, z + 0.35),
+                v(x - 0.45 * P, 0.4, z + 0.2), v(x - 0.15 * P, B * 0.9, z - 0.1)]
+    return pts + [v(xs[-1] - 0.5 * P, -0.25, z + 0.1)]
+
 def row(xs, z):
     pts = []
     for x in xs: pts += sc_static(x, z)[:-1]
@@ -166,6 +177,8 @@ ANCHOR = v(-0.2 * P, -0.5, 1.0)                                # where the fabri
 E0 = v(-0.5 * P, -0.25, 0.15)                                  # end of the last finished stitch
 BT = v(-0.75 * P, 2.2, -1.2)                                   # working yarn passes behind the work here
 
+PULL_SPLIT = 0.55                                              # pull-through: loops ride off, then settle
+
 def hook_pose(t):
     st, p = int(min(4, t // STEP_DUR)), (t % STEP_DUR) / STEP_DUR if t < 5 * STEP_DUR else 1.0
     e = ease(p)
@@ -181,18 +194,25 @@ def hook_pose(t):
     elif st == 3:
         tip = T_UP + v(-0.4, 0.6, 0.3) * math.sin(math.pi * e)
         u = U_UP; th = slerp_dir(DOWN, v(0, 1, 0.5), math.sin(math.pi * e) * 0.8)
-    else:           # pull through both: draw the hook back up and out to the next rest pose
-        tip = bez(T_UP, T_UP + v(0.6, -1.6, 2.4), T_REST - v(P, 0, 0) + v(0.8, -1.0, 1.0), T_REST - v(P, 0, 0), e)
-        u = slerp_dir(U_UP, U_REST, e); th = DOWN
+    else:           # pull through both: draw the hook back along its shaft (the loops ride off the head),
+                    # then carry the new live loop up to the next rest pose
+        T_OUT = T_UP + nrm(U_UP) * 4.2 + v(0, 0, 0.6)
+        if p < PULL_SPLIT:
+            q = ease(p / PULL_SPLIT); tip = lerp(T_UP, T_OUT, q); u = U_UP
+        else:
+            q = ease((p - PULL_SPLIT) / (1 - PULL_SPLIT))
+            tip = bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), T_REST - v(P, 0, 0) + v(0.8, -1.0, 1.0), T_REST - v(P, 0, 0), q)
+            u = slerp_dir(U_UP, U_REST, q)
+        th = DOWN
     return st, p, Hook(tip, u, th)
 
 def loop_d(hk, anchor, lo):
     return max(lo, min(14.0, (anchor - hk.tip) @ hk.u))
 
-def active_path(t, hk, st, p):
+def active_path(t, hk, st, p, dA=None, dB=5.2):
     """way-points from the end of the finished fabric to the finger; returns (points, index where the green yarn starts)."""
     e = ease(p)
-    dA = loop_d(hk, ANCHOR, 6.0)
+    dA = loop_d(hk, ANCHOR, 6.0) if dA is None else dA
     ringA = list(wrap(hk, dA, 25, -295))                         # the live loop, snug on the shaft
     pts = [E0, E0 + v(0, -0.6, 1.2)] + ringA[:len(ringA) // 2]; green = len(pts)
     pts += ringA[len(ringA) // 2:]
@@ -211,7 +231,7 @@ def active_path(t, hk, st, p):
         pts += [BT, lerp(wr[0], h1 + v(0, 1.4, 0.1), s), lerp(wr[0], h1, s), lerp(wr[0], h1 + v(0, -1.4, 0.4), s)] + wr \
              + [lerp(wr[-1], h2 + v(0, -1.4, 0.4), s), lerp(wr[-1], h2, s), lerp(wr[-1], h2 + v(0, 1.4, 0.1), s), BT + v(-1.2, 0.3, 0), F]
     elif st == 3:
-        ringB = list(wrap(hk, 5.2, 25, -295))
+        ringB = list(wrap(hk, dB, 25, -295))
         wr = wrap(hk, THROAT_D, 250, 250 - 300 * e)
         h1 = HOLE + v(0.55, 0, 0); h2 = HOLE + v(-0.55, 0, 0)
         pts += [BT, h1 + v(0, 1.4, 0.1), h1, h1 + v(0, -1.4, 0.4)] + ringB + [h2 + v(0, -1.4, 0.4), h2, h2 + v(0, 1.4, 0.1), BT + v(-1.2, 0.3, 0)] + list(wr) + [F]
@@ -221,7 +241,7 @@ ROW_XS = [3 * P, 2 * P, P, 0, -P, -2 * P, -3 * P]
 
 def frame_strands(t):
     st, p, hk = hook_pose(t)
-    static = [spline(row(ROW_XS, -H)), spline(row(ROW_XS, -2 * H))]
+    static = [spline(row(ROW_XS, -H)), spline(row(ROW_XS, -2 * H)), spline(chain(ROW_XS, -3 * H))]
     fabric0 = row([3 * P, 2 * P, P, 0], 0.0)[:-1]                # finished part of the current row, up to E0
     if st < 4:
         pts, g = active_path(t, hk, st, p)
@@ -233,9 +253,21 @@ def frame_strands(t):
     else:
         # pull through: the two loops ride off over the head and settle into the new stitch,
         # while the yarn caught in the throat becomes the new live loop
-        e = ease(p)
-        _, _, hk0 = hook_pose(4 * STEP_DUR - 1e-6)
-        pre, g = active_path(4 * STEP_DUR - 1e-6, hk0, 3, 1.0)
+        # phase 1: the hook draws back along its shaft; the loops, held by the fabric,
+        # ride down over the throat (and the yarn caught in it) and off the head
+        _, _, hk3 = hook_pose(4 * STEP_DUR - 1e-6)
+        dA3 = loop_d(hk3, ANCHOR, 6.0)
+        def riding(hk_, q):
+            return active_path(t, hk_, 3, 1.0, dA=lerp(dA3, 1.1, q), dB=lerp(5.2, 0.35, q))
+        if p < PULL_SPLIT:
+            pts, g = riding(hk, ease(p / PULL_SPLIT))
+            allp = fabric0 + pts; c = spline(allp)
+            knot = allp[len(fabric0) + g - 1]; k = int(np.argmin(np.linalg.norm(c - knot, axis=1)))
+            return hk, finish(static, [(c[:k + 1], False), (c[k:], True)], hk)
+        # phase 2: they tighten into the new stitch while the caught yarn becomes the new live loop
+        e = ease((p - PULL_SPLIT) / (1 - PULL_SPLIT))
+        _, _, hk0 = hook_pose(4 * STEP_DUR + PULL_SPLIT * STEP_DUR)
+        pre, g = riding(hk0, 1.0)
         dC = loop_d(hk, ANCHOR - v(P, 0, 0), 6.0)
         post = sc_static(-P, 0.0)[1:] + [E0 - v(P, 0, 0) + v(0, -0.6, 1.2)] + list(wrap(hk, dC, 25, -295)) + [BT - v(P, 0, 0), BT - v(P, 0, 0) + v(-1.5, 1.5, 3.5), F]
         a, b = spline(pre), spline(post)
@@ -247,11 +279,14 @@ def frame_strands(t):
         c = spline(fabric0 + list(mid[::3]) + [mid[-1]])
         knot = mid[int(len(mid) * 0.22)]; k = int(np.argmin(np.linalg.norm(c - knot, axis=1)))
         segs = [(c[:k + 1], False), (c[k:], True)]
+    return hk, finish(static, segs, hk)
+
+def finish(static, segs, hk):
     out = [{"visible": True, "closed": False, "radius": APP_R, "accent": False, "pts": app(s)} for s in static]
     for s, acc in segs:
         s = push_out(s, hk)
         out.append({"visible": True, "closed": False, "radius": APP_R, "accent": acc, "pts": app(s)})
-    return hk, out
+    return out
 
 def app(c):
     c = np.asarray(c) @ TO_APP.T * (APP_R / R)
@@ -266,9 +301,11 @@ for i in range(n):
     frames.append({"t": round(t, 4), "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 
 # camera: square on to the work, a little above and to the right; 100 mm lens (13.7° vertical)
-look = v(-0.75 * P, 0.0, -0.45 * H); eye = look + nrm(v(0.28, -1.0, 0.42)) * 118 * R
+# (in front, above and a little right, looking down onto the top of the work so the hook
+# going into the stitch is visible)
+look = v(-0.8 * P, 0.0, -0.4 * H); eye = look + nrm(v(0.3, -1.0, 0.8)) * 72 * R
 json.dump({"key": "sc", "fps": A.fps, "stepDur": STEP_DUR, "steps": STEPS, "total": total,
-           "yarn": "#e0608a", "accent": "#29d569", "type": "wool",
+           "yarn": TUTORIAL_FABRIC, "accent": TUTORIAL_WORKING, "type": "wool",
            "camera": {"pos": app([eye])[0], "target": app([look])[0], "fov": 13.69, "aspect": 1.6},
            "ball": None, "ground": -40, "hookMesh": hook_mesh(), "frames": frames}, open(A.out, "w"))
 print("wrote", A.out, n, "frames")

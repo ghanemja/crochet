@@ -17,6 +17,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("out"); ap.add_argument("--fps", type=int, default=30)
+ap.add_argument("--cues", default="")      # also write the freeze-frame callouts (assets/tutorials/<key>.cues.json)
 A = ap.parse_args()
 
 STEPS = ["Insert hook", "Yarn over", "Pull up a loop (2 on hook)", "Yarn over", "Pull through both loops"]
@@ -311,6 +312,45 @@ look = v(-0.8 * P, 0.0, -0.4 * H)
 VIEWS = [("Front", v(0.3, -1.0, 0.8)), ("Left side", v(-1.0, -0.3, 0.55)),
          ("Behind", v(0.15, 1.0, 0.65)), ("Above", v(0.12, -0.35, 1.0))]
 def cam(dirv): return {"pos": app([look + nrm(dirv) * 72 * R])[0], "target": app([look])[0], "fov": 13.69, "aspect": 1.6}
+# ---------------------------------------------------------------- callouts
+# One freeze per step, at the start of its hold: a caption, a circle on what matters and an
+# arrow along the move just made, projected into every view (x, y, r as fractions of the
+# frame: x of width, y and r of height). The app draws them over the video.
+CAPTIONS = ["Insert the hook under both loops of the next stitch",
+            "Yarn over: catch the yarn in the hook's throat",
+            "Pull up a loop — 2 loops on the hook",
+            "Yarn over again",
+            "Pull through both loops — 1 loop left, stitch done"]
+def project(view_dir, pts):
+    eye = look + nrm(view_dir) * 72 * R; f = nrm(look - eye); r = nrm(np.cross(f, v(0, 0, 1))); u = np.cross(r, f)
+    th = math.tan(math.radians(13.69) / 2); out = []
+    for p in pts:
+        q = p - eye; z = q @ f
+        out.append([round(0.5 + (q @ r) / z / th / 1.6 / 2, 4), round(0.5 - (q @ u) / z / th / 2, 4)])
+    return out, 72 * R * th                                     # half the frame height in world units at the target
+def tip_path(st, a=0.0, b=1.0):
+    return [hook_pose(st * STEP_DUR + STEP_DUR * MOVE_SHARE * (a + (b - a) * k / 11))[2].tip for k in range(12)]
+def cue_targets(st):
+    t = st * STEP_DUR + STEP_DUR * (MOVE_SHARE + 0.03)
+    _, _, hk = hook_pose(t)
+    if st == 0: return t, HOLE, 2.6, tip_path(0, 0.35, 1.0)
+    if st in (1, 3): return t, hk.axis_centre(THROAT_D), 2.2, None
+    if st == 2:
+        dA = loop_d(hk, ANCHOR, D_A_MIN); return t, hk.at((dA + D_B) / 2), (dA - D_B) / 2 + 2.4, tip_path(2, 0.3, 1.0)
+    dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN)
+    return t, hk.at(dC), 2.4, tip_path(4, 0.0, PULL_SPLIT)
+cues = []
+for st in range(len(STEPS)):
+    t, c, rad, arrow = cue_targets(st)
+    views = []
+    for _, d in VIEWS:
+        (xy,), half = project(d, [c])
+        views.append({"x": xy[0], "y": xy[1], "r": round(rad / half / 2, 4), "arrow": project(d, arrow)[0] if arrow else None})
+    cues.append({"t": round(t, 3), "step": st, "text": CAPTIONS[st], "views": views})
+if A.cues:
+    json.dump({"key": "sc", "hold": 2.2, "cues": cues}, open(A.cues, "w"), indent=1)
+    print("wrote", A.cues)
+
 json.dump({"key": "sc", "fps": A.fps, "stepDur": STEP_DUR, "steps": STEPS, "total": total,
            "yarn": TUTORIAL_FABRIC, "accent": TUTORIAL_WORKING, "type": "wool",
            "camera": cam(VIEWS[0][1]), "views": [dict(cam(d), name=nm) for nm, d in VIEWS],

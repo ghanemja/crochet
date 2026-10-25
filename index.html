@@ -729,6 +729,15 @@
   .learn-video-wrap.grid video { width: 200%; height: 200%; left: calc(var(--col, 0) * -100%); top: calc(var(--row, 0) * -100%); }
   .learn-angle-hint { position: absolute; right: 10px; bottom: 8px; font-size: 11px; font-weight: 600; color: var(--text-2); background: color-mix(in srgb, var(--stage-bg, #fff) 70%, transparent); padding: 3px 8px; border-radius: 999px; pointer-events: none; opacity: 0; transition: opacity var(--t-med); }
   .learn-video-wrap.grid .learn-angle-hint { opacity: .9; }
+  /* freeze-frame callouts over the video: a ring on what matters, an arrow along the move, a caption */
+  .learn-cue { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .25s; }
+  .learn-cue.on { opacity: 1; }
+  .learn-cue-ring { fill: none; stroke: #fff; stroke-width: 1.1; filter: drop-shadow(0 0 1.2px rgba(0,0,0,.45)); transform-box: fill-box; transform-origin: center; }
+  .learn-cue.on .learn-cue-ring { animation: learnCuePulse 1.1s ease-in-out infinite; }
+  @keyframes learnCuePulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+  .learn-cue-arrow { fill: none; stroke: #fff; stroke-width: .9; stroke-dasharray: 2.2 1.6; stroke-linecap: round; marker-end: url(#learnCueHead); filter: drop-shadow(0 0 1px rgba(0,0,0,.4)); }
+  .learn-cue-text { position: absolute; left: 50%; top: 10px; transform: translate(-50%, -6px); max-width: 86%; padding: 6px 12px; border-radius: 10px; background: rgba(28,24,22,.78); color: #fff; font-size: 13px; font-weight: 600; line-height: 1.35; text-align: center; pointer-events: none; opacity: 0; transition: opacity .25s, transform .25s; }
+  .learn-cue-text.on { opacity: 1; transform: translate(-50%, 0); }
   .learn-views { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 8px 0 0; }
   .learn-views[hidden] { display: none; }
   .learn-view-btn { font: inherit; font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border, rgba(0,0,0,.12)); background: transparent; color: var(--text-2); cursor: pointer; }
@@ -1082,12 +1091,18 @@
       <div id="learnVideoWrap" class="learn-video-wrap" hidden>
         <video id="learnVideo" playsinline muted loop preload="auto"></video>
         <div class="learn-angle-hint" id="learnAngleHint">⟷ drag to turn</div>
+        <svg id="learnCue" class="learn-cue" viewBox="0 0 160 100" aria-hidden="true">
+          <defs><marker id="learnCueHead" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#fff"/></marker></defs>
+          <polyline class="learn-cue-arrow" points=""/><circle class="learn-cue-ring" cx="0" cy="0" r="0"/>
+        </svg>
+        <div class="learn-cue-text" id="learnCueText"></div>
       </div>
       <div id="learnViews" class="learn-views" hidden></div>
       <div id="learnReadout" class="learn-readout"></div>
       <div class="learn-scrub-row">
         <button class="learn-play" id="learnPlay" title="Play / pause">⏸</button>
         <input type="range" id="learnScrub" class="learn-scrub" min="0" max="1000" value="0" step="1" aria-label="Scrub stitch animation">
+        <button class="learn-view-btn on" id="learnGuided" title="Pause at each step with a callout" hidden>Guided</button>
       </div>
       <p id="learnDesc" class="learn-desc"></p>
       <ol id="learnSteps" class="learn-steps"></ol>
@@ -3243,7 +3258,9 @@ function learnReadoutAt(key,t){
   const acts=[], actStart=[];
   steps.map(stepActs).forEach((as,si)=>as.forEach((a,k)=>{ acts.push(a); actStart.push(si+k/as.length); }));
   let ai=acts.length-1; for(let i=0;i<acts.length;i++){ if(phase>=actStart[i]) ai=i; }
-  const shown=(phase>=N?simulateActs(acts,ai+1):simulateActs(acts,ai)).loops;
+  // once a move has played out (the tutorials hold the result before the next one), show its result
+  const actEnd=ai+1<acts.length?actStart[ai+1]:N, settled=(phase-actStart[ai])/Math.max(1e-6,actEnd-actStart[ai])>=0.8;
+  const shown=(phase>=N||settled?simulateActs(acts,ai+1):simulateActs(acts,ai)).loops;
   return shown+" loop"+(shown===1?"":"s")+" on hook · "+(MOVE_LABEL[acts[ai]]||"");
 }
 
@@ -3276,12 +3293,45 @@ function learnShowVideo(on){ const v=document.getElementById("learnVideo");
   document.getElementById("learnCanvas").style.display=on?"none":"block";
   document.getElementById("learnVideoWrap").hidden=!on; if(!on) document.getElementById("learnViews").hidden=true;
   if(!on){ v.pause(); v.removeAttribute("src"); v.innerHTML=""; v.load(); } }
+// Freeze-frame callouts (Guided): when playback crosses a cue the video pauses for the cue's
+// hold, the ring/arrow/caption for the current angle show, then it plays on.
+Learn.guided=true;
+function learnShowCue(c){
+  const svg=document.getElementById("learnCue"), tx=document.getElementById("learnCueText"); if(!svg) return;
+  Learn.cueShown=c;
+  if(!c){ svg.classList.remove("on"); tx.classList.remove("on"); return; }
+  const w=c.views[Learn.view||0]||c.views[0], ring=svg.querySelector(".learn-cue-ring"), ar=svg.querySelector(".learn-cue-arrow");
+  ring.setAttribute("cx",w.x*160); ring.setAttribute("cy",w.y*100); ring.setAttribute("r",Math.max(4,w.r*100));
+  ar.setAttribute("points",(w.arrow||[]).map(([x,y])=>(x*160).toFixed(1)+","+(y*100).toFixed(1)).join(" ")); ar.style.display=w.arrow?"":"none";
+  tx.textContent=c.text; svg.classList.add("on"); tx.classList.add("on");
+}
+function learnCueTick(v){
+  const C=Learn.cues; if(!C) return;
+  const t=v.currentTime, now=performance.now();
+  if(Learn.freezeUntil){                                   // frozen on a cue
+    if(now<Learn.freezeUntil) return;
+    Learn.freezeUntil=0; if(Learn.playing) v.play().catch(()=>{});
+    setTimeout(()=>{ if(!Learn.freezeUntil&&Learn.cueShown&&!v.paused) learnShowCue(null); },700);
+  }
+  if(t<Learn.lastVT-0.5) Learn.lastVT=0;                   // the video looped
+  if(Learn.guided&&Learn.playing&&!Learn.scrubbing&&!v.paused){
+    const hit=C.cues.find(c=>c.t>Learn.lastVT&&c.t<=t);
+    if(hit){ v.pause(); v.currentTime=hit.t; Learn.lastVT=hit.t; Learn.freezeUntil=now+(C.hold||2)*1000; learnShowCue(hit); return; }
+  } else if(!Learn.playing||Learn.scrubbing){                // paused / scrubbing: show the cue you're sitting on
+    const near=C.cues.find(c=>Math.abs(c.t-t)<0.35)||null; if(near!==Learn.cueShown) learnShowCue(near);
+  }
+  Learn.lastVT=t;
+}
+(function(){ const g=document.getElementById("learnGuided");
+  g.addEventListener("click",()=>{ Learn.guided=!Learn.guided; g.classList.toggle("on",Learn.guided);
+    if(!Learn.guided&&Learn.freezeUntil){ Learn.freezeUntil=performance.now(); } }); })();
 // which tile of the grid is showing
 function learnSetView(i){ const views=Learn.views||[]; if(!views.length) return;
   Learn.view=((i%views.length)+views.length)%views.length;
   const wrap=document.getElementById("learnVideoWrap");
   wrap.style.setProperty("--col",Learn.view%2); wrap.style.setProperty("--row",Math.floor(Learn.view/2));
-  document.querySelectorAll("#learnViews .learn-view-btn").forEach(b=>b.classList.toggle("on",+b.dataset.v===Learn.view)); }
+  document.querySelectorAll("#learnViews .learn-view-btn").forEach(b=>b.classList.toggle("on",+b.dataset.v===Learn.view));
+  if(Learn.cueShown) learnShowCue(Learn.cueShown); }
 (function(){ const wrap=document.getElementById("learnVideoWrap"); let x0=null;
   // drag sideways to turn around the stitch: one angle per ~70 px
   wrap.addEventListener("pointerdown",e=>{ if(!Learn.views) return; x0=e.clientX; wrap.setPointerCapture(e.pointerId); });
@@ -3305,6 +3355,9 @@ function learnStartVideo(key){
   vb.innerHTML=(Learn.views||[]).map((n,i)=>`<button class="learn-view-btn" data-v="${i}">${n}</button>`).join("");
   vb.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>learnSetView(+b.dataset.v)));
   learnSetView(0);
+  Learn.cues=null; Learn.cueShown=null; Learn.freezeUntil=0; Learn.lastVT=0; learnShowCue(null);
+  document.getElementById("learnGuided").hidden=!(m&&m.cues);
+  if(m&&m.cues) fetch(base.replace(/\.views$/,"")+".cues.json").then(r=>r.ok?r.json():null).then(c=>{ if(Learn.key===key&&c) Learn.cues=c; }).catch(()=>{});
   v.poster=base+".jpg";
   v.innerHTML=`<source src="${base}.webm" type="video/webm"><source src="${base}.mp4" type="video/mp4">`;
   // with <source> children the failure lands on the last source, not the video
@@ -3326,6 +3379,7 @@ document.getElementById("learnPlay").addEventListener("click",()=>{ if(!Learn.pl
   window.addEventListener("pointerup",()=>{Learn.scrubbing=false;}); })();
 function learnLoop(ts){
   if(Learn.mode==="video"){ const v=document.getElementById("learnVideo");
+    learnCueTick(v);
     if(!Learn.scrubbing) Learn.t=v.currentTime;
     learnSyncUI(); Learn.raf=requestAnimationFrame(learnLoop); return; }
   if(!L3.ready)return;

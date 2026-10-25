@@ -66,3 +66,22 @@ composites onto the cream stage and encodes (two-pass VP9 aimed at ~1.35 MB,
 H.264 MP4 for Safari, poster at 80%). Defaults (800×500, 16 samples +
 OpenImageDenoise, no subsurface) take ~13 s/frame on 4 CPU cores; `key:15`
 renders every other frame. Rendering is resumable (`--skip-existing`).
+
+### Single crochet, choreographed (multi-angle)
+
+`choreo_sc.py` authors the single crochet around a modelled hook (loops snug on
+the shaft, yarn overs in the throat, pull-ups through the hole under the V) in
+blue fabric / orange working yarn, with four camera angles. Each angle renders
+separately and `encode_views.sh` packs them into one 2×2 grid video so they stay
+frame-locked; list the stitch in `assets/tutorials/manifest.json` and the Learn
+modal shows one tile at a time (drag sideways, arrow keys or the view buttons to
+turn).
+
+```bash
+python3 tools/choreo_sc.py build/paths/sc_v2.json
+for i in 0 1 2 3; do
+  blender -b -P tools/render_tutorial.py -- build/paths/sc_v2.json build/frames/sc_v$i --angle $i
+done
+tools/encode_views.sh sc 30 build/frames/sc_v0 build/frames/sc_v1 build/frames/sc_v2 build/frames/sc_v3
+echo '{"sc":{"views":["Front","Left side","Behind","Above"]}}' > assets/tutorials/manifest.json
+```

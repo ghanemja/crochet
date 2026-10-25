@@ -171,16 +171,19 @@ def push_out(c, hk):
 T_REST = v(-0.5 * P, -2.3, 1.5);  U_REST = v(1.0, -0.55, 0.8)
 HOLE = v(-P, 0.0, -H - 1.3)                                    # under the V of the stitch we work into
 T_IN = v(-P - 0.2, 3.0, -H - 1.55); U_IN = v(0.8, -1.35, 0.75)
-T_UP = v(-P + 0.5, -2.4, -H + 2.6); U_UP = v(0.95, -0.9, 0.85)
+T_UP = v(-P + 0.5, -2.6, -H + 4.0); U_UP = v(0.95, -0.9, 0.85)
 DOWN = v(0, 0, -1)
 ANCHOR = v(-0.2 * P, -0.5, 1.0)                                # where the fabric holds the live loop
 E0 = v(-0.5 * P, -0.25, 0.15)                                  # end of the last finished stitch
 BT = v(-0.75 * P, 2.2, -1.2)                                   # working yarn passes behind the work here
 
 PULL_SPLIT = 0.55                                              # pull-through: loops ride off, then settle
+MOVE_SHARE = 0.78                                              # share of each step spent moving (the rest is a hold)
+D_B, D_A_MIN = 4.4, 7.0                                        # where the two loops sit on the shaft: clearly apart
 
 def hook_pose(t):
     st, p = int(min(4, t // STEP_DUR)), (t % STEP_DUR) / STEP_DUR if t < 5 * STEP_DUR else 1.0
+    p = min(1.0, p / MOVE_SHARE)                                 # move, then hold the pose
     e = ease(p)
     if st == 0:     # insert: arc in front of the work, dive under the V, out the back
         tip = bez(T_REST, v(-P + 0.3, -4.0, -H + 1.0), v(-P, -3.0, -H - 1.4), T_IN, e)
@@ -209,10 +212,10 @@ def hook_pose(t):
 def loop_d(hk, anchor, lo):
     return max(lo, min(14.0, (anchor - hk.tip) @ hk.u))
 
-def active_path(t, hk, st, p, dA=None, dB=5.2):
+def active_path(t, hk, st, p, dA=None, dB=D_B):
     """way-points from the end of the finished fabric to the finger; returns (points, index where the green yarn starts)."""
     e = ease(p)
-    dA = loop_d(hk, ANCHOR, 6.0) if dA is None else dA
+    dA = loop_d(hk, ANCHOR, D_A_MIN) if dA is None else dA
     ringA = list(wrap(hk, dA, 25, -295))                         # the live loop, snug on the shaft
     pts = [E0, E0 + v(0, -0.6, 1.2)] + ringA[:len(ringA) // 2]; green = len(pts)
     pts += ringA[len(ringA) // 2:]
@@ -224,7 +227,7 @@ def active_path(t, hk, st, p, dA=None, dB=5.2):
         pts += [BT] + list(wr) + [F]
     elif st == 2:                                                # pull up: the caught bight comes through the hole
         s = ease((1.2 - hk.tip[1]) / 2.0)                        # 0 while the tip is behind, 1 once in front
-        dB = lerp(THROAT_D, 5.2, ease((p - 0.55) / 0.45))
+        dB = lerp(THROAT_D, D_B, ease((p - 0.55) / 0.45))
         ain, aout = lerp(250, 25, ease((p - 0.4) / 0.6)), lerp(-50, -295, ease((p - 0.4) / 0.6))
         wr = list(wrap(hk, dB, ain, aout))
         h1 = HOLE + v(0.55, 0, 0); h2 = HOLE + v(-0.55, 0, 0)
@@ -256,9 +259,9 @@ def frame_strands(t):
         # phase 1: the hook draws back along its shaft; the loops, held by the fabric,
         # ride down over the throat (and the yarn caught in it) and off the head
         _, _, hk3 = hook_pose(4 * STEP_DUR - 1e-6)
-        dA3 = loop_d(hk3, ANCHOR, 6.0)
+        dA3 = loop_d(hk3, ANCHOR, D_A_MIN)
         def riding(hk_, q):
-            return active_path(t, hk_, 3, 1.0, dA=lerp(dA3, 1.1, q), dB=lerp(5.2, 0.35, q))
+            return active_path(t, hk_, 3, 1.0, dA=lerp(dA3, 1.1, q), dB=lerp(D_B, 0.35, q))
         if p < PULL_SPLIT:
             pts, g = riding(hk, ease(p / PULL_SPLIT))
             allp = fabric0 + pts; c = spline(allp)
@@ -268,7 +271,7 @@ def frame_strands(t):
         e = ease((p - PULL_SPLIT) / (1 - PULL_SPLIT))
         _, _, hk0 = hook_pose(4 * STEP_DUR + PULL_SPLIT * STEP_DUR)
         pre, g = riding(hk0, 1.0)
-        dC = loop_d(hk, ANCHOR - v(P, 0, 0), 6.0)
+        dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN)
         post = sc_static(-P, 0.0)[1:] + [E0 - v(P, 0, 0) + v(0, -0.6, 1.2)] + list(wrap(hk, dC, 25, -295)) + [BT - v(P, 0, 0), BT - v(P, 0, 0) + v(-1.5, 1.5, 3.5), F]
         a, b = spline(pre), spline(post)
         n = max(len(a), len(b)); a, b = resample(a, n=n), resample(b, n=n)
@@ -303,9 +306,13 @@ for i in range(n):
 # camera: square on to the work, a little above and to the right; 100 mm lens (13.7° vertical)
 # (in front, above and a little right, looking down onto the top of the work so the hook
 # going into the stitch is visible)
-look = v(-0.8 * P, 0.0, -0.4 * H); eye = look + nrm(v(0.3, -1.0, 0.8)) * 72 * R
+look = v(-0.8 * P, 0.0, -0.4 * H)
+# the same take from several sides; the app shows one tile of the grid at a time
+VIEWS = [("Front", v(0.3, -1.0, 0.8)), ("Left side", v(-1.0, -0.3, 0.55)),
+         ("Behind", v(0.15, 1.0, 0.65)), ("Above", v(0.12, -0.35, 1.0))]
+def cam(dirv): return {"pos": app([look + nrm(dirv) * 72 * R])[0], "target": app([look])[0], "fov": 13.69, "aspect": 1.6}
 json.dump({"key": "sc", "fps": A.fps, "stepDur": STEP_DUR, "steps": STEPS, "total": total,
            "yarn": TUTORIAL_FABRIC, "accent": TUTORIAL_WORKING, "type": "wool",
-           "camera": {"pos": app([eye])[0], "target": app([look])[0], "fov": 13.69, "aspect": 1.6},
+           "camera": cam(VIEWS[0][1]), "views": [dict(cam(d), name=nm) for nm, d in VIEWS],
            "ball": None, "ground": -40, "hookMesh": hook_mesh(), "frames": frames}, open(A.out, "w"))
 print("wrote", A.out, n, "frames")

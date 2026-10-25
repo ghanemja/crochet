@@ -23,6 +23,7 @@ ap.add_argument("--hdri", default="build/hdri/studio_small_09_2k.hdr")
 ap.add_argument("--lens", type=float, default=100.0)      # mm on a 24 mm-tall sensor (long lens)
 ap.add_argument("--fstop", type=float, default=4.0)
 ap.add_argument("--skip-existing", action="store_true")
+ap.add_argument("--angle", type=int, default=0)              # which of the JSON's "views" (camera angles) to render
 ap.add_argument("--lookdev", action="store_true")           # one strand in close-up (yarn look development)
 ap.add_argument("--zoom", type=float, default=1.0)         # look-dev: >1 moves the camera in on the stitch, focus on the target
 ap.add_argument("--fray", type=float, default=0.35)         # share of staple ends that lift out of the ply
@@ -100,8 +101,9 @@ floor = bpy.data.objects.new("Floor", fm); sc.collection.objects.link(floor); fl
 cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam")); sc.collection.objects.link(cam); sc.camera = cam
 cd = cam.data; cd.sensor_fit = "VERTICAL"; cd.sensor_height = 24; cd.sensor_width = 24 * W / H; cd.lens = A.lens
 vf = 2 * math.atan(12 / A.lens)
-P = Vector(D["camera"]["pos"]); T = Vector(D["camera"]["target"])
-k = math.tan(math.radians(D["camera"]["fov"]) / 2) / math.tan(vf / 2)
+CAM = D["views"][A.angle] if "views" in D else D["camera"]
+P = Vector(CAM["pos"]); T = Vector(CAM["target"])
+k = math.tan(math.radians(CAM["fov"]) / 2) / math.tan(vf / 2)
 cam.location = to_bl(T + (P - T) * k / A.zoom); tgt = to_bl(T)
 cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
 cd.dof.use_dof = True; cd.dof.aperture_fstop = A.fstop; cd.dof.aperture_blades = 7

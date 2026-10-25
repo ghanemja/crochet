@@ -8,3 +8,4 @@ _*.mjs
 # local dev launcher
 .claude/
 /build/
+__pycache__/

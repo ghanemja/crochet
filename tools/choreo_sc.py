@@ -47,17 +47,24 @@ def bez(p0, p1, p2, p3, t):
 sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(__file__)))
 import hand_rig
 UNIT = APP_R / 100
-def local_pt(rig, name, lift=0.0):
-    """a named point of a posed hand, in hand-local design units, lifted along the back of the hand"""
-    p = np.array(rig[4][name]) / UNIT; return p + np.array([0, 0, lift])
+# Prefer the MakeHuman hands baked by tools/make_hands_mpfb.py (realistic); fall back to the
+# hand_rig skeleton. HAND_SCALE shrinks them a little against the (chunky) yarn so the work
+# stays the subject.
+_HJ = __import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)), "..", "build", "hands", "hands.json")
+HAND_PTS = json.load(open(_HJ)) if __import__("os").path.exists(_HJ) else None
+HAND_SCALE = 0.62
+def local_pt(rig, name, lift=0.0, side=None):
+    """a named point of a posed hand, in hand-local design units (scaled), lifted along the back of the hand"""
+    p = np.array(HAND_PTS[side][name] if HAND_PTS and side else rig[4][name]) * HAND_SCALE / UNIT
+    return p + np.array([0, 0, lift])
 def frame_from(yh, zh):
     yh = nrm(yh); zh = nrm(zh - yh * (zh @ yh)); return np.stack([np.cross(yh, zh), yh, zh], 1)   # columns X, Y, Z
 # left hand: behind the work to the left, fingers up, back of the hand away from the camera,
 # index raised — the working yarn runs over it, just behind the fingertip
 LEFT_RIG = hand_rig.skeleton(hand_rig.LEFT_HOLD, "L")
-L_ROT = frame_from(v(0.42, 0.1, 1.0), v(0.1, 1.0, -0.2))
+L_ROT = frame_from(v(0.42, 0.1, 1.0), v(-0.25, -1.0, 0.35))  # back of the hand to the camera: thumb in front, fingers behind the work
 F_WANT = v(-3.6 * P, 6.0, 13.0)                                # where the yarn crosses the finger
-L_POS = F_WANT - L_ROT @ local_pt(LEFT_RIG, "index_dip", lift=0.011 / UNIT + R)
+L_POS = F_WANT - L_ROT @ local_pt(LEFT_RIG, "index_dip", lift=-(0.009 * HAND_SCALE / UNIT + R), side="L")
 F = F_WANT                                                     # the index finger the working yarn runs over
 F_TAIL = F + v(-5.0, 7.0, -16.0)                               # ...then down behind the hand to the ball
 
@@ -239,7 +246,8 @@ def right_hand(hk):
     """pencil grip: fingers toward the tip, the index finger on top of the shaft, back of the hand
     away from the throat; turns with the hook (that is the wrist turning)."""
     rot = frame_from(-hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
-    q = local_pt(RIGHT_RIG, "index_pip", lift=-(0.0112 / UNIT + RH))
+    q = (local_pt(RIGHT_RIG, "index_pip", side="R") + local_pt(RIGHT_RIG, "index_dip", side="R")) / 2 \
+        - np.array([0, 0, 0.009 * HAND_SCALE / UNIT + RH])          # the shaft under the index finger's middle section
     return hk.at(D_GRIP) - rot @ q, rot
 
 def loop_d(hk, anchor, lo):
@@ -352,9 +360,9 @@ def cam(d, tgt=None, zoom=1.0):
 # (steps of STEP_DUR, each moving for MOVE_SHARE then holding).
 def mv(k): return k * STEP_DUR, k * STEP_DUR + STEP_DUR * MOVE_SHARE      # step k's move
 SHOTS = [
-    (1.6, 0.0, 0.0, FRONT, FRONT, None, (3.2, 3.2)),        # establishing: both hands, the hook, the work and the yarn
+    (1.6, 0.0, 0.0, FRONT, FRONT, None, (2.6, 2.6)),        # establishing: both hands, the hook, the work and the yarn
     # lift the hook so the live loop stands up, and link it to the stitch it came from
-    (1.2, 0.0, 0.0, FRONT, FRONT, ("link", None, "This loop on your hook comes from stitch 1"), (3.2, 1.4), (0.0, 1.0)),
+    (1.2, 0.0, 0.0, FRONT, FRONT, ("link", None, "This loop on your hook comes from stitch 1"), (2.6, 1.4), (0.0, 1.0)),
     (0.9, 0.0, 0.0, FRONT, FRONT, None, (1.4, 1.4), (1.0, 0.0)),
     (1.2, 0.0, 0.0, FRONT, FRONT, ("stitch", 0, "Now go into stitch 2 — under both top loops"), (1.4, 1.0)),
     (2.0, *mv(0), FRONT, FRONT, None),
@@ -399,8 +407,8 @@ for i in range(n):
     LIFT = 0.0
     hk, strands = cache[key]
     rpos, rrot = right_hand(hk)
-    hands = [{"side": "R", "pose": "RIGHT_GRIP", "pos": [round(float(x) * UNIT, 5) for x in rpos], "rot": [round(float(x), 5) for x in rrot.ravel()]},
-             {"side": "L", "pose": "LEFT_HOLD", "pos": [round(float(x) * UNIT, 5) for x in L_POS], "rot": [round(float(x), 5) for x in L_ROT.ravel()]}]
+    hands = [{"side": "R", "pose": "RIGHT_GRIP", "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in rpos], "rot": [round(float(x), 5) for x in rrot.ravel()]},
+             {"side": "L", "pose": "LEFT_HOLD", "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in L_POS], "rot": [round(float(x), 5) for x in L_ROT.ravel()]}]
     frames.append({"t": round(tv, 4), "a": key[0] + key[1] * 1000, "cam": cam(cdir, guided_target(tv), zoom), "hands": hands if A.hands else None,
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 

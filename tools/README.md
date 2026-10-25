@@ -85,3 +85,19 @@ done
 tools/encode_views.sh sc 30 build/frames/sc_v0 build/frames/sc_v1 build/frames/sc_v2 build/frames/sc_v3
 echo '{"sc":{"views":["Front","Left side","Behind","Above"]}}' > assets/tutorials/manifest.json
 ```
+
+### Hands (guided take)
+
+Realistic hands come from a MakeHuman body: install the MPFB2 extension in Blender
+(extensions.blender.org/add-ons/mpfb, CC0 assets) and the CC0
+`makehuman_system_assets_cc0.zip` (for a skin texture), then
+
+```bash
+blender -b -P tools/make_hands_mpfb.py -- build/hands /path/to/skins/<skin>/<skin>_diffuse.png
+python3 tools/choreo_sc.py build/paths/sc_v2.json --cues build/sc.cues.json --hands
+```
+
+`make_hands_mpfb.py` poses the right hand in a pencil grip and the left hand holding
+the work with its index raised, cuts them out and writes `build/hands/hands.blend` +
+`hands.json` (named points such as `index_dip`, which the working yarn runs over).
+Without them, `tools/hand_rig.py` (a simple skinned skeleton) stands in.

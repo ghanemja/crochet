@@ -7,6 +7,7 @@ set -e
 KEY=$1; FPS=$2; shift 2; OUT=${OUT:-assets/tutorials}; mkdir -p "$OUT"
 N=$(ls "$1"/f_*.png | wc -l)
 SIZE=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$(ls "$1"/f_*.png | head -1)")
+set -f   # keep the f_*.png patterns for ffmpeg, not the shell
 IN=""; for d in "$@"; do IN="$IN -framerate $FPS -pattern_type glob -i $d/f_*.png"; done
 BG="-f lavfi -i color=c=0xf3ece3:s=$SIZE:r=$FPS"
 # each tile is placed over its own copy of the background: split it four ways

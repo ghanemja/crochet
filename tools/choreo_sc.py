@@ -171,7 +171,7 @@ def push_out(c, hk):
 # ---------------------------------------------------------------- choreography
 T_REST = v(-0.5 * P, -2.3, 1.5);  U_REST = v(1.0, -0.55, 0.8)
 HOLE = v(-P, 0.0, -H - 1.3)                                    # under the V of the stitch we work into
-T_IN = v(-P - 0.2, 3.0, -H - 1.55); U_IN = v(0.8, -1.35, 0.75)
+T_IN = v(-P - 0.2, 4.2, -H - 1.6); U_IN = v(0.8, -1.35, 0.75)
 T_UP = v(-P + 0.5, -2.6, -H + 4.0); U_UP = v(0.95, -0.9, 0.85)
 DOWN = v(0, 0, -1)
 ANCHOR = v(-0.2 * P, -0.5, 1.0)                                # where the fabric holds the live loop
@@ -296,63 +296,86 @@ def app(c):
     c = np.asarray(c) @ TO_APP.T * (APP_R / R)
     return [[round(float(x), 4) for x in p] for p in c]
 
-total = len(STEPS) * STEP_DUR
+# ---------------------------------------------------------------- cameras
+# 100 mm lens (13.7° vertical) aimed at the stitch being made, from several sides
+look = v(-0.8 * P, 0.0, -0.4 * H)
+FRONT, SIDE, BACK = v(0.3, -1.0, 0.8), v(-1.0, -0.3, 0.55), v(0.15, 1.0, 0.65)
+def eye_of(d): return look + nrm(d) * 72 * R
+def cam(d): return {"pos": app([eye_of(d)])[0], "target": app([look])[0], "fov": 13.69, "aspect": 1.6}
+
+# ---------------------------------------------------------------- the guided take
+# Filmed like a tutorial: show where the hook goes, do the move, swing the camera to
+# where the result can be seen, freeze on it. Each shot: (seconds, action from, action to,
+# camera from, camera to, callout at its end or None). Action time is the choreography's
+# clock (steps of STEP_DUR, each moving for MOVE_SHARE then holding).
+def mv(k): return k * STEP_DUR, k * STEP_DUR + STEP_DUR * MOVE_SHARE      # step k's move
+SHOTS = [
+    (1.0, 0.0, 0.0, FRONT, FRONT, ("hole", "Insert the hook here — under both loops of the next stitch")),
+    (2.0, *mv(0), FRONT, FRONT, None),
+    (1.8, mv(0)[1], STEP_DUR, FRONT, BACK, ("tip", "The hook comes out the back of the stitch")),
+    (2.0, *mv(1), BACK, BACK, ("throat", "Yarn over: catch the yarn in the hook's throat")),
+    (2.6, mv(2)[0], mv(2)[1] + 0.3, BACK, SIDE, ("loops", "Pull up a loop — 2 loops on the hook")),
+    (2.0, *mv(3), SIDE, SIDE, ("throat", "Yarn over again")),
+    (2.8, mv(4)[0], 5 * STEP_DUR, SIDE, FRONT, ("done", "Pull through both loops — 1 loop left, stitch done")),
+    (0.8, 5 * STEP_DUR, 5 * STEP_DUR, FRONT, FRONT, None),
+]
+def at_video(tv):
+    """video time -> (action time, camera direction)"""
+    t0 = 0.0
+    for dur, a0, a1, c0, c1, _ in SHOTS:
+        if tv <= t0 + dur or (dur, a0) == SHOTS[-1][:2]:
+            q = ease(min(1.0, (tv - t0) / dur)); qa = min(1.0, (tv - t0) / dur)
+            return lerp(a0, a1, qa), slerp_dir(c0, c1, q)
+        t0 += dur
+total = sum(sh[0] for sh in SHOTS)
 n = int(round(total * A.fps)) + 1
+
+FIXED = [("Front", FRONT), ("Side", SIDE), ("Behind", BACK)]   # the free-look angles (tiles 1–3)
+cache = {}
 frames = []
 for i in range(n):
-    t = i / A.fps
-    hk, strands = frame_strands(t)
-    frames.append({"t": round(t, 4), "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
+    tv = i / A.fps; ta, cdir = at_video(tv); key = round(ta, 4)
+    if key not in cache: cache[key] = frame_strands(ta)
+    hk, strands = cache[key]
+    frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir),
+                   "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 
-# camera: square on to the work, a little above and to the right; 100 mm lens (13.7° vertical)
-# (in front, above and a little right, looking down onto the top of the work so the hook
-# going into the stitch is visible)
-look = v(-0.8 * P, 0.0, -0.4 * H)
-# the same take from several sides; the app shows one tile of the grid at a time
-VIEWS = [("Front", v(0.3, -1.0, 0.8)), ("Left side", v(-1.0, -0.3, 0.55)),
-         ("Behind", v(0.15, 1.0, 0.65)), ("Above", v(0.12, -0.35, 1.0))]
-def cam(dirv): return {"pos": app([look + nrm(dirv) * 72 * R])[0], "target": app([look])[0], "fov": 13.69, "aspect": 1.6}
 # ---------------------------------------------------------------- callouts
-# One freeze per step, at the start of its hold: a caption, a circle on what matters and an
-# arrow along the move just made, projected into every view (x, y, r as fractions of the
-# frame: x of width, y and r of height). The app draws them over the video.
-CAPTIONS = ["Insert the hook under both loops of the next stitch",
-            "Yarn over: catch the yarn in the hook's throat",
-            "Pull up a loop — 2 loops on the hook",
-            "Yarn over again",
-            "Pull through both loops — 1 loop left, stitch done"]
+# At the end of each shot that has one, the app freezes for "hold" seconds and draws a ring on
+# what matters (and an arrow along the move) over whichever tile is showing; x, y, r are
+# fractions of the frame (x of width, y and r of height).
 def project(view_dir, pts):
-    eye = look + nrm(view_dir) * 72 * R; f = nrm(look - eye); r = nrm(np.cross(f, v(0, 0, 1))); u = np.cross(r, f)
+    eye = eye_of(view_dir); f = nrm(look - eye); r = nrm(np.cross(f, v(0, 0, 1))); u = np.cross(r, f)
     th = math.tan(math.radians(13.69) / 2); out = []
     for p in pts:
         q = p - eye; z = q @ f
         out.append([round(0.5 + (q @ r) / z / th / 1.6 / 2, 4), round(0.5 - (q @ u) / z / th / 2, 4)])
     return out, 72 * R * th                                     # half the frame height in world units at the target
-def tip_path(st, a=0.0, b=1.0):
-    return [hook_pose(st * STEP_DUR + STEP_DUR * MOVE_SHARE * (a + (b - a) * k / 11))[2].tip for k in range(12)]
-def cue_targets(st):
-    t = st * STEP_DUR + STEP_DUR * (MOVE_SHARE + 0.03)
-    _, _, hk = hook_pose(t)
-    if st == 0: return t, HOLE, 2.6, tip_path(0, 0.35, 1.0)
-    if st in (1, 3): return t, hk.axis_centre(THROAT_D), 2.2, None
-    if st == 2:
-        dA = loop_d(hk, ANCHOR, D_A_MIN); return t, hk.at((dA + D_B) / 2), (dA - D_B) / 2 + 2.4, tip_path(2, 0.3, 1.0)
-    dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN)
-    return t, hk.at(dC), 2.4, tip_path(4, 0.0, PULL_SPLIT)
-cues = []
-for st in range(len(STEPS)):
-    t, c, rad, arrow = cue_targets(st)
+def target(kind, ta):
+    _, _, hk = hook_pose(ta)
+    if kind == "hole": return HOLE, 2.6, None
+    if kind == "tip": return hk.at(1.2), 2.4, None
+    if kind == "throat": return hk.axis_centre(THROAT_D), 2.2, None
+    if kind == "loops":
+        dA = loop_d(hk, ANCHOR, D_A_MIN); return hk.at((dA + D_B) / 2), (dA - D_B) / 2 + 2.4, None
+    dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN); return hk.at(dC), 2.4, None
+cues, t0, timeline = [], 0.0, [[0.0, 0.0]]
+for dur, a0, a1, c0, c1, cue in SHOTS:
+    t0 += dur; timeline.append([round(t0, 3), round(a1, 3)])
+    if not cue: continue
+    tc = t0 - 0.5 / A.fps; ta, cdir = at_video(tc); c, rad, arrow = target(cue[0], ta)
     views = []
-    for _, d in VIEWS:
+    for d in [cdir] + [d for _, d in FIXED]:
         (xy,), half = project(d, [c])
-        views.append({"x": xy[0], "y": xy[1], "r": round(rad / half / 2, 4), "arrow": project(d, arrow)[0] if arrow else None})
-    cues.append({"t": round(t, 3), "step": st, "text": CAPTIONS[st], "views": views})
+        views.append({"x": xy[0], "y": xy[1], "r": round(rad / half / 2, 4), "arrow": None})
+    cues.append({"t": round(tc, 3), "text": cue[1], "views": views})
 if A.cues:
-    json.dump({"key": "sc", "hold": 2.2, "cues": cues}, open(A.cues, "w"), indent=1)
+    # timeline: [video time, action time] knots, so the app can follow the step list
+    json.dump({"key": "sc", "hold": 2.2, "stepDur": STEP_DUR, "timeline": timeline, "cues": cues}, open(A.cues, "w"), indent=1)
     print("wrote", A.cues)
 
 json.dump({"key": "sc", "fps": A.fps, "stepDur": STEP_DUR, "steps": STEPS, "total": total,
            "yarn": TUTORIAL_FABRIC, "accent": TUTORIAL_WORKING, "type": "wool",
-           "camera": cam(VIEWS[0][1]), "views": [dict(cam(d), name=nm) for nm, d in VIEWS],
+           "camera": cam(FRONT), "views": [dict(cam(FRONT), name="Guided", moving=True)] + [dict(cam(d), name=nm) for nm, d in FIXED],
            "ball": None, "ground": -40, "hookMesh": hook_mesh(), "frames": frames}, open(A.out, "w"))
-print("wrote", A.out, n, "frames")
+print("wrote", A.out, n, "frames,", len(cache), "distinct poses")

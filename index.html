@@ -3305,6 +3305,11 @@ function learnShowCue(c){
   ar.setAttribute("points",(w.arrow||[]).map(([x,y])=>(x*160).toFixed(1)+","+(y*100).toFixed(1)).join(" ")); ar.style.display=w.arrow?"":"none";
   tx.textContent=c.text; svg.classList.add("on"); tx.classList.add("on");
 }
+// guided takes have camera moves between the steps: their cues file maps video time to the
+// step clock with [video t, action t] knots
+function learnActionTime(tv){ const T=Learn.cues&&Learn.cues.timeline; if(!T) return tv;
+  for(let i=1;i<T.length;i++) if(tv<=T[i][0]){ const [a,b]=[T[i-1],T[i]]; return a[1]+(b[1]-a[1])*((tv-a[0])/Math.max(1e-6,b[0]-a[0])); }
+  return T[T.length-1][1]; }
 function learnCueTick(v){
   const C=Learn.cues; if(!C) return;
   const t=v.currentTime, now=performance.now();
@@ -3373,14 +3378,16 @@ document.getElementById("learnModal").addEventListener("click",e=>{if(e.target.i
 document.getElementById("learnPlay").addEventListener("click",()=>{ if(!Learn.playing && Learn.t>=learnTotal()&&Learn.mode!=="video") Learn.t=0; setLearnPlaying(!Learn.playing); });
 (function(){ const sc=document.getElementById("learnScrub");
   const seek=()=>{ setLearnPlaying(false); Learn.scrubbing=true; Learn.t=(+sc.value/1000)*learnTotal();
-    if(Learn.mode==="video"){ const v=document.getElementById("learnVideo"); v.currentTime=Math.min(Learn.t,(v.duration||Infinity)-0.01); } };
+    if(Learn.mode==="video"){ const v=document.getElementById("learnVideo");
+      if(Learn.cues&&Learn.cues.timeline&&v.duration){ v.currentTime=(+sc.value/1000)*(v.duration-0.01); Learn.t=learnActionTime(v.currentTime); }
+      else v.currentTime=Math.min(Learn.t,(v.duration||Infinity)-0.01); } };
   sc.addEventListener("input",seek);
   sc.addEventListener("pointerdown",()=>{Learn.scrubbing=true;});
   window.addEventListener("pointerup",()=>{Learn.scrubbing=false;}); })();
 function learnLoop(ts){
   if(Learn.mode==="video"){ const v=document.getElementById("learnVideo");
     learnCueTick(v);
-    if(!Learn.scrubbing) Learn.t=v.currentTime;
+    if(!Learn.scrubbing) Learn.t=learnActionTime(v.currentTime);
     learnSyncUI(); Learn.raf=requestAnimationFrame(learnLoop); return; }
   if(!L3.ready)return;
   const N=(STITCH_STEPS[Learn.key]||[""]).length, total=N*STEP_DUR;
@@ -3396,7 +3403,8 @@ function learnSyncUI(){
   const cur=Math.min(N-1,Math.floor(Learn.t/STEP_DUR));
   document.querySelectorAll("#learnSteps li").forEach(li=>li.classList.toggle("on",+li.dataset.i===cur));
   const scrub=document.getElementById("learnScrub");
-  if(scrub && !Learn.scrubbing) scrub.value=Math.round(Math.min(1,Learn.t/total)*1000);
+  const vv=Learn.mode==="video"&&Learn.cues&&Learn.cues.timeline?document.getElementById("learnVideo"):null;
+  if(scrub && !Learn.scrubbing) scrub.value=Math.round(Math.min(1,vv&&vv.duration?vv.currentTime/vv.duration:Learn.t/total)*1000);
   if(Learn.mode==="video"){ const ro=document.getElementById("learnReadout"); if(ro) ro.textContent=learnReadoutAt(Learn.key,Learn.t); }
 }
 // Strand paths per frame for the offline (Blender) tutorial render — see tools/render_tutorial.py.

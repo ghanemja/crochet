@@ -21,7 +21,7 @@ ap.add_argument("--res", default="800x500")              # the modal shows ~520 
 ap.add_argument("--frames", default="0:-1:1")
 ap.add_argument("--hdri", default="build/hdri/studio_small_09_2k.hdr")
 ap.add_argument("--lens", type=float, default=100.0)      # mm on a 24 mm-tall sensor (long lens)
-ap.add_argument("--fstop", type=float, default=4.0)
+ap.add_argument("--fstop", type=float, default=22.0)       # the scene is real size (yarn 3.6 mm thick): f/4 left a sliver in focus
 ap.add_argument("--skip-existing", action="store_true")
 ap.add_argument("--angle", type=int, default=0)              # which of the JSON's "views" (camera angles) to render
 ap.add_argument("--lookdev", action="store_true")           # one strand in close-up (yarn look development)
@@ -326,11 +326,20 @@ if A.lookdev:   # a single lazy S of yarn across the frame, camera square on, fo
 nF = len(D["frames"])
 a, b_, st_ = (A.frames.split(":") + ["", "", ""])[:3]
 f0 = int(a or 0); f1 = int(b_ or -1); f1 = nF if f1 < 0 else min(nF, f1 + 1); step = int(st_ or 1)
-import time
+import time, shutil
+MOVING = bool(CAM.get("moving")) and not A.lookdev          # the guided view: camera per frame
+prev = None                                                 # (pose key, path) of the last frame rendered
 for fi in range(f0, f1, step):
     path = os.path.join(A.out, "f_%04d.png" % fi)
-    if A.skip_existing and os.path.exists(path): continue
+    if A.skip_existing and os.path.exists(path): prev = None; continue
     t0 = time.time(); fr = D["frames"][fi]
+    if MOVING and "cam" in fr:
+        P = Vector(fr["cam"]["pos"]); T = Vector(fr["cam"]["target"])
+        cam.location = to_bl(T + (P - T) * k); tgt = to_bl(T)
+        cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler(); cam_fwd = (tgt - cam.location).normalized()
+    elif prev and "a" in fr and prev[0] == fr["a"]:
+        shutil.copyfile(prev[1], path)                      # fixed camera, same pose: same picture
+        print("frame %d/%d  copied" % (fi, nF - 1), flush=True); continue
     hook.location = to_bl(fr["hook"]["pos"])
     qx, qy, qz, qw = fr["hook"]["quat"]
     hook.rotation_quaternion = CQ @ Quaternion((qw, qx, qy, qz)) @ CQ.inverted()
@@ -339,4 +348,5 @@ for fi in range(f0, f1, step):
     cd.dof.focus_distance = max(0.05, ((hook.location if A.zoom == 1 else tgt) - cam.location).dot(cam_fwd))
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
+    prev = (fr.get("a"), path)
     print("frame %d/%d  %.1fs (build %.1fs)" % (fi, nF - 1, time.time() - t0, t1 - t0), flush=True)

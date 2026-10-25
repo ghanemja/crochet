@@ -185,28 +185,36 @@ except Exception: pass
 hook = bpy.data.objects.new("Hook", hm); sc.collection.objects.link(hook); hook.rotation_mode = "QUATERNION"
 
 # ---------------------------------------------------------------- hands (only in views that ask for them)
-# D["hands"]: [{"glb", "parent": "hook"|"world", "matrix": 4×4 row-major in the app frame}] —
-# for "hook" the matrix is in the hook's local frame, so the hand turns with the wrist.
+# Frames carry {"side", "pose", "pos", "rot"} placements; the hand is a tools/hand_rig.py skeleton
+# skinned with the Skin + Subdivision modifiers (metres, Blender axes).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hand_rig
 skin = bpy.data.materials.new("Skin"); skin.use_nodes = True
 kb = skin.node_tree.nodes["Principled BSDF"]
-kb.inputs["Base Color"].default_value = srgb_lin("#d9a382"); kb.inputs["Roughness"].default_value = 0.55
-kb.inputs["Subsurface Weight"].default_value = 0.35; kb.inputs["Subsurface Radius"].default_value = (1.0, 0.35, 0.2)
-kb.inputs["Subsurface Scale"].default_value = 0.004; kb.inputs["Sheen Weight"].default_value = 0.15
-CM = C.to_4x4() if hasattr(C, "to_4x4") else C
-if (D["views"][A.angle] if "views" in D else {}).get("hands") and not A.lookdev:
-    for hd in D.get("hands", []):
-        before = set(bpy.data.objects)
-        bpy.ops.import_scene.gltf(filepath=os.path.abspath(hd["glb"]))
-        parts = [o for o in bpy.data.objects if o not in before and o.type == "MESH"]
-        for o in parts:     # bake the importer's transform into the mesh (it already maps glTF Y-up to Z-up)
-            o.data.transform(o.matrix_world); o.matrix_world = Matrix.Identity(4)
-        M = Matrix([hd["matrix"][r * 4:r * 4 + 4] for r in range(4)])
-        X = Matrix.Scale(S, 4) @ CM @ M @ CM.inverted()
-        for o in parts:
-            o.data.transform(X); o.data.materials.clear(); o.data.materials.append(skin)
-            if X.determinant() < 0: o.data.flip_normals()          # a mirrored (left) hand
-            for poly in o.data.polygons: poly.use_smooth = True
-            if hd.get("parent") == "hook": o.parent = hook
+kb.inputs["Base Color"].default_value = (0.50, 0.25, 0.16, 1); kb.inputs["Roughness"].default_value = 0.5
+kb.inputs["Subsurface Weight"].default_value = 0.4; kb.inputs["Subsurface Radius"].default_value = (1.0, 0.35, 0.2)
+kb.inputs["Subsurface Scale"].default_value = 0.004; kb.inputs["Sheen Weight"].default_value = 0.1
+HANDS_ON = bool((D["views"][A.angle] if "views" in D else {}).get("hands")) and not A.lookdev
+HAND_OBJ = {}
+def hand_object(side, pose):
+    key = (side, pose)
+    if key not in HAND_OBJ:
+        V, E, Rd, Ro, _ = hand_rig.skeleton(getattr(hand_rig, pose), side)
+        me = bpy.data.meshes.new("Hand" + side); me.from_pydata(V, E, [])
+        ob = bpy.data.objects.new("Hand" + side, me); sc.collection.objects.link(ob)
+        ob.modifiers.new("Skin", "SKIN"); sv = me.skin_vertices[0].data
+        for i, r in enumerate(Rd): sv[i].radius = (r, r); sv[i].use_root = Ro[i]
+        sub = ob.modifiers.new("Sub", "SUBSURF"); sub.levels = sub.render_levels = 3
+        me.materials.append(skin)
+        for poly in me.polygons: poly.use_smooth = True
+        HAND_OBJ[key] = ob
+    return HAND_OBJ[key]
+def set_hands(fr):
+    if not HANDS_ON or not fr.get("hands"): return
+    for h in fr["hands"]:
+        ob = hand_object(h["side"], h["pose"]); r = h["rot"]
+        ob.matrix_world = Matrix(((r[0], r[1], r[2], h["pos"][0]), (r[3], r[4], r[5], h["pos"][1]),
+                                  (r[6], r[7], r[8], h["pos"][2]), (0, 0, 0, 1)))
 
 # ---------------------------------------------------------------- yarn as hair curves
 PLIES = 3
@@ -383,7 +391,7 @@ for fi in range(f0, f1, step):
     hook.location = to_bl(fr["hook"]["pos"])
     qx, qy, qz, qw = fr["hook"]["quat"]
     hook.rotation_quaternion = CQ @ Quaternion((qw, qx, qy, qz)) @ CQ.inverted()
-    set_yarn(fr); t1 = time.time()
+    set_yarn(fr); set_hands(fr); t1 = time.time()
     # focus on the hook head (the tip sits at the hook's origin)
     cd.dof.focus_distance = max(0.05, ((hook.location if A.zoom == 1 else tgt) - cam.location).dot(cam_fwd))
     sc.render.filepath = path

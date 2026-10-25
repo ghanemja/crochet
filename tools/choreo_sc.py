@@ -29,7 +29,7 @@ APP_R = 0.36                       # app yarn radius (export scale)
 # teaching colours: blue fabric, orange working yarn — mid-tones that show the fibres,
 # and a pair that stays distinct for every common colour-vision deficiency
 TUTORIAL_FABRIC, TUTORIAL_WORKING = "#4f7fc4", "#f0862a"
-F = np.array([-3.4 * P, 10.0, 16.0])   # the index finger the working yarn runs over (off-screen)
+
 
 def v(*a): return np.array(a, float)
 def nrm(a): return a / (np.linalg.norm(a) + 1e-12)
@@ -41,6 +41,25 @@ def slerp_dir(a, b, t):
     return nrm((math.sin((1 - t) * w) * a + math.sin(t * w) * b) / math.sin(w))
 def bez(p0, p1, p2, p3, t):
     s = 1 - t; return s**3 * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t**3 * p3
+
+# ---------------------------------------------------------------- hands
+# tools/hand_rig.py skeletons (metres). Design units -> metres: 1 R = 3.6 mm (APP_R/100 m).
+sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(__file__)))
+import hand_rig
+UNIT = APP_R / 100
+def local_pt(rig, name, lift=0.0):
+    """a named point of a posed hand, in hand-local design units, lifted along the back of the hand"""
+    p = np.array(rig[4][name]) / UNIT; return p + np.array([0, 0, lift])
+def frame_from(yh, zh):
+    yh = nrm(yh); zh = nrm(zh - yh * (zh @ yh)); return np.stack([np.cross(yh, zh), yh, zh], 1)   # columns X, Y, Z
+# left hand: behind the work to the left, fingers up, back of the hand away from the camera,
+# index raised — the working yarn runs over it, just behind the fingertip
+LEFT_RIG = hand_rig.skeleton(hand_rig.LEFT_HOLD, "L")
+L_ROT = frame_from(v(0.42, 0.1, 1.0), v(0.1, 1.0, -0.2))
+F_WANT = v(-3.6 * P, 6.0, 13.0)                                # where the yarn crosses the finger
+L_POS = F_WANT - L_ROT @ local_pt(LEFT_RIG, "index_dip", lift=0.011 / UNIT + R)
+F = F_WANT                                                     # the index finger the working yarn runs over
+F_TAIL = F + v(-5.0, 7.0, -16.0)                               # ...then down behind the hand to the ball
 
 # ---------------------------------------------------------------- hook
 # local frame: tip at the origin, +Y up the shaft, throat (the notch the yarn sits in) on +X
@@ -214,6 +233,15 @@ def hook_pose(t):
         th = DOWN
     return st, p, Hook(tip + LIFT * LIFT_VEC, u, th)
 
+RIGHT_RIG = hand_rig.skeleton(hand_rig.RIGHT_GRIP, "R")
+D_GRIP = 28.0 * R                     # the index finger rests on the shaft this far up from the tip
+def right_hand(hk):
+    """pencil grip: fingers toward the tip, the index finger on top of the shaft, back of the hand
+    away from the throat; turns with the hook (that is the wrist turning)."""
+    rot = frame_from(-hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
+    q = local_pt(RIGHT_RIG, "index_pip", lift=-(0.0112 / UNIT + RH))
+    return hk.at(D_GRIP) - rot @ q, rot
+
 def loop_d(hk, anchor, lo):
     return max(lo, min(14.0, (anchor - hk.tip) @ hk.u))
 
@@ -226,10 +254,10 @@ def active_path(t, hk, st, p, dA=None, dB=D_B):
     pts += ringA[len(ringA) // 2:]
     behind = hk.tip[1] > 1.0                                     # hook tip is behind the work
     if st == 0:
-        pts += [BT, BT + v(-1.5, 1.5, 3.5), F]
+        pts += [BT, BT + v(-1.5, 1.5, 3.5), F, F_TAIL]
     elif st == 1:                                                # yarn over: wrap grows over the top into the throat
         wr = wrap(hk, THROAT_D, 250, 250 - 300 * e)
-        pts += [BT] + list(wr) + [F]
+        pts += [BT] + list(wr) + [F, F_TAIL]
     elif st == 2:                                                # pull up: the caught bight comes through the hole
         s = ease((1.2 - hk.tip[1]) / 2.0)                        # 0 while the tip is behind, 1 once in front
         dB = lerp(THROAT_D, D_B, ease((p - 0.55) / 0.45))
@@ -237,12 +265,12 @@ def active_path(t, hk, st, p, dA=None, dB=D_B):
         wr = list(wrap(hk, dB, ain, aout))
         h1 = HOLE + v(0.55, 0, 0); h2 = HOLE + v(-0.55, 0, 0)
         pts += [BT, lerp(wr[0], h1 + v(0, 1.4, 0.1), s), lerp(wr[0], h1, s), lerp(wr[0], h1 + v(0, -1.4, 0.4), s)] + wr \
-             + [lerp(wr[-1], h2 + v(0, -1.4, 0.4), s), lerp(wr[-1], h2, s), lerp(wr[-1], h2 + v(0, 1.4, 0.1), s), BT + v(-1.2, 0.3, 0), F]
+             + [lerp(wr[-1], h2 + v(0, -1.4, 0.4), s), lerp(wr[-1], h2, s), lerp(wr[-1], h2 + v(0, 1.4, 0.1), s), BT + v(-1.2, 0.3, 0), F, F_TAIL]
     elif st == 3:
         ringB = list(wrap(hk, dB, 25, -295))
         wr = wrap(hk, THROAT_D, 250, 250 - 300 * e)
         h1 = HOLE + v(0.55, 0, 0); h2 = HOLE + v(-0.55, 0, 0)
-        pts += [BT, h1 + v(0, 1.4, 0.1), h1, h1 + v(0, -1.4, 0.4)] + ringB + [h2 + v(0, -1.4, 0.4), h2, h2 + v(0, 1.4, 0.1), BT + v(-1.2, 0.3, 0)] + list(wr) + [F]
+        pts += [BT, h1 + v(0, 1.4, 0.1), h1, h1 + v(0, -1.4, 0.4)] + ringB + [h2 + v(0, -1.4, 0.4), h2, h2 + v(0, 1.4, 0.1), BT + v(-1.2, 0.3, 0)] + list(wr) + [F, F_TAIL]
     return pts, green
 
 ROW_XS = [3 * P, 2 * P, P, 0, -P, -2 * P, -3 * P]
@@ -278,7 +306,7 @@ def frame_strands(t):
         _, _, hk0 = hook_pose(4 * STEP_DUR + PULL_SPLIT * STEP_DUR)
         pre, g = riding(hk0, 1.0)
         dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN)
-        post = sc_static(-P, 0.0)[1:] + [E0 - v(P, 0, 0) + v(0, -0.6, 1.2)] + list(wrap(hk, dC, 25, -295)) + [BT - v(P, 0, 0), BT - v(P, 0, 0) + v(-1.5, 1.5, 3.5), F]
+        post = sc_static(-P, 0.0)[1:] + [E0 - v(P, 0, 0) + v(0, -0.6, 1.2)] + list(wrap(hk, dC, 25, -295)) + [BT - v(P, 0, 0), BT - v(P, 0, 0) + v(-1.5, 1.5, 3.5), F, F_TAIL]
         a, b = spline(pre), spline(post)
         n = max(len(a), len(b)); a, b = resample(a, n=n), resample(b, n=n)
         # the loops slide toward the tip and off before the shape settles: delay the far end
@@ -312,32 +340,10 @@ FRONT, SIDE, BACK = v(0.3, -1.0, 0.8), v(-1.0, -0.3, 0.55), v(0.15, 1.0, 0.65)
 # guided-take angles stay on the front side so left and right never swap:
 OVER = v(0.1, -0.5, 1.0)          # high, looking down over the top edge: sees the hook come out the back
 QUARTER = v(-0.55, -1.0, 0.75)    # front three-quarter from the left: the loops on the shaft side by side
+TOP = v(0.0, -0.22, 1.0)          # almost straight down: the work is just its top edge, so the hook behind it shows
 def cam(d, tgt=None, zoom=1.0):
     tgt = look if tgt is None else tgt
     return {"pos": app([tgt + nrm(d) * DIST * zoom])[0], "target": app([tgt])[0], "fov": FOV, "aspect": 1.6}
-
-# ---------------------------------------------------------------- hands (guided take only)
-# assets/hand-right.glb is posed in a crochet grip with its grip pocket at HAND_GRIP along its
-# local x. Life size: about 25 yarn-widths long (scale 90 in app units).
-HAND_GRIP, HAND_SCALE = np.array([0, 0.041, 0.017]), 90.0
-def m_T(t): M = np.eye(4); M[:3, 3] = t; return M
-def m_S(x, y, z): return np.diag([x, y, z, 1.0])
-def m_R(axis, ang):
-    c, s_ = math.cos(ang), math.sin(ang); M = np.eye(4)
-    i, j = {"x": (1, 2), "y": (2, 0), "z": (0, 1)}[axis]
-    M[i, i], M[i, j], M[j, i], M[j, j] = c, -s_, s_, c; return M
-def hand_matrix(grip_at, rot, mirror=False):
-    """app-frame matrix that puts the hand's grip pocket at grip_at, rotated by rot (4×4)."""
-    M = rot @ m_S(-HAND_SCALE if mirror else HAND_SCALE, HAND_SCALE, HAND_SCALE)
-    off = (M @ np.append(HAND_GRIP, 1))[:3]
-    return m_T(np.asarray(grip_at) - off) @ M
-# right hand: round the shaft ~34 yarn radii up from the tip (out of the close-ups) (hook-local app frame; shaft = +y)
-RIGHT = hand_matrix([0, 34 * APP_R, 0], m_R("y", HAND_ROLL := math.radians(200)) @ m_R("z", -math.pi / 2))
-# left hand: pinching the work to the left of the stitch, from behind, fingers over the top
-LEFT_AT = v(-5.6 * P, 2.2, -1.7 * H)
-LEFT = hand_matrix(app([LEFT_AT])[0], m_R("y", math.radians(-20)) @ m_R("z", math.pi / 2), mirror=True)
-HANDS = [{"glb": "assets/hand-right.glb", "parent": "hook", "matrix": [round(x, 6) for x in RIGHT.ravel()]},
-         {"glb": "assets/hand-right.glb", "parent": "world", "matrix": [round(x, 6) for x in LEFT.ravel()]}]
 
 # ---------------------------------------------------------------- the guided take
 # Filmed like a tutorial: show where the hook goes, do the move, swing the camera to where
@@ -346,17 +352,17 @@ HANDS = [{"glb": "assets/hand-right.glb", "parent": "hook", "matrix": [round(x, 
 # (steps of STEP_DUR, each moving for MOVE_SHARE then holding).
 def mv(k): return k * STEP_DUR, k * STEP_DUR + STEP_DUR * MOVE_SHARE      # step k's move
 SHOTS = [
-    (1.6, 0.0, 0.0, FRONT, FRONT, None, (1.8, 1.8)),        # establishing: the hook, the work and the yarn
+    (1.6, 0.0, 0.0, FRONT, FRONT, None, (3.2, 3.2)),        # establishing: both hands, the hook, the work and the yarn
     # lift the hook so the live loop stands up, and link it to the stitch it came from
-    (1.2, 0.0, 0.0, FRONT, FRONT, ("link", None, "This loop on your hook comes from stitch 1"), (1.8, 1.4), (0.0, 1.0)),
+    (1.2, 0.0, 0.0, FRONT, FRONT, ("link", None, "This loop on your hook comes from stitch 1"), (3.2, 1.4), (0.0, 1.0)),
     (0.9, 0.0, 0.0, FRONT, FRONT, None, (1.4, 1.4), (1.0, 0.0)),
     (1.2, 0.0, 0.0, FRONT, FRONT, ("stitch", 0, "Now go into stitch 2 — under both top loops"), (1.4, 1.0)),
     (2.0, *mv(0), FRONT, FRONT, None),
     (1.8, mv(0)[1], STEP_DUR, FRONT, OVER, ("tip", 0, "The hook pokes out the back")),
-    (2.0, *mv(1), OVER, OVER, ("throat", 1, "Wrap the yarn over your hook")),
-    (2.6, mv(2)[0], mv(2)[1] + 0.3, OVER, QUARTER, ("loops", 2, "Pull it back through — 2 loops on your hook")),
-    (2.0, *mv(3), QUARTER, QUARTER, ("throat", 3, "Wrap the yarn over again")),
-    (2.8, mv(4)[0], 5 * STEP_DUR, QUARTER, FRONT, ("done", 4, "Pull through both loops")),
+    (3.0, *mv(1), OVER, TOP, ("throat", 1, "Wrap the yarn over your hook — back to front"), (1.0, 0.72)),
+    (2.6, mv(2)[0], mv(2)[1] + 0.3, TOP, QUARTER, ("loops", 2, "Pull it back through — 2 loops on your hook"), (0.72, 1.0)),
+    (3.0, *mv(3), QUARTER, QUARTER, ("throat", 3, "Wrap the yarn over again — back to front"), (1.0, 0.75)),
+    (2.8, mv(4)[0], 5 * STEP_DUR, QUARTER, FRONT, ("done", 4, "Pull through both loops"), (0.75, 1.0)),
     (1.6, 5 * STEP_DUR, 5 * STEP_DUR, FRONT, FRONT, ("new", None, "Your new stitch — sitting on top of stitch 2")),
     (0.6, 5 * STEP_DUR, 5 * STEP_DUR, FRONT, FRONT, None),
 ]
@@ -392,7 +398,10 @@ for i in range(n):
     if key not in cache: cache[key] = frame_strands(ta)
     LIFT = 0.0
     hk, strands = cache[key]
-    frames.append({"t": round(tv, 4), "a": key[0] + key[1] * 1000, "cam": cam(cdir, guided_target(tv), zoom),
+    rpos, rrot = right_hand(hk)
+    hands = [{"side": "R", "pose": "RIGHT_GRIP", "pos": [round(float(x) * UNIT, 5) for x in rpos], "rot": [round(float(x), 5) for x in rrot.ravel()]},
+             {"side": "L", "pose": "LEFT_HOLD", "pos": [round(float(x) * UNIT, 5) for x in L_POS], "rot": [round(float(x), 5) for x in L_ROT.ravel()]}]
+    frames.append({"t": round(tv, 4), "a": key[0] + key[1] * 1000, "cam": cam(cdir, guided_target(tv), zoom), "hands": hands if A.hands else None,
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 
 # ---------------------------------------------------------------- callouts
@@ -417,7 +426,11 @@ def target(kind, ta):
         dA = loop_d(hk, ANCHOR, D_A_MIN); return hk.at(dA), 2.4, None, None
     if kind == "stitch": return HOLE + v(0, 0, 0.9), 3.0, TARGET_V, INSERT_PATH[4:]
     if kind == "tip": return hk.at(1.0), 2.2, TARGET_V, None
-    if kind == "throat": return hk.axis_centre(THROAT_D), 2.2, None, None
+    if kind == "throat":
+        # the wrapped yarn traced, and a curved arrow round the hook in the wrap direction
+        dn, fr = hk.basis(); c = hk.axis_centre(THROAT_D); rr = hook_profile(THROAT_D)[1] + 2.6 * R
+        arc = [c + rr * (math.cos(a) * dn + math.sin(a) * fr) for a in np.radians(np.linspace(265, -20, 14))]
+        return c, 2.4, list(wrap(hk, THROAT_D, 250, -50)), arc
     if kind == "loops":
         dA = loop_d(hk, ANCHOR, D_A_MIN); return hk.at((dA + D_B) / 2), (dA - D_B) / 2 + 2.4, None, None
     if kind == "new": return v(-P, -0.6, 0.2), 3.0, spline(sc_static(-P, 0.0)[:6], 0.4 * R), None
@@ -455,6 +468,6 @@ if A.cues:
 
 json.dump({"key": "sc", "fps": A.fps, "stepDur": STEP_DUR, "steps": STEPS, "total": total,
            "yarn": TUTORIAL_FABRIC, "accent": TUTORIAL_WORKING, "type": "wool",
-           "camera": cam(FRONT), "hands": HANDS, "views": [dict(cam(FRONT), name="Guided", moving=True, hands=A.hands)] + [dict(cam(d), name=nm) for nm, d in FIXED],
+           "camera": cam(FRONT), "views": [dict(cam(FRONT), name="Guided", moving=True, hands=A.hands)] + [dict(cam(d), name=nm) for nm, d in FIXED],
            "ball": None, "ground": -40, "hookMesh": hook_mesh(), "frames": frames}, open(A.out, "w"))
 print("wrote", A.out, n, "frames,", len(cache), "distinct poses")

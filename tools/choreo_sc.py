@@ -183,6 +183,9 @@ PULL_SPLIT = 0.55                                              # pull-through: l
 MOVE_SHARE = 0.78                                              # share of each step spent moving (the rest is a hold)
 D_B, D_A_MIN = 4.4, 7.0                                        # where the two loops sit on the shaft: clearly apart
 
+LIFT = 0.0                                                     # opening lift (0..1), set per frame by the guided take
+LIFT_VEC = v(0.8, -1.2, 3.4)                                   # raise the hook so the live loop stands up tall
+
 def hook_pose(t):
     st, p = int(min(4, t // STEP_DUR)), (t % STEP_DUR) / STEP_DUR if t < 5 * STEP_DUR else 1.0
     p = min(1.0, p / MOVE_SHARE)                                 # move, then hold the pose
@@ -209,7 +212,7 @@ def hook_pose(t):
             tip = bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), T_REST - v(P, 0, 0) + v(0.8, -1.0, 1.0), T_REST - v(P, 0, 0), q)
             u = slerp_dir(U_UP, U_REST, q)
         th = DOWN
-    return st, p, Hook(tip, u, th)
+    return st, p, Hook(tip + LIFT * LIFT_VEC, u, th)
 
 def loop_d(hk, anchor, lo):
     return max(lo, min(14.0, (anchor - hk.tip) @ hk.u))
@@ -339,7 +342,10 @@ HANDS = [{"glb": "assets/hand-right.glb", "parent": "hook", "matrix": [round(x, 
 def mv(k): return k * STEP_DUR, k * STEP_DUR + STEP_DUR * MOVE_SHARE      # step k's move
 SHOTS = [
     (1.6, 0.0, 0.0, FRONT, FRONT, None, (1.8, 1.8)),        # establishing: the hook, the work and the yarn
-    (1.4, 0.0, 0.0, FRONT, FRONT, ("stitch", 0, "Go into this stitch — under both top loops"), (1.8, 1.0)),
+    # lift the hook so the live loop stands up, and link it to the stitch it came from
+    (1.2, 0.0, 0.0, FRONT, FRONT, ("link", None, "This loop on your hook comes from stitch 1"), (1.8, 1.4), (0.0, 1.0)),
+    (0.9, 0.0, 0.0, FRONT, FRONT, None, (1.4, 1.4), (1.0, 0.0)),
+    (1.2, 0.0, 0.0, FRONT, FRONT, ("stitch", 0, "Now go into stitch 2 — under both top loops"), (1.4, 1.0)),
     (2.0, *mv(0), FRONT, FRONT, None),
     (1.8, mv(0)[1], STEP_DUR, FRONT, BACK, ("tip", 0, "The hook pokes out the back")),
     (2.0, *mv(1), BACK, BACK, ("throat", 1, "Wrap the yarn over your hook")),
@@ -356,6 +362,13 @@ def at_video(tv):
             qa = min(1.0, max(0.0, (tv - t0) / dur)); z0, z1 = rest[1] if len(rest) > 1 else (1.0, 1.0)
             return lerp(a0, a1, qa), slerp_dir(c0, c1, ease(qa)), lerp(z0, z1, ease(qa))
         t0 += dur
+def lift_at(tv):
+    t0 = 0.0
+    for dur, *rest in SHOTS:
+        if tv <= t0 + dur:
+            l0, l1 = rest[6] if len(rest) > 6 else (0.0, 0.0); return lerp(l0, l1, ease(min(1.0, max(0.0, (tv - t0) / dur))))
+        t0 += dur
+    return 0.0
 def action_focus(ta):
     _, _, hk = hook_pose(ta); return lerp(look, hk.at(2.0), 0.5)
 def guided_target(tv):
@@ -369,10 +382,11 @@ FIXED = [("Front", FRONT), ("Side", SIDE), ("Behind", BACK)]   # the free-look a
 cache = {}
 frames = []
 for i in range(n):
-    tv = i / A.fps; ta, cdir, zoom = at_video(tv); key = round(ta, 4)
+    tv = i / A.fps; ta, cdir, zoom = at_video(tv); LIFT = lift_at(tv); key = (round(ta, 4), round(LIFT, 3))
     if key not in cache: cache[key] = frame_strands(ta)
+    LIFT = 0.0
     hk, strands = cache[key]
-    frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir, guided_target(tv), zoom),
+    frames.append({"t": round(tv, 4), "a": key[0] + key[1] * 1000, "cam": cam(cdir, guided_target(tv), zoom),
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 
 # ---------------------------------------------------------------- callouts
@@ -389,8 +403,12 @@ def project(d, tgt, pts, zoom=1.0):
     return out, DIST * zoom * th                                       # half the frame height in world units at the target
 TARGET_V = spline(sc_static(-P, -H)[:6], 0.4 * R)              # the two top loops of the stitch we go into
 INSERT_PATH = [hook_pose(STEP_DUR * MOVE_SHARE * k / 11)[2].tip for k in range(12)]
+LABEL_XS = [0.0, -P, -2 * P, -3 * P]
+LABEL_PTS = [v(x, -B - 0.7, -H - 2.2) for x in LABEL_XS]   # on the face of each stitch, under its top loops
 def target(kind, ta):
     _, _, hk = hook_pose(ta)
+    if kind == "link":
+        dA = loop_d(hk, ANCHOR, D_A_MIN); return hk.at(dA), 2.4, None, None
     if kind == "stitch": return HOLE + v(0, 0, 0.9), 3.0, TARGET_V, INSERT_PATH[4:]
     if kind == "tip": return hk.at(1.0), 2.2, TARGET_V, None
     if kind == "throat": return hk.axis_centre(THROAT_D), 2.2, None, None
@@ -401,17 +419,31 @@ cues, t0, timeline = [], 0.0, [[0.0, 0.0]]
 for dur, a0, a1, c0, c1, cue, *_ in SHOTS:
     t0 += dur; timeline.append([round(t0, 3), round(a1, 3)])
     if not cue: continue
-    tc = t0 - 0.5 / A.fps; ta, cdir, zoom = at_video(tc); c, rad, trace, arrow = target(cue[0], ta)
+    tc = t0 - 0.5 / A.fps; ta, cdir, zoom = at_video(tc); LIFT = lift_at(tc); c, rad, trace, arrow = target(cue[0], ta); LIFT = 0.0
     views = []
     for d, tgt, z in [(cdir, guided_target(tc), zoom)] + [(d, look, 1.0) for _, d in FIXED]:
         (xy,), half = project(d, tgt, [c], z)
         views.append({"x": xy[0], "y": xy[1], "r": round(rad / half / 2, 4),
                       "trace": project(d, tgt, trace, z)[0] if trace is not None else None,
-                      "arrow": project(d, tgt, arrow, z)[0] if arrow else None})
+                      "arrow": project(d, tgt, arrow, z)[0] if arrow else None,
+                      "link": project(d, tgt, [c, LABEL_PTS[0]], z)[0] if cue[0] == "link" else None})
     cues.append({"t": round(tc, 3), "step": cue[1], "text": cue[2], "views": views})
+# stitch numbers: badges on the top of the stitches in the row being worked into, counted from
+# the one just worked (1) to the one the hook goes into (2) and on; shown from the start until
+# the hook is through. Guided view: positions sampled every 0.1 s; fixed views: static.
+label_until = next(c["t"] for c in cues if "back" in c["text"]) + 0.2
+track = []
+for tv in np.arange(0.0, label_until + 0.1, 0.1):
+    ta, cdir, zoom = at_video(tv)
+    track.append([round(float(tv), 2)] + [c for xy in project(cdir, guided_target(tv), LABEL_PTS, zoom)[0] for c in xy])
+labels = {"until": round(label_until, 2), "target": 1,
+          "stitches": [{"text": str(i + 1)} for i in range(len(LABEL_XS))],
+          "track": track,                                      # [t, x1, y1, x2, y2, ...] for the guided tile
+          "fixed": [[c for xy in project(d, look, LABEL_PTS)[0] for c in xy] for _, d in FIXED]}
+
 if A.cues:
     # timeline: [video time, action time] knots, so the app can follow the step list
-    json.dump({"key": "sc", "hold": 2.4, "steps": len(STEPS), "stepDur": STEP_DUR, "timeline": timeline, "cues": cues}, open(A.cues, "w"), indent=1)
+    json.dump({"key": "sc", "hold": 2.4, "steps": len(STEPS), "stepDur": STEP_DUR, "timeline": timeline, "cues": cues, "labels": labels}, open(A.cues, "w"), indent=1)
     print("wrote", A.cues)
 
 json.dump({"key": "sc", "fps": A.fps, "stepDur": STEP_DUR, "steps": STEPS, "total": total,

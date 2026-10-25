@@ -320,19 +320,35 @@ def build_curves(name, items, mat):
     cv.materials.append(mat)
     return cv
 
-YOBJ = {}
+def shade_hex(h, k):
+    """lighten (k > 1, toward white) or darken (k < 1) an sRGB hex colour"""
+    c = [int(h.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    c = [x + (255 - x) * (k - 1) if k > 1 else x * k for x in c]
+    return "#%02x%02x%02x" % tuple(int(max(0, min(255, x))) for x in c)
+MATS = {}
+def mats_for(acc, shade):
+    """(core, fibre, fuzz) materials for the yarn (or accent) colour at a shade"""
+    if shade == 1.0: return MAT[acc]
+    key = (acc, shade)
+    if key not in MATS:
+        hx = shade_hex(D["accent"] if acc else D["yarn"], shade); nm = ("Acc" if acc else "Yarn") + "%.2f" % shade
+        MATS[key] = (yarn_mat(nm, hx), fibre_mat(nm + "Fibre", hx), fibre_mat(nm + "Fuzz", hx))
+    return MATS[key]
+YOBJ, YOBJ_KEYS = {}, set()
 def set_yarn(fr):
     groups = {}
     for i, st in enumerate(fr["strands"]):
         if not st.get("visible") or len(st.get("pts", [])) < 3: continue
-        acc = bool(st.get("accent"))
+        acc = bool(st.get("accent")); shade = round(float(st.get("shade", 1.0)), 2)
         for kind, items in strand_curves(i, st).items():
-            groups.setdefault((acc, kind), []).extend(items)
-    for acc in (False, True):
+            groups.setdefault((acc, shade, kind), []).extend(items)
+    keys = sorted({(a, sh) for a, sh, _ in groups} | {(False, 1.0), (True, 1.0)} | {(a, sh) for a, sh in YOBJ_KEYS})
+    for acc, shade in keys:
+        YOBJ_KEYS.add((acc, shade))
         for ki, kind in enumerate(("ply", "fibre", "fuzz")):
-            name = ("Acc_" if acc else "Yarn_") + kind
+            name = ("Acc_" if acc else "Yarn_") + kind + ("" if shade == 1.0 else "_%.2f" % shade)
             old = YOBJ.get(name)
-            data = build_curves(name, groups.get((acc, kind), []), MAT[acc][ki])
+            data = build_curves(name, groups.get((acc, shade, kind), []), mats_for(acc, shade)[ki])
             if old is None:
                 ob = bpy.data.objects.new(name, data); sc.collection.objects.link(ob); YOBJ[name] = ob
             else:

@@ -249,7 +249,8 @@ ROW_XS = [3 * P, 2 * P, P, 0, -P, -2 * P, -3 * P]
 
 def frame_strands(t):
     st, p, hk = hook_pose(t)
-    static = [spline(row(ROW_XS, -H)), spline(row(ROW_XS, -2 * H)), spline(chain(ROW_XS, -3 * H))]
+    # (path, shade): the row being worked into is the plain fabric colour, older rows darker
+    static = [(spline(row(ROW_XS, -H)), 1.0), (spline(row(ROW_XS, -2 * H)), SHADE_OLD), (spline(chain(ROW_XS, -3 * H)), SHADE_OLD)]
     fabric0 = row([3 * P, 2 * P, P, 0], 0.0)[:-1]                # finished part of the current row, up to E0
     if st < 4:
         pts, g = active_path(t, hk, st, p)
@@ -289,11 +290,12 @@ def frame_strands(t):
         segs = [(c[:k + 1], False), (c[k:], True)]
     return hk, finish(static, segs, hk)
 
+SHADE_OLD, SHADE_CURRENT = 0.68, 1.22        # older rows darker; stitches already made in this row lighter
 def finish(static, segs, hk):
-    out = [{"visible": True, "closed": False, "radius": APP_R, "accent": False, "pts": app(s)} for s in static]
+    out = [{"visible": True, "closed": False, "radius": APP_R, "accent": False, "shade": sh, "pts": app(s)} for s, sh in static]
     for s, acc in segs:
         s = push_out(s, hk)
-        out.append({"visible": True, "closed": False, "radius": APP_R, "accent": acc, "pts": app(s)})
+        out.append({"visible": True, "closed": False, "radius": APP_R, "accent": acc, "shade": 1.0 if acc else SHADE_CURRENT, "pts": app(s)})
     return out
 
 def app(c):
@@ -307,6 +309,9 @@ def app(c):
 FOV = 13.69; DIST = 84 * R
 look = v(-0.8 * P, 0.0, -0.4 * H)
 FRONT, SIDE, BACK = v(0.3, -1.0, 0.8), v(-1.0, -0.3, 0.55), v(0.15, 1.0, 0.65)
+# guided-take angles stay on the front side so left and right never swap:
+OVER = v(0.1, -0.5, 1.0)          # high, looking down over the top edge: sees the hook come out the back
+QUARTER = v(-0.55, -1.0, 0.75)    # front three-quarter from the left: the loops on the shaft side by side
 def cam(d, tgt=None, zoom=1.0):
     tgt = look if tgt is None else tgt
     return {"pos": app([tgt + nrm(d) * DIST * zoom])[0], "target": app([tgt])[0], "fov": FOV, "aspect": 1.6}
@@ -347,12 +352,13 @@ SHOTS = [
     (0.9, 0.0, 0.0, FRONT, FRONT, None, (1.4, 1.4), (1.0, 0.0)),
     (1.2, 0.0, 0.0, FRONT, FRONT, ("stitch", 0, "Now go into stitch 2 — under both top loops"), (1.4, 1.0)),
     (2.0, *mv(0), FRONT, FRONT, None),
-    (1.8, mv(0)[1], STEP_DUR, FRONT, BACK, ("tip", 0, "The hook pokes out the back")),
-    (2.0, *mv(1), BACK, BACK, ("throat", 1, "Wrap the yarn over your hook")),
-    (2.6, mv(2)[0], mv(2)[1] + 0.3, BACK, SIDE, ("loops", 2, "Pull it back through — 2 loops on your hook")),
-    (2.0, *mv(3), SIDE, SIDE, ("throat", 3, "Wrap the yarn over again")),
-    (2.8, mv(4)[0], 5 * STEP_DUR, SIDE, FRONT, ("done", 4, "Pull through both loops — done!")),
-    (0.8, 5 * STEP_DUR, 5 * STEP_DUR, FRONT, FRONT, None),
+    (1.8, mv(0)[1], STEP_DUR, FRONT, OVER, ("tip", 0, "The hook pokes out the back")),
+    (2.0, *mv(1), OVER, OVER, ("throat", 1, "Wrap the yarn over your hook")),
+    (2.6, mv(2)[0], mv(2)[1] + 0.3, OVER, QUARTER, ("loops", 2, "Pull it back through — 2 loops on your hook")),
+    (2.0, *mv(3), QUARTER, QUARTER, ("throat", 3, "Wrap the yarn over again")),
+    (2.8, mv(4)[0], 5 * STEP_DUR, QUARTER, FRONT, ("done", 4, "Pull through both loops")),
+    (1.6, 5 * STEP_DUR, 5 * STEP_DUR, FRONT, FRONT, ("new", None, "Your new stitch — sitting on top of stitch 2")),
+    (0.6, 5 * STEP_DUR, 5 * STEP_DUR, FRONT, FRONT, None),
 ]
 def at_video(tv):
     """video time -> (action time, camera direction, camera distance factor)"""
@@ -414,6 +420,7 @@ def target(kind, ta):
     if kind == "throat": return hk.axis_centre(THROAT_D), 2.2, None, None
     if kind == "loops":
         dA = loop_d(hk, ANCHOR, D_A_MIN); return hk.at((dA + D_B) / 2), (dA - D_B) / 2 + 2.4, None, None
+    if kind == "new": return v(-P, -0.6, 0.2), 3.0, spline(sc_static(-P, 0.0)[:6], 0.4 * R), None
     dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN); return hk.at(dC), 2.4, None, None
 cues, t0, timeline = [], 0.0, [[0.0, 0.0]]
 for dur, a0, a1, c0, c1, cue, *_ in SHOTS:

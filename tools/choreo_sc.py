@@ -404,7 +404,7 @@ def project(d, tgt, pts, zoom=1.0):
 TARGET_V = spline(sc_static(-P, -H)[:6], 0.4 * R)              # the two top loops of the stitch we go into
 INSERT_PATH = [hook_pose(STEP_DUR * MOVE_SHARE * k / 11)[2].tip for k in range(12)]
 LABEL_XS = [0.0, -P, -2 * P, -3 * P]
-LABEL_PTS = [v(x, -B - 0.7, -H - 2.2) for x in LABEL_XS]   # on the face of each stitch, under its top loops
+LABEL_PTS = [v(x, 0.0, -H - 1.3) for x in LABEL_XS]           # in the hole under each stitch's V — where the hook goes
 def target(kind, ta):
     _, _, hk = hook_pose(ta)
     if kind == "link":

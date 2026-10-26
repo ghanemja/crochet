@@ -882,157 +882,197 @@
     }
   }
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,720&family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<style id="ui-v2">
+  /* ============================================================
+     YarnFlow v2 — a studio, not a page. Top bar with three places
+     (Studio · Learn stitches · Community); in the Studio the 3D model
+     fills the screen with the transport docked under it and one
+     tabbed inspector beside it. Shares Hookpath's type and colours:
+     ink navy, cool surfaces, the tutorials' blue fabric + orange yarn.
+     ============================================================ */
+  :root {
+    --bg: #eef0f4; --bg-2: #e6e9ef; --card: #ffffff;
+    --surface: #ffffff; --surface-2: #f5f6f9; --surface-3: #eceff4; --surface-solid: #ffffff;
+    --glass: rgba(255,255,255,.82); --glass-bar: rgba(255,255,255,.9); --blur: saturate(160%) blur(16px);
+    --border: #dde1e9; --border-2: #c9cfda; --hair: #e6e9ef;
+    --text: #161a24; --text-2: #4c5468; --text-3: #7c8498;
+    --accent: #d9661c; --accent-2: #f0862a; --accent-press: #bf5713; --accent-soft: rgba(240,134,42,.14); --accent-ring: rgba(240,134,42,.38);
+    --accent-grad: linear-gradient(135deg, #f0862a, #e2681f);
+    --fabric: #4f7fc4; --yarn: #f0862a; --good: #2f9e6e; --gold: #d99a2b;
+    --sh-1: 0 1px 2px rgba(20,26,40,.06); --sh-2: 0 4px 16px rgba(20,26,40,.08); --sh-3: 0 18px 50px -12px rgba(20,26,40,.25);
+    --glow: 0 6px 18px -6px rgba(217,102,28,.5); --sheen: none;
+    --sans: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+    --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+    --topbar-h: 60px; --insp-w: 380px;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1218; --bg-2: #141821; --card: #171b24;
+    --surface: #171b24; --surface-2: #1d222d; --surface-3: #252b38; --surface-solid: #171b24;
+    --glass: rgba(23,27,36,.82); --glass-bar: rgba(23,27,36,.9);
+    --border: #2b3240; --border-2: #3a4252; --hair: #232a36;
+    --text: #eef1f7; --text-2: #b2bacb; --text-3: #7f889c;
+    --accent: #f0862a; --accent-press: #d9661c; color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+  body::before, body::after { display: none !important; }
+  h1, h2, h3 { font-family: var(--display); }
+  :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+  /* top bar */
+  .topbar { flex: none; height: var(--topbar-h); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+    padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); background: var(--surface); border-bottom: 1px solid var(--border); position: relative; z-index: 20; }
+  .brand { display: inline-flex; align-items: center; gap: 9px; color: var(--text); text-decoration: none; justify-self: start; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--text); color: var(--surface); display: grid; place-items: center; }
+  .brand-mark svg { width: 20px; height: 20px; }
+  .brand-name { font: 720 19px/1 var(--display); letter-spacing: -.02em; }
+  .views { display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; }
+  .views button { display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--text-2); font: 600 13.5px var(--sans); padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+  .views button svg { width: 17px; height: 17px; }
+  .views button:hover { color: var(--text); }
+  .views button[aria-current="page"] { background: var(--surface); color: var(--text); box-shadow: var(--sh-1); }
+  .top-actions { justify-self: end; display: flex; align-items: center; gap: 8px; }
+  .icon-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); display: grid; place-items: center; cursor: pointer; }
+  .icon-btn svg { width: 18px; height: 18px; }
+  .pill-btn { display: inline-flex; align-items: center; gap: 7px; border-radius: 10px; padding: 8px 14px; font: 600 13.5px var(--sans); border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+  .pill-btn svg { width: 16px; height: 16px; }
+  .pill-btn.primary { background: var(--text); color: var(--surface); border-color: var(--text); }
+
+  /* studio: stage + inspector */
+  .workspace { flex: 1; min-height: 0; display: grid !important; align-items: stretch !important; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr) var(--insp-w) !important; gap: 0 !important; padding: 0 !important; max-width: none !important; margin: 0 !important; }
+  .workspace[hidden] { display: none !important; }
+  .side-col { display: none !important; }
+  .stage-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+  .stage-host { flex: 1; min-height: 0; position: relative; background: var(--stage-bg); overflow: hidden; }
+  .stage-host::after { display: none; }
+  #stage3dWrap { position: absolute; inset: 0; }
+  #stage3dWrap .stagecanvas { width: 100% !important; height: 100% !important; display: block; }
+  .ov-tl { left: 16px; top: 14px; }
+  .stage-tools { position: absolute; right: 14px; top: 12px; z-index: 4; display: flex; gap: 6px; }
+  .tool-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(40,30,20,.12);
+    background: rgba(255,255,255,.86); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); color: #1d1b19; font: 600 12.5px var(--sans); cursor: pointer; box-shadow: var(--sh-1); }
+  .tool-btn svg { width: 15px; height: 15px; }
+  .tool-btn:hover { background: #fff; }
+  .stage-tools .menu { right: 0; left: auto; top: calc(100% + 6px); }
+  .now-card.ov-tr { top: auto; right: auto; left: 16px; bottom: 16px; max-width: min(320px, 70%); text-align: left; align-items: stretch; pointer-events: auto;
+    background: rgba(255,255,255,.88); border: 1px solid rgba(40,30,20,.1); border-radius: 14px; padding: 12px 14px; box-shadow: var(--sh-2); }
+  .now-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .now-card .lbl { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: rgba(45,32,22,.55); font-weight: 600; }
+  .now-card .val { font: 720 22px/1 var(--display); color: #1d1b19; margin: 0; }
+  .now-card .desc { font-size: 12.5px; color: rgba(29,27,25,.75); margin-top: 6px; line-height: 1.45; text-align: left; }
+  .now-card .learn-now { margin-top: 10px; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; pointer-events: auto; background: var(--accent-grad); color: #fff; border: 0; border-radius: 999px; padding: 6px 12px; font: 650 12.5px var(--sans); }
+  .now-card .learn-now svg { width: 12px; height: 12px; }
+  .hint3d { left: 50%; transform: translateX(-50%); bottom: 16px; top: auto; }
+  .transport { flex: none; display: flex; align-items: center; gap: 14px; padding: 10px 16px !important; border-top: 1px solid var(--border); background: var(--surface); }
+  .transport .controls { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0; }
+  .transport .scrub { flex: 1; min-width: 80px; margin: 0; }
+  .transport .counter { font-size: 12.5px; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .speed-sel { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+  .speed-sel select { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 4px 6px; color: var(--text); font: inherit; }
+  .tbtn { width: 36px; height: 36px; }
+  .tbtn.play { width: 44px; height: 44px; }
+
+  .inspector { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--border); }
+  .tabs { flex: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin: 12px 14px 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; }
+  .tabs button { border: 0; background: transparent; color: var(--text-2); font: 600 13px var(--sans); padding: 7px 4px; border-radius: 8px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--sh-1); }
+  .pane { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px 22px; display: flex; flex-direction: column; gap: 14px; }
+  .pane[hidden] { display: none; }
+  .pane-intro h2 { margin: 0; font-size: 19px; font-weight: 720; letter-spacing: -.02em; text-wrap: balance; }
+  .pane-intro p { margin: 4px 0 0; color: var(--text-2); font-size: 13px; }
+  .pane h3 { margin: 0 0 8px; font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+  #patternInput { min-height: 220px; resize: vertical; width: 100%; }
+  .pane .btn-primary { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .pane .btn-primary svg { width: 16px; height: 16px; flex: none; }
+  .dropzone .dz-ico { width: 26px; height: 26px; flex: none; }
+  .tbtn svg { width: 18px; height: 18px; }
+  .more { border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+  .more > summary { cursor: pointer; padding: 11px 14px; font-weight: 600; font-size: 13.5px; color: var(--text); list-style: none; display: flex; align-items: center; justify-content: space-between; }
+  .more > summary::-webkit-details-marker { display: none; }
+  .more > summary::after { content: "+"; font: 600 17px var(--sans); color: var(--text-3); }
+  .more[open] > summary::after { content: "–"; }
+  .more > :not(summary) { margin: 0 14px 14px; }
+  .pane .steps { margin: 0 -18px; }
+
+  /* learn view */
+  .learn-view { flex: 1; min-height: 0; overflow-y: auto; }
+  .learn-view[hidden] { display: none; }
+  .learn-wrap { max-width: 1120px; margin: 0 auto; padding: 32px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)); }
+  .learn-hero h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); font-weight: 720; letter-spacing: -.03em; }
+  .learn-hero p { margin: 8px 0 0; max-width: 62ch; color: var(--text-2); font-size: 15px; line-height: 1.55; }
+  .learn-fam { margin: 30px 0 12px; font: 600 12px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+  .learn-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .learn-card { display: flex; flex-direction: column; text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: 14px; overflow: hidden; padding: 0; cursor: pointer; color: var(--text); font: inherit; transition: transform var(--t-fast), box-shadow var(--t-fast); }
+  .learn-card:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+  .learn-poster { position: relative; aspect-ratio: 16 / 10; background: #f3ece3; overflow: hidden; }
+  .learn-poster img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; z-index: 1; }
+  .learn-poster img + .abbr-art { display: none; }
+  .learn-poster .play-chip { z-index: 2; }
+  .learn-poster .abbr-art { position: absolute; inset: 0; display: grid; place-items: center; font: 720 34px var(--display); color: #fff; letter-spacing: -.02em; }
+  .learn-poster .play-chip { position: absolute; right: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,.92); color: #1d1b19; border-radius: 999px; padding: 4px 10px 4px 8px; font: 650 12px var(--sans); }
+  .learn-poster .play-chip svg { width: 11px; height: 11px; }
+  .learn-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .learn-body .n { display: flex; align-items: center; gap: 8px; font: 650 15.5px var(--display); letter-spacing: -.01em; }
+  .learn-body .ab { font: 700 11px var(--sans); color: var(--text-2); background: var(--surface-3); border-radius: 6px; padding: 2px 6px; }
+  .learn-body .d { color: var(--text-2); font-size: 13px; line-height: 1.45; }
+
+  /* tutorial video grid: generalised tiles (manifest "grid": [cols, rows]) */
+  .learn-video-wrap.grid video { width: calc(var(--cols, 2) * 100%) !important; height: calc(var(--rows, 2) * 100%) !important;
+    left: calc(var(--col, 0) * -100%) !important; top: calc(var(--row, 0) * -100%) !important; }
+  .learn-video-wrap.single .learn-angle-hint { display: none; }
+
+  @media (max-width: 980px) {
+    body { overflow: auto; height: auto; min-height: 100%; }
+    .workspace { grid-template-columns: 1fr !important; }
+    .stage-pane { height: 64vh; min-height: 360px; }
+    .inspector { border-left: 0; border-top: 1px solid var(--border); }
+    .pane { overflow: visible; }
+    .learn-view { overflow: visible; }
+    .topbar { grid-template-columns: auto 1fr auto; }
+    .views { justify-self: center; }
+  }
+  @media (max-width: 640px) {
+    .views button span, .pill-btn span, .tool-btn span { display: none; }
+    .views button { padding: 7px 10px; }
+    .transport { flex-wrap: wrap; gap: 8px 10px; }
+    .transport .scrub { order: 3; flex-basis: 100%; }
+    .now-card.ov-tr { max-width: calc(100% - 32px); }
+    .hint3d { display: none; }
+  }
+</style>
 </head>
 <body>
 
-<header class="appbar">
-  <div class="mark">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="9" r="6"/><path d="M12 15v6M9 19l3-2 3 2"/><path d="M9 9a3 3 0 0 1 6 0"/>
-    </svg>
+<header class="topbar">
+  <a class="brand" href="./" aria-label="YarnFlow home">
+    <span class="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21V8.5a3.5 3.5 0 0 1 7 0V10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M14 10c0 2-1.6 2.6-3 2" fill="none" stroke="var(--yarn)" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+    <span class="brand-name">YarnFlow</span>
+  </a>
+  <nav class="views" aria-label="Sections">
+    <button type="button" data-view="studio" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg><span>Studio</span></button>
+    <button type="button" data-view="learn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.5 5 8.5 4.5 4 4.5v13c4.5 0 6.5.5 8 2 1.5-1.5 3.5-2 8-2v-13c-4.5 0-6.5.5-8 2z"/><path d="M12 6.5v13"/></svg><span>Learn stitches</span></button>
+    <button type="button" id="communityBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.6a3.2 3.2 0 0 1 0 6.3M18 14.6a6.5 6.5 0 0 1 3.5 4.9"/></svg><span>Community</span></button>
+  </nav>
+  <div class="top-actions">
+    <button type="button" class="icon-btn" id="helpBtn" aria-label="How it works" title="How it works"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.8c0 1.7-2.4 2.1-2.4 3.7"/><path d="M12 17.2h.01"/></svg></button>
+    <button type="button" id="glossaryBtn" hidden>Glossary</button>
+    <button type="button" class="pill-btn primary" id="publishBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Publish</span></button>
   </div>
-  <div class="brand-txt"><b>YarnFlow</b><span>Crochet Studio</span></div>
-  <span class="pill-tag">Beta</span>
-  <div class="spacer"></div>
-  <button class="link-btn" id="glossaryBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.5 5 8.5 4.5 4 4.5v13c4.5 0 6.5.5 8 2 1.5-1.5 3.5-2 8-2v-13c-4.5 0-6.5.5-8 2z"/><path d="M12 6.5v13"/></svg>Glossary</button>
-  <button class="link-btn" id="communityBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M16.5 5.6a3.2 3.2 0 0 1 0 6.3M18 14.6a6.5 6.5 0 0 1 3.5 4.9"/></svg>Community</button>
-  <button class="link-btn" id="publishBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>Publish</button>
-  <button class="link-btn" id="helpBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.8c0 1.7-2.4 2.1-2.4 3.7"/><path d="M12 17.2h.01"/></svg>How it works</button>
 </header>
 
-<div class="workspace">
-
-  <!-- LEFT -->
-  <div class="left-col">
-    <section class="card acc">
-      <div class="card-head" role="button" tabindex="0" aria-expanded="true">
-        <div class="kicker">Step 1</div>
-        <h2>Your pattern</h2>
-        <p>Paste, upload, or edit — it updates live.</p>
-      </div>
-      <div class="card-body">
-        <label class="dropzone" id="dropzone" for="fileInput">
-          <svg class="dz-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 18v-6M9 15l3-3 3 3"/></svg>
-          <div class="dz-t"><b>Drop a .txt or .pdf</b> or click to browse<br><span>plain-text or PDF crochet pattern</span></div>
-          <input type="file" id="fileInput" accept=".txt,.md,.pdf" hidden />
-        </label>
-        <div class="import-url">
-          <input type="text" id="importUrl" placeholder="Paste a pattern URL or PDF link" spellcheck="false" />
-          <button id="importBtn" title="Fetch & parse">Import</button>
-        </div>
-        <div class="img2plan">
-          <label class="dropzone" id="imgDrop" for="imgInput">
-            <svg class="dz-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-            <div class="dz-t" id="imgDropTxt"><b>Or drop a photo</b> to recreate it<br><span>pick a medium below — crochet, LEGO…</span></div>
-            <input type="file" id="imgInput" accept="image/*" hidden />
-          </label>
-          <div class="plan-opts">
-            <select class="field" id="mediumSel"></select>
-            <button class="genbtn" id="genPlanBtn">Generate</button>
-            <label class="plan-res">Detail <input type="range" class="slider" id="planRes" min="8" max="48" step="2" value="22" /> <b id="planResVal">22</b></label>
-          </div>
-        </div>
-        <textarea id="patternInput" spellcheck="false" placeholder="Tip: name your sections so they assemble in 3D —&#10;&#10;HEAD&#10;Rnd 1: mr, 6 sc in ring (6)&#10;Rnd 2: inc x6 (12)&#10;&#10;BODY&#10;Rnd 1: mr, 6 sc in ring (6)…&#10;&#10;ARMS (make 2)&#10;Rnd 1: mr, 6 sc in ring (6)…"></textarea>
-        <div class="edit-row">
-          <span class="pp-status" id="ppStatus"><span class="dot"></span>—</span>
-          <label class="switch"><input type="checkbox" id="liveEdit" checked /> Live</label>
-        </div>
-        <div class="samples" id="samples"></div>
-        <button class="btn-primary" id="loadBtn">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M3 5h4M6 17v4M4 19h4"/><path d="M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>
-          Visualize
-        </button>
-      </div>
-    </section>
-
-    <section class="card acc collapsed">
-      <div class="card-head" role="button" tabindex="0" aria-expanded="false">
-        <div class="kicker">Step 2</div>
-        <h2>Yarn &amp; hook</h2>
-        <p>Tune the materials — both views update.</p>
-      </div>
-      <div class="card-body">
-        <div class="ctl">
-          <div class="cap"><label>Colour</label><b id="colorName">Rose</b></div>
-          <div class="swatches" id="swatches"></div>
-          <div class="color-custom">
-            <input type="color" id="yarnColor" value="#e0608a" />
-            <span class="lbl">custom colour</span>
-          </div>
-        </div>
-        <div class="ctl">
-          <div class="cap"><label>Fibre</label><b id="typeName">Wool</b></div>
-          <select class="field" id="yarnType">
-            <option value="cotton">Cotton — matte &amp; crisp</option>
-            <option value="wool" selected>Wool — soft, slight halo</option>
-            <option value="acrylic">Acrylic — smooth &amp; shiny</option>
-            <option value="chenille">Chenille — plush, velvety</option>
-          </select>
-        </div>
-        <div class="ctl">
-          <div class="cap"><label>Weight</label><b id="weightName">Worsted (4)</b></div>
-          <input type="range" class="slider" id="yarnWeight" min="0" max="5" step="1" value="4" />
-        </div>
-        <div class="ctl">
-          <div class="cap"><label>Hook size</label><b id="hookName">5.0 mm</b></div>
-          <input type="range" class="slider" id="hookSize" min="2" max="10" step="0.5" value="5" />
-        </div>
-        <div class="gauge">
-          <div><div class="big" id="gaugeNum">—<small> sts/10cm</small></div></div>
-          <div class="div"></div>
-          <div class="meta" id="gaugeMeta">—</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card acc collapsed">
-      <div class="card-head" role="button" tabindex="0" aria-expanded="false">
-        <div class="kicker">Step 3</div>
-        <h2>Design the look</h2>
-        <p>Recolour your make — by row, or stitch by stitch.</p>
-      </div>
-      <div class="card-body">
-        <div class="ctl">
-          <div class="cap"><label>Paint colour</label><b id="paintName">Rose</b></div>
-          <div class="swatches" id="paintSwatches"></div>
-          <div class="color-custom">
-            <input type="color" id="paintColor" value="#e0608a" />
-            <span class="lbl">custom paint colour</span>
-          </div>
-        </div>
-        <div class="seg-mode" id="paintModeWrap">
-          <button class="modebtn active" id="modeOff" data-mode="off">Off</button>
-          <button class="modebtn" id="modeRow" data-mode="row">Paint row</button>
-          <button class="modebtn" id="modeStitch" data-mode="stitch">Paint stitch</button>
-        </div>
-        <p class="edit-hint" id="editHint">Turn on a paint mode, then click the piece in either view.</p>
-        <div class="design-actions">
-          <button class="mini-btn" id="stripeBtn" title="Auto-stripe every 2 rows with the last two paints">Auto-stripe</button>
-          <button class="mini-btn" id="clearPaintBtn" title="Reset all custom colours">Reset colours</button>
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <!-- RIGHT -->
-  <div class="stage-wrap">
-    <section class="card stage-card">
-      <div class="stage-bar">
-        <div class="stage-title"><span class="st-name">3D Studio</span><span class="st-sub">textured · orbit · live</span></div>
-        <div class="meta-right">
-          <button class="finish" id="finishBtn">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-            Finished piece
-          </button>
-          <button class="finish" id="shareBtn" title="Copy a link to this exact make">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
-            Share
-          </button>
+<div class="workspace" id="viewStudio">
+  <section class="stage-pane" aria-label="3D studio">
+    <div class="stage-host">
+      <canvas id="stage" width="2" height="2" style="display:none"></canvas>
+      <div class="stage" id="stage3dWrap">
+        <canvas id="stage3d" class="stagecanvas"></canvas>
+        <div class="ov ov-tl"><span class="badge2" id="rowPill3d">Row <b>—</b></span><span class="badge2" id="progPill3d"><b>0</b>%</span></div>
+        <div class="stage-tools">
+          <button type="button" class="tool-btn" id="finishBtn" title="Show the finished piece"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><span>Finished</span></button>
+          <button type="button" class="tool-btn" id="shareBtn" title="Copy a link to this exact make"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg><span>Share</span></button>
           <div class="menu-wrap">
-            <button class="finish" id="exportBtn" title="Export image or embed">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-              Export
-            </button>
+            <button type="button" class="tool-btn" id="exportBtn" title="Export image or embed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>Export</span></button>
             <div class="menu" id="exportMenu">
               <button data-act="png">Save image (PNG)</button>
               <button data-act="embed">Copy embed code</button>
@@ -1040,42 +1080,142 @@
             </div>
           </div>
         </div>
-      </div>
-      <div class="stage-host">
-        <canvas id="stage" width="2" height="2" style="display:none"></canvas>
-        <div class="stage" id="stage3dWrap">
-          <canvas id="stage3d" class="stagecanvas"></canvas>
-          <div class="ov ov-tl"><span class="badge2" id="rowPill3d">Row <b>—</b></span><span class="badge2" id="progPill3d"><b>0</b>%</span></div>
-          <div class="ov ov-tr"><div class="lbl">Now stitching</div><div class="val" id="nowAbbr">—</div><div class="desc" id="nowDesc">Load a pattern to begin.</div><button class="learn-now" id="learnNowBtn">▶ Learn this stitch</button></div>
-          <div class="ov hint3d">drag to orbit · scroll to zoom · right-drag to pan</div>
+        <div class="now-card ov ov-tr">
+          <div class="now-head"><span class="lbl">Now stitching</span><span class="val" id="nowAbbr">—</span></div>
+          <div class="desc" id="nowDesc">Load a pattern to begin.</div>
+          <button type="button" class="learn-now" id="learnNowBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></svg>Watch how</button>
         </div>
+        <div class="ov hint3d">Drag to orbit · scroll to zoom · right-drag to pan</div>
       </div>
-      <div class="transport">
-        <input type="range" class="scrub" id="scrub" min="0" max="0" value="0" step="0.01" />
-        <div class="controls">
-          <button class="tbtn" id="toStart" title="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20L9 12l10-8zM5 19V5"/></svg></button>
-          <button class="tbtn" id="prev" title="Previous"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
-          <button class="tbtn play" id="play" title="Play / pause"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
-          <button class="tbtn" id="next" title="Next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
-          <span class="counter">Stitch <b id="curN">0</b> / <span id="totN">0</span></span>
-          <div class="ctrl-right">
-            <div class="speed-sel">Speed
-              <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2.5">2.5×</option><option value="5">5×</option></select>
-            </div>
+    </div>
+    <div class="transport">
+      <div class="controls">
+        <button class="tbtn" id="toStart" title="Back to the start" aria-label="Back to the start"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 20L9 12l10-8zM5 19V5"/></svg></button>
+        <button class="tbtn" id="prev" title="Previous stitch" aria-label="Previous stitch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <button class="tbtn play" id="play" title="Play / pause" aria-label="Play or pause"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+        <button class="tbtn" id="next" title="Next stitch" aria-label="Next stitch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div>
+      <input type="range" class="scrub" id="scrub" min="0" max="0" value="0" step="0.01" aria-label="Progress through the pattern" />
+      <span class="counter">Stitch <b id="curN">0</b> of <span id="totN">0</span></span>
+      <label class="speed-sel">Speed
+        <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2.5">2.5×</option><option value="5">5×</option></select>
+      </label>
+    </div>
+  </section>
+
+  <aside class="inspector" aria-label="Pattern and materials">
+    <div class="tabs" role="tablist" aria-label="Panels">
+      <button role="tab" type="button" id="tab-pattern" aria-controls="pane-pattern" aria-selected="true">Pattern</button>
+      <button role="tab" type="button" id="tab-yarn" aria-controls="pane-yarn" aria-selected="false">Yarn</button>
+      <button role="tab" type="button" id="tab-colours" aria-controls="pane-colours" aria-selected="false">Colours</button>
+      <button role="tab" type="button" id="tab-steps" aria-controls="pane-steps" aria-selected="false">Steps</button>
+    </div>
+
+    <div class="pane" role="tabpanel" id="pane-pattern" aria-labelledby="tab-pattern">
+      <div class="pane-intro"><h2>Your pattern</h2><p>Type or paste it. The model rebuilds as you write.</p></div>
+      <textarea id="patternInput" spellcheck="false" placeholder="Row 1: ch 14&#10;Row 2: sc in 2nd ch from hook, sc across (13)&#10;&#10;Name sections to build a figure:&#10;HEAD&#10;Rnd 1: mr, 6 sc in ring (6)"></textarea>
+      <div class="edit-row">
+        <span class="pp-status" id="ppStatus"><span class="dot"></span>—</span>
+        <label class="switch"><input type="checkbox" id="liveEdit" checked /> Live</label>
+      </div>
+      <button class="btn-primary" id="loadBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3v4M3 5h4M6 17v4M4 19h4"/><path d="M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5z"/></svg>Build it in 3D</button>
+      <div class="group"><h3>Start from an example</h3><div class="samples" id="samples"></div></div>
+      <details class="more">
+        <summary>Import a pattern from a file or link</summary>
+        <label class="dropzone" id="dropzone" for="fileInput">
+          <svg class="dz-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 18v-6M9 15l3-3 3 3"/></svg>
+          <div class="dz-t"><b>Drop a .txt or .pdf</b> or click to browse<br><span>Plain-text or PDF crochet patterns</span></div>
+          <input type="file" id="fileInput" accept=".txt,.md,.pdf" hidden />
+        </label>
+        <div class="import-url">
+          <input type="text" id="importUrl" placeholder="Pattern web page or PDF link" spellcheck="false" aria-label="Pattern link" />
+          <button id="importBtn" title="Fetch and read the pattern">Import</button>
+        </div>
+      </details>
+      <details class="more">
+        <summary>Turn a photo into a pattern</summary>
+        <div class="img2plan">
+          <label class="dropzone" id="imgDrop" for="imgInput">
+            <svg class="dz-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <div class="dz-t" id="imgDropTxt"><b>Drop a photo</b> or click to choose<br><span>Then pick what to make it in</span></div>
+            <input type="file" id="imgInput" accept="image/*" hidden />
+          </label>
+          <div class="plan-opts">
+            <select class="field" id="mediumSel" aria-label="Make it in"></select>
+            <button class="genbtn" id="genPlanBtn">Generate</button>
+            <label class="plan-res">Detail <input type="range" class="slider" id="planRes" min="8" max="48" step="2" value="22" /> <b id="planResVal">22</b></label>
           </div>
         </div>
-      </div>
-    </section>
+      </details>
+    </div>
 
-    <section class="card">
-      <div class="card-head" style="padding:20px 20px 15px;border-bottom:.5px solid var(--border)"><h2 style="font-size:17px">Step-by-step</h2></div>
+    <div class="pane" role="tabpanel" id="pane-yarn" aria-labelledby="tab-yarn" hidden>
+      <div class="pane-intro"><h2>Yarn &amp; hook</h2><p>Both the 3D model and the stitch counts follow these.</p></div>
+      <div class="ctl">
+        <div class="cap"><label>Colour</label><b id="colorName">Rose</b></div>
+        <div class="swatches" id="swatches"></div>
+        <div class="color-custom"><input type="color" id="yarnColor" value="#e0608a" /><span class="lbl">Custom colour</span></div>
+      </div>
+      <div class="ctl">
+        <div class="cap"><label for="yarnType">Fibre</label><b id="typeName">Wool</b></div>
+        <select class="field" id="yarnType">
+          <option value="cotton">Cotton — matte &amp; crisp</option>
+          <option value="wool" selected>Wool — soft, slight halo</option>
+          <option value="acrylic">Acrylic — smooth &amp; shiny</option>
+          <option value="chenille">Chenille — plush, velvety</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <div class="cap"><label for="yarnWeight">Weight</label><b id="weightName">Worsted (4)</b></div>
+        <input type="range" class="slider" id="yarnWeight" min="0" max="5" step="1" value="4" />
+      </div>
+      <div class="ctl">
+        <div class="cap"><label for="hookSize">Hook size</label><b id="hookName">5.0 mm</b></div>
+        <input type="range" class="slider" id="hookSize" min="2" max="10" step="0.5" value="5" />
+      </div>
+      <div class="gauge">
+        <div><div class="big" id="gaugeNum">—<small> sts/10cm</small></div></div>
+        <div class="div"></div>
+        <div class="meta" id="gaugeMeta">—</div>
+      </div>
+    </div>
+
+    <div class="pane" role="tabpanel" id="pane-colours" aria-labelledby="tab-colours" hidden>
+      <div class="pane-intro"><h2>Colour your make</h2><p>Pick a colour, choose row or stitch, then click the model.</p></div>
+      <div class="ctl">
+        <div class="cap"><label>Paint colour</label><b id="paintName">Rose</b></div>
+        <div class="swatches" id="paintSwatches"></div>
+        <div class="color-custom"><input type="color" id="paintColor" value="#e0608a" /><span class="lbl">Custom paint colour</span></div>
+      </div>
+      <div class="seg-mode" id="paintModeWrap">
+        <button class="modebtn active" id="modeOff" data-mode="off">Off</button>
+        <button class="modebtn" id="modeRow" data-mode="row">Paint a row</button>
+        <button class="modebtn" id="modeStitch" data-mode="stitch">Paint a stitch</button>
+      </div>
+      <p class="edit-hint" id="editHint">Turn on a paint mode, then click the piece.</p>
+      <div class="design-actions">
+        <button class="mini-btn" id="stripeBtn" title="Stripe every 2 rows with the last two paints">Auto-stripe</button>
+        <button class="mini-btn" id="clearPaintBtn" title="Reset all custom colours">Reset colours</button>
+      </div>
+    </div>
+
+    <div class="pane" role="tabpanel" id="pane-steps" aria-labelledby="tab-steps" hidden>
+      <div class="pane-intro"><h2>Step by step</h2><p>Every row of your pattern. Click one to jump there.</p></div>
       <div class="steps" id="steps"></div>
       <div class="legend" id="legend"></div>
-    </section>
-
-    <footer class="note">2D tutorial is a clean schematic for learning · 3D studio uses procedural yarn textures, studio lighting &amp; reflections · parses ch, sc, hdc, dc, tr, sl&nbsp;st, inc, dec, magic&nbsp;ring</footer>
-  </div>
+    </div>
+  </aside>
 </div>
+
+<main class="learn-view" id="viewLearn" hidden>
+  <div class="learn-wrap">
+    <header class="learn-hero">
+      <h1>Learn the stitches</h1>
+      <p>Each one is filmed in 3D: where the hook goes, every yarn over, and what's on your hook after each move. Pick a stitch to watch it.</p>
+    </header>
+    <div id="learnGrid"></div>
+  </div>
+</main>
 
 <div class="toast" id="toast"></div>
 
@@ -2354,8 +2494,13 @@ function buildStudioGeometry(){
   ball.position.set(-size.x/2-lay.sp*1.6,lay.sp*0.7,lay.sp*1.5);Studio.ball=ball;Studio.group.add(ball);
   // working strand (a real plied strand from the ball to the hook)
   Studio.strand=yarnMesh(new THREE.LineCurve3(new THREE.Vector3(),new THREE.Vector3(0,1,0)),radius,false,8,Studio.yarnMat,{halo:false,fibres:0,radial:8,hairs:0});Studio.group.add(Studio.strand);
-  // frame camera so the whole make fits (fov 40°, allow for figure height)
-  const distH=size.y*1.374, distW=size.x*0.793, dist=Math.max(distH,distW,8)*1.14+size.z*0.6;
+  Studio.frameSize=size.clone(); Studio.userMoved=false; frameStudioCamera();
+}
+// frame the camera so the whole make fits (fov 40°, allow for figure height) at the stage's
+// current shape; re-run on resize until the viewer orbits the camera themselves
+function frameStudioCamera(){
+  const size=Studio.frameSize; if(!size) return;
+  const distH=size.y*1.374, distW=size.x*1.374/Math.max(.5,Studio.camera.aspect), dist=Math.max(distH,distW,8)*1.14+size.z*0.6;
   Studio.camera.position.set(dist*0.28,size.y*0.52,dist);
   Studio.controls.target.set(0,size.y*0.5,0);Studio.controls.update();
 }
@@ -2635,7 +2780,9 @@ function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t
 
 // ---- 3D is the only view ----------------------------------------------
 function setView(){ App.view="3d"; initStudio();resize3D();buildStudioGeometry(); }
-function resize3D(){if(!Studio.ready)return;const cv=Studio.renderer.domElement,w=cv.clientWidth||1040,h=w*(600/1040);Studio.renderer.setSize(w,h,false);Studio.camera.aspect=w/h;Studio.camera.updateProjectionMatrix();}
+function resize3D(){if(!Studio.ready)return;const cv=Studio.renderer.domElement,host=cv.parentElement,w=(host&&host.clientWidth)||cv.clientWidth||1040,h=(host&&host.clientHeight)||w*(600/1040);Studio.renderer.setSize(w,h,false);Studio.camera.aspect=w/h;Studio.camera.updateProjectionMatrix();
+  if(!Studio.userMoved) frameStudioCamera();
+  if(!Studio.watchingOrbit&&Studio.controls){ Studio.watchingOrbit=true; Studio.controls.addEventListener("start",()=>{ Studio.userMoved=true; }); }}
 
 // ---- wiring ------------------------------------------------------------
 document.getElementById("loadBtn").addEventListener("click",()=>loadPattern(document.getElementById("patternInput").value));
@@ -2718,7 +2865,7 @@ async function readPdfFile(file){
   }
 }
 
-document.getElementById("helpBtn").addEventListener("click",()=>toast("Edit the pattern, tune yarn & hook, then open the 3D Studio and orbit"));
+document.getElementById("helpBtn").addEventListener("click",()=>toast("Write or paste a pattern in Pattern, set yarn and hook in Yarn, then press play. Learn stitches has a 3D video for each stitch."));
 window.addEventListener("keydown",e=>{if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT")return;if(e.code==="Space"){e.preventDefault();App.playing?pause():play();}if(e.code==="ArrowRight")document.getElementById("next").click();if(e.code==="ArrowLeft")document.getElementById("prev").click();});
 window.addEventListener("resize",()=>{resize3D();});
 
@@ -2731,7 +2878,7 @@ SWATCH_COLORS.forEach(([name,hex])=>{const d=document.createElement("div");d.cla
 document.getElementById("paintColor").addEventListener("input",e=>{App.paintColor=e.target.value;setText("paintName","Custom");[...paintSwWrap.children].forEach(c=>c.classList.remove("sel"));});
 function setPaintMode(mode){App.paintMode=mode;
   ["off","row","stitch"].forEach(m=>document.getElementById("mode"+m[0].toUpperCase()+m.slice(1)).classList.toggle("active",m===mode));
-  document.getElementById("stage2dWrap").classList.toggle("painting",mode!=="off");
+  document.getElementById("stage2dWrap")?.classList.toggle("painting",mode!=="off");
   document.getElementById("stage3dWrap").classList.toggle("painting",mode!=="off");
   setText("editHint", mode==="off" ? "Turn on a paint mode, then click the piece in either view."
     : mode==="row" ? "Click any stitch to paint its whole row." : "Click individual stitches to paint them.");
@@ -3299,7 +3446,8 @@ function openLearn(key){
 // Missing files or a failed load use the live 3D scene.
 const TUTORIAL_YARN={color:"#e0608a",type:"wool"};
 let TUTORIAL_MANIFEST={};
-fetch("assets/tutorials/manifest.json").then(r=>r.ok?r.json():{}).then(m=>{TUTORIAL_MANIFEST=m||{};}).catch(()=>{});
+fetch("assets/tutorials/manifest.json").then(r=>r.ok?r.json():{}).then(m=>{TUTORIAL_MANIFEST=m||{};
+  const lv=document.getElementById("viewLearn"); if(lv&&!lv.hidden&&typeof buildLearnGrid==="function") buildLearnGrid(); }).catch(()=>{});
 function learnVideoOk(key){ if(Learn.noVideo) return false; if(TUTORIAL_MANIFEST[key]) return true;
   return String(App.paintColor||settings.color).toLowerCase()===TUTORIAL_YARN.color&&settings.type===TUTORIAL_YARN.type; }
 function learnShowVideo(on){ const v=document.getElementById("learnVideo");
@@ -3365,7 +3513,8 @@ function learnCueTick(v){
 function learnSetView(i){ const views=Learn.views||[]; if(!views.length) return;
   Learn.view=((i%views.length)+views.length)%views.length;
   const wrap=document.getElementById("learnVideoWrap");
-  wrap.style.setProperty("--col",Learn.view%2); wrap.style.setProperty("--row",Math.floor(Learn.view/2));
+  const cols=(Learn.grid||[2,2])[0];
+  wrap.style.setProperty("--col",Learn.view%cols); wrap.style.setProperty("--row",Math.floor(Learn.view/cols));
   document.querySelectorAll("#learnViews .learn-view-btn").forEach(b=>b.classList.toggle("on",+b.dataset.v===Learn.view));
   if(Learn.cueShown) learnShowCue(Learn.cueShown); }
 (function(){ const wrap=document.getElementById("learnVideoWrap"); let x0=null;
@@ -3385,9 +3534,11 @@ function learnStartLive(key){
 function learnStartVideo(key){
   const m=TUTORIAL_MANIFEST[key], v=document.getElementById("learnVideo"), base="assets/tutorials/"+key+(m?".views":"");
   Learn.mode="video"; learnShowVideo(true);
-  Learn.views=m&&m.views||null;
-  document.getElementById("learnVideoWrap").classList.toggle("grid",!!Learn.views);
-  const vb=document.getElementById("learnViews"); vb.hidden=!Learn.views;
+  Learn.views=m&&m.views||null; Learn.grid=m&&m.grid||[2,2];
+  const vw=document.getElementById("learnVideoWrap"), single=!Learn.views||Learn.views.length<2;
+  vw.classList.toggle("grid",!!Learn.views); vw.classList.toggle("single",single);
+  vw.style.setProperty("--cols",Learn.grid[0]); vw.style.setProperty("--rows",Learn.grid[1]);
+  const vb=document.getElementById("learnViews"); vb.hidden=single;
   vb.innerHTML=(Learn.views||[]).map((n,i)=>`<button class="learn-view-btn" data-v="${i}">${n}</button>`).join("");
   vb.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>learnSetView(+b.dataset.v)));
   learnSetView(0);
@@ -4256,6 +4407,42 @@ function paintSideMakes(posts){
     renderThumb(el.querySelector("canvas"),p.state);
     el.addEventListener("click",()=>{ applyState(p.state); toast("Loaded “"+p.title+"”"); window.scrollTo({top:0,behavior:"smooth"}); }); });
 }
+// ---- layout v2: views, inspector tabs, the Learn page ----------------------
+function showView(v){
+  const studio=v!=="learn";
+  document.getElementById("viewStudio").hidden=!studio; document.getElementById("viewLearn").hidden=studio;
+  document.querySelectorAll(".views [data-view]").forEach(b=>{ if(b.dataset.view===v) b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); });
+  if(studio) requestAnimationFrame(resize3D); else buildLearnGrid();
+  try{ history.replaceState(null,"",studio?location.pathname+location.search:"#learn"); }catch(e){}
+}
+document.querySelectorAll(".views [data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
+document.getElementById("glossaryBtn").addEventListener("click",()=>showView("learn"));
+(function initTabs(){
+  const tabs=[...document.querySelectorAll(".tabs [role=tab]")];
+  const select=t=>{ tabs.forEach(x=>{ const on=x===t; x.setAttribute("aria-selected",String(on)); x.tabIndex=on?0:-1;
+    document.getElementById(x.getAttribute("aria-controls")).hidden=!on; }); };
+  tabs.forEach((t,i)=>{ t.addEventListener("click",()=>select(t));
+    t.addEventListener("keydown",e=>{ const d=e.key==="ArrowRight"?1:e.key==="ArrowLeft"?-1:0; if(!d) return; e.preventDefault();
+      const n=tabs[(i+d+tabs.length)%tabs.length]; select(n); n.focus(); }); });
+  select(tabs[0]);
+})();
+function buildLearnGrid(){
+  const grid=document.getElementById("learnGrid"); if(!grid||grid.dataset.built==="1"&&grid.dataset.m===JSON.stringify(Object.keys(TUTORIAL_MANIFEST))) return;
+  const LEGACY=["ch","sl","sc","hdc","dc"];                     // single-angle captures (Rose wool)
+  const fams={}; Object.keys(STITCHES).forEach(k=>{ const f=STITCH_FAMILY[k]||"Other"; (fams[f]=fams[f]||[]).push(k); });
+  grid.innerHTML=Object.entries(fams).map(([fam,keys])=>`<h2 class="learn-fam">${escapeHtml(fam)}</h2><div class="learn-cards">`+keys.map(k=>{
+    const st=STITCHES[k], poster=TUTORIAL_MANIFEST[k]?`assets/tutorials/${k}.views.jpg`:LEGACY.includes(k)?`assets/tutorials/${k}.jpg`:"";
+    return `<button class="learn-card" data-learn="${k}" type="button">
+      <span class="learn-poster" style="background:${st.color}">${poster?`<img src="${poster}" alt="" loading="lazy" onerror="this.remove()">`:""}<span class="abbr-art">${k.toUpperCase()}</span>
+        <span class="play-chip"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>${TUTORIAL_MANIFEST[k]||LEGACY.includes(k)?"Watch":"Interactive"}</span></span>
+      <span class="learn-body"><span class="n">${escapeHtml(st.name)}<span class="ab">${k.toUpperCase()}</span></span><span class="d">${escapeHtml(st.desc)}</span></span>
+    </button>`; }).join("")+`</div>`).join("");
+  grid.querySelectorAll("[data-learn]").forEach(b=>b.addEventListener("click",()=>openLearn(b.dataset.learn)));
+  grid.dataset.built="1"; grid.dataset.m=JSON.stringify(Object.keys(TUTORIAL_MANIFEST));
+}
+if(window.ResizeObserver) new ResizeObserver(()=>resize3D()).observe(document.querySelector(".stage-host"));
+if(location.hash==="#learn") showView("learn");
+
 // ---- boot --------------------------------------------------------------
 updateGaugeReadout();requestAnimationFrame(masterLoop);
 initStudio();resize3D();

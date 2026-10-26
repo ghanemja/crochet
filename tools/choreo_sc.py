@@ -63,10 +63,38 @@ def frame_from(yh, zh):
 # index raised — the working yarn runs over it, just behind the fingertip
 LEFT_RIG = hand_rig.skeleton(hand_rig.LEFT_HOLD, "L")
 L_ROT = frame_from(v(0.42, 0.1, 1.0), v(-0.25, -1.0, 0.35))  # back of the hand to the camera: thumb in front, fingers behind the work
-F_WANT = v(-3.6 * P, 6.0, 13.0)                                # where the yarn crosses the finger
-L_POS = F_WANT - L_ROT @ local_pt(LEFT_RIG, "index_dip", lift=-(0.009 * HAND_SCALE / UNIT + R), side="L")
-F = F_WANT                                                     # the index finger the working yarn runs over
-F_TAIL = F + v(-5.0, 7.0, -16.0)                               # ...then down behind the hand to the ball
+F_WANT = v(-3.6 * P, 6.0, 13.0)                                # where the yarn crosses the index finger
+
+# The yarn's route through the left hand, the usual tensioning hold: over the index finger,
+# under the middle and ring fingers (palm side), once round the pinky, then off to the ball.
+# Built in the hand's frame (metres, scaled) from the finger joints; each point sits a finger
+# radius plus a yarn radius off the bone, so the yarn lies on the skin.
+FINGER_R = {"index": 0.0085, "middle": 0.0088, "ring": 0.0082, "pinky": 0.0072}
+YARN_M = R * UNIT                                              # yarn radius in metres
+def hand_route_local():
+    if not HAND_PTS: return [np.array([0.0, 0.17, 0.0])]       # skeleton fallback: just over the index tip
+    J = {k: np.array(x) * HAND_SCALE for k, x in HAND_PTS["L"].items()}
+    across = nrm(J["pinky_knuckle"] - J["index_knuckle"]); back = np.array([0.0, 0.0, 1.0])
+    def ring(f, t, angles, slide=0.0):
+        """points round finger f's proximal phalanx at fraction t from the knuckle; angle 0 = back of
+        the finger, 90 = its pinky side, 180 = palm side; slide moves along the finger as it winds"""
+        k, pip = J[f + "_knuckle"], J[f + "_pip"]; ax = nrm(pip - k); c = k + (pip - k) * t
+        zf = nrm(back - ax * (back @ ax)); df = nrm(np.cross(ax, zf)); df = df if df @ across > 0 else -df
+        r = FINGER_R[f] * HAND_SCALE + YARN_M + 0.0004
+        return [c + ax * slide * (i / max(1, len(angles) - 1)) + r * (math.cos(math.radians(a)) * zf + math.sin(math.radians(a)) * df)
+                for i, a in enumerate(angles)]
+    pts = ring("index", 0.6, [-80, -30, 0, 40, 85, 140])        # comes in from the thumb side, over the top, down the far side
+    pts += ring("middle", 0.45, [180]) + ring("ring", 0.4, [180])  # under the middle and ring fingers
+    pts += ring("pinky", 0.45, [200, 150, 90, 30, -30, -90, -150, -200], slide=-0.008)   # once round the pinky
+    k = J["pinky_knuckle"]
+    pts += [k + np.array([-0.01, -0.035, -0.02])]               # off the palm, toward the wrist and the ball
+    return pts
+_route = hand_route_local()
+L_POS = F_WANT - L_ROT @ (_route[2] / UNIT)                    # put the top of the index wrap at F_WANT
+YARN_HAND = [L_POS + L_ROT @ (p / UNIT) for p in _route]
+F = YARN_HAND[0]                                               # where the working yarn reaches the hand
+F_TAIL = YARN_HAND[-1] + v(-6.0, 8.0, -20.0)                   # ...and on, out of frame, to the ball
+YARN_HAND = YARN_HAND + [F_TAIL]
 
 # ---------------------------------------------------------------- hook
 # local frame: tip at the origin, +Y up the shaft, throat (the notch the yarn sits in) on +X
@@ -262,10 +290,10 @@ def active_path(t, hk, st, p, dA=None, dB=D_B):
     pts += ringA[len(ringA) // 2:]
     behind = hk.tip[1] > 1.0                                     # hook tip is behind the work
     if st == 0:
-        pts += [BT, BT + v(-1.5, 1.5, 3.5), F, F_TAIL]
+        pts += [BT, BT + v(-1.5, 1.5, 3.5), *YARN_HAND]
     elif st == 1:                                                # yarn over: wrap grows over the top into the throat
         wr = wrap(hk, THROAT_D, 250, 250 - 300 * e)
-        pts += [BT] + list(wr) + [F, F_TAIL]
+        pts += [BT] + list(wr) + YARN_HAND
     elif st == 2:                                                # pull up: the caught bight comes through the hole
         s = ease((1.2 - hk.tip[1]) / 2.0)                        # 0 while the tip is behind, 1 once in front
         dB = lerp(THROAT_D, D_B, ease((p - 0.55) / 0.45))
@@ -273,12 +301,12 @@ def active_path(t, hk, st, p, dA=None, dB=D_B):
         wr = list(wrap(hk, dB, ain, aout))
         h1 = HOLE + v(0.55, 0, 0); h2 = HOLE + v(-0.55, 0, 0)
         pts += [BT, lerp(wr[0], h1 + v(0, 1.4, 0.1), s), lerp(wr[0], h1, s), lerp(wr[0], h1 + v(0, -1.4, 0.4), s)] + wr \
-             + [lerp(wr[-1], h2 + v(0, -1.4, 0.4), s), lerp(wr[-1], h2, s), lerp(wr[-1], h2 + v(0, 1.4, 0.1), s), BT + v(-1.2, 0.3, 0), F, F_TAIL]
+             + [lerp(wr[-1], h2 + v(0, -1.4, 0.4), s), lerp(wr[-1], h2, s), lerp(wr[-1], h2 + v(0, 1.4, 0.1), s), BT + v(-1.2, 0.3, 0), *YARN_HAND]
     elif st == 3:
         ringB = list(wrap(hk, dB, 25, -295))
         wr = wrap(hk, THROAT_D, 250, 250 - 300 * e)
         h1 = HOLE + v(0.55, 0, 0); h2 = HOLE + v(-0.55, 0, 0)
-        pts += [BT, h1 + v(0, 1.4, 0.1), h1, h1 + v(0, -1.4, 0.4)] + ringB + [h2 + v(0, -1.4, 0.4), h2, h2 + v(0, 1.4, 0.1), BT + v(-1.2, 0.3, 0)] + list(wr) + [F, F_TAIL]
+        pts += [BT, h1 + v(0, 1.4, 0.1), h1, h1 + v(0, -1.4, 0.4)] + ringB + [h2 + v(0, -1.4, 0.4), h2, h2 + v(0, 1.4, 0.1), BT + v(-1.2, 0.3, 0)] + list(wr) + YARN_HAND
     return pts, green
 
 ROW_XS = [3 * P, 2 * P, P, 0, -P, -2 * P, -3 * P]
@@ -314,7 +342,7 @@ def frame_strands(t):
         _, _, hk0 = hook_pose(4 * STEP_DUR + PULL_SPLIT * STEP_DUR)
         pre, g = riding(hk0, 1.0)
         dC = loop_d(hk, ANCHOR - v(P, 0, 0), D_A_MIN)
-        post = sc_static(-P, 0.0)[1:] + [E0 - v(P, 0, 0) + v(0, -0.6, 1.2)] + list(wrap(hk, dC, 25, -295)) + [BT - v(P, 0, 0), BT - v(P, 0, 0) + v(-1.5, 1.5, 3.5), F, F_TAIL]
+        post = sc_static(-P, 0.0)[1:] + [E0 - v(P, 0, 0) + v(0, -0.6, 1.2)] + list(wrap(hk, dC, 25, -295)) + [BT - v(P, 0, 0), BT - v(P, 0, 0) + v(-1.5, 1.5, 3.5), *YARN_HAND]
         a, b = spline(pre), spline(post)
         n = max(len(a), len(b)); a, b = resample(a, n=n), resample(b, n=n)
         # the loops slide toward the tip and off before the shape settles: delay the far end

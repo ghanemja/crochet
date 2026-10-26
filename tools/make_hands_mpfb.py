@@ -71,10 +71,10 @@ for side in ("R", "L"):
     zh = -nrm_ if (ring_tip - mid_k).dot(nrm_) > 0 else nrm_
     zh = (zh - yh * zh.dot(yh)).normalized(); xh = yh.cross(zh)
     to_local = Matrix((xh, yh, zh)).to_4x4() @ Matrix.Translation(-wrist)
-    # cut out the hand and ~16 cm of forearm (the cut stays out of frame)
+    # cut out the hand and ~28 cm of forearm (the cut stays out of frame)
     me = posed.copy(); me.name = "Hand" + side
     bm = bmesh.new(); bm.from_mesh(me)
-    kill = [v for v in bm.verts if (v.co - wrist).length > 0.3 or (v.co - wrist).dot(yh) < -0.16]
+    kill = [v for v in bm.verts if (v.co - wrist).length > 0.42 or (v.co - wrist).dot(yh) < -0.28]
     bmesh.ops.delete(bm, geom=kill, context="VERTS")
     # keep only the piece connected to this wrist (drops the other hand / body bits within range)
     bm.verts.ensure_lookup_table()
@@ -93,10 +93,10 @@ for side in ("R", "L"):
     sub = ob.modifiers.new("Sub", "SUBSURF"); sub.levels = 1; sub.render_levels = 2
     objs.append(ob)
     L = lambda p: list(to_local @ p)
-    points[side] = {"wrist": [0, 0, 0],
-                    "index_knuckle": L(idx_k), "index_pip": L(wpos(f"finger2-2.{side}")), "index_dip": L(wpos(f"finger2-3.{side}")),
-                    "index_tip": L(wpos(f"finger2-3.{side}", True)), "middle_tip": L(wpos(f"finger3-3.{side}", True)),
-                    "thumb_tip": L(wpos(f"finger1-3.{side}", True)), "middle_pip": L(wpos(f"finger3-2.{side}"))}
+    points[side] = {"wrist": [0, 0, 0]}
+    for fi, fname in enumerate(("thumb", "index", "middle", "ring", "pinky"), 1):   # every joint of every finger
+        points[side].update({fname + "_knuckle": L(wpos(f"finger{fi}-1.{side}")), fname + "_pip": L(wpos(f"finger{fi}-2.{side}")),
+                             fname + "_dip": L(wpos(f"finger{fi}-3.{side}")), fname + "_tip": L(wpos(f"finger{fi}-3.{side}", True))})
     print("HAND", side, len(me.vertices), "verts")
 
 bpy.data.libraries.write(os.path.join(OUT, "hands.blend"), set(objs), fake_user=True)

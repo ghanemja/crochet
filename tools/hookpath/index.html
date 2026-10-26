@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Hookpath</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Plan a crochet hook's motion in 3D — keyframes, camera shots and callouts — and export it as a file a renderer can follow.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,750&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a one-screen studio — 3D viewport and inspector side by side, timeline along the bottom (stacks on phones). */
+:root {
+  --bg: #eef0f4; --panel: #ffffff; --panel-2: #f5f6f9; --line: #d9dde6; --ink: #161a24; --ink-2: #4c5468; --ink-3: #7c8498;
+  --stage: #e8e3da; --stage-2: #f6f2ea;
+  --fabric: #4f7fc4; --yarn: #f0862a; --mark: #ffd84a; --key: #2f5ea8; --danger: #c2413b;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1218; --panel: #171b24; --panel-2: #1d222d; --line: #2b3240; --ink: #eef1f7; --ink-2: #b2bacb; --ink-3: #7f889c;
+  --stage: #1c1a17; --stage-2: #26231f; --key: #7ea6ec; --danger: #ef6b64; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1218; --panel: #171b24; --panel-2: #1d222d; --line: #2b3240; --ink: #eef1f7; --ink-2: #b2bacb; --ink-3: #7f889c;
+  --stage: #1c1a17; --stage-2: #26231f; --key: #7ea6ec; --danger: #ef6b64; color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--body); display: flex; flex-direction: column; overflow: hidden;
+  padding-left: max(0px, env(safe-area-inset-left, 0px)); padding-right: max(0px, env(safe-area-inset-right, 0px)); }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--key); outline-offset: 2px; }
+
+/* top bar */
+.bar { display: flex; align-items: center; gap: 14px; padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; min-width: 0; }
+.brand h1 { margin: 0; font: 750 21px/1 var(--display); letter-spacing: -.02em; display: flex; align-items: center; gap: 8px; }
+.brand h1 svg { flex: none; }
+.brand p { margin: 0; color: var(--ink-3); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btn { border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 13px; }
+.btn:hover { border-color: var(--ink-3); }
+.btn.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.btn.small { padding: 4px 9px; font-size: 12px; }
+.btn.danger { color: var(--danger); }
+.btn[aria-pressed="true"] { background: var(--key); border-color: var(--key); color: #fff; }
+
+/* main */
+.main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 300px; }
+.stage { position: relative; min-width: 0; min-height: 0; background: radial-gradient(120% 100% at 50% 0%, var(--stage-2), var(--stage)); }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.tools { position: absolute; left: 12px; top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+.seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 2px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.seg button { border: 0; background: transparent; border-radius: 7px; padding: 5px 10px; font-weight: 600; font-size: 12.5px; color: var(--ink-2); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.hint { position: absolute; left: 12px; bottom: 12px; right: 12px; display: flex; justify-content: flex-start; pointer-events: none; }
+.hint span { background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 12.5px; color: var(--ink-2); }
+.nums { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.num { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: rgba(255,255,255,.92); color: #1d1b19;
+  display: flex; align-items: center; justify-content: center; font: 700 11.5px var(--body); box-shadow: 0 1px 6px rgba(0,0,0,.2); }
+.num.target { background: var(--mark); }
+.cue { position: absolute; inset: 0; pointer-events: none; }
+.cue-text { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); max-width: 80%; padding: 7px 14px; border-radius: 999px; background: rgba(255,255,255,.95);
+  color: #1d1b19; font-weight: 600; font-size: 13.5px; box-shadow: 0 4px 18px rgba(0,0,0,.14); }
+.picking .stage canvas { cursor: crosshair; }
+
+/* inspector */
+.insp { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.insp h2 { margin: 0; font: 650 15px/1.2 var(--display); letter-spacing: -.01em; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.insp h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+#kfBody { display: flex; flex-direction: column; gap: 18px; }
+.empty { color: var(--ink-3); font-size: 13px; background: var(--panel-2); border: 1px dashed var(--line); border-radius: 10px; padding: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.field label { font-size: 12px; color: var(--ink-2); }
+.field input, .field textarea { width: 100%; border: 1px solid var(--line); background: var(--panel-2); border-radius: 7px; padding: 6px 8px; min-width: 0; }
+.field textarea { resize: vertical; min-height: 54px; }
+.xyz { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.xyz input { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+.xyz span { font: 600 10.5px var(--mono); color: var(--ink-3); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.note { font-size: 12px; color: var(--ink-3); margin: 0; }
+
+/* timeline */
+.tl { background: var(--panel); border-top: 1px solid var(--line); padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 6px; }
+.tl-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.time { font: 600 13px var(--mono); font-variant-numeric: tabular-nums; min-width: 112px; }
+.play { width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--ink); color: var(--panel); display: grid; place-items: center; }
+.track { position: relative; height: 60px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; touch-action: none; user-select: none; overflow: hidden; }
+.tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line); }
+.tick b { position: absolute; top: 2px; left: 4px; font: 500 10px var(--mono); color: var(--ink-3); }
+.kf { position: absolute; top: 24px; width: 14px; height: 14px; margin-left: -7px; transform: rotate(45deg); background: var(--key); border: 2px solid var(--panel); border-radius: 2px; cursor: grab; }
+.kf.sel { background: var(--yarn); }
+.kf.cam::after { content: ""; position: absolute; inset: 3px; background: var(--panel); border-radius: 50%; }
+.kf-label { position: absolute; top: 40px; transform: translateX(-50%); font-size: 10px; color: var(--ink-2); white-space: nowrap; pointer-events: none; }
+.head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--yarn); pointer-events: none; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+
+/* dialog */
+.dlg { position: fixed; inset: 0; background: rgba(10,12,18,.45); display: grid; place-items: center; padding: 16px; z-index: 20; }
+.dlg-card { background: var(--panel); color: var(--ink); border-radius: 14px; border: 1px solid var(--line); width: min(640px, 100%); max-height: 90%; display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.dlg-card h2 { margin: 0; font: 650 17px var(--display); }
+.dlg-card textarea { flex: 1; min-height: 260px; font: 12px/1.45 var(--mono); border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--panel-2); }
+.toast { position: fixed; left: 50%; bottom: calc(110px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--panel); padding: 8px 14px; border-radius: 9px; font-weight: 600; font-size: 13px; z-index: 30; }
+
+.dlg[hidden], .toast[hidden], .cue-text[hidden] { display: none; }
+@media (max-width: 820px) {
+  body { overflow: auto; }
+  .main { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 56vh) auto; }
+  .insp { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .brand p { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<header class="bar">
+  <div class="brand">
+    <h1><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21V8.5a3.5 3.5 0 0 1 7 0V10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M14 10c0 2-1.6 2.6-3 2" fill="none" stroke="#f0862a" stroke-width="2.4" stroke-linecap="round"/></svg>Hookpath</h1>
+    <p>Plan a crochet hook's motion, shot by shot, for a 3D tutorial</p>
+  </div>
+  <button class="btn" id="btnSample" type="button">Load sample</button>
+  <button class="btn" id="btnImport" type="button">Import</button>
+  <button class="btn" id="btnCopy" type="button">Copy JSON</button>
+  <button class="btn primary" id="btnExport" type="button">Export plan</button>
+  <input type="file" id="fileIn" accept=".json,application/json" hidden>
+</header>
+
+<div class="main">
+  <section class="stage" id="stage" aria-label="3D view">
+    <canvas id="view"></canvas>
+    <div class="nums" id="nums"></div>
+    <svg class="cue" id="cueSvg" aria-hidden="true"><circle id="cueRing" cx="0" cy="0" r="0" fill="none" stroke="#fff" stroke-width="3" style="filter:drop-shadow(0 0 2px rgba(0,0,0,.45))"/></svg>
+    <div class="cue-text" id="cueText" hidden></div>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Edit the hook">
+        <button type="button" id="mMove" aria-pressed="true">Move <kbd>W</kbd></button>
+        <button type="button" id="mRotate" aria-pressed="false">Rotate <kbd>E</kbd></button>
+      </div>
+      <div class="seg" role="group" aria-label="Camera">
+        <button type="button" id="cFree" aria-pressed="true">Free camera</button>
+        <button type="button" id="cPlan" aria-pressed="false">Planned shots</button>
+      </div>
+    </div>
+    <div class="hint"><span id="hint">Drag the hook's arrows to move its tip, or rotate it. Changes become a keyframe at the playhead.</span></div>
+  </section>
+
+  <aside class="insp" id="insp" aria-label="Keyframe">
+    <h2><span id="kfTitle">Keyframe</span><span class="row"><button class="btn small" id="kfAdd" type="button">+ Key <kbd>K</kbd></button></span></h2>
+    <div id="kfBody"></div>
+  </aside>
+</div>
+
+<footer class="tl">
+  <div class="tl-top">
+    <button class="play" id="play" type="button" aria-label="Play"><svg width="14" height="14" viewBox="0 0 14 14" id="playIcon"><path d="M3 1.5v11l9-5.5z" fill="currentColor"/></svg></button>
+    <span class="time" id="time">0.00 / 13.00 s</span>
+    <div class="legend">
+      <span class="chip"><span class="dot" style="background:var(--key)"></span>hook keyframe</span>
+      <span class="chip"><span class="dot" style="background:var(--key);box-shadow:inset 0 0 0 3px var(--panel)"></span>with a camera shot</span>
+      <span class="chip"><span class="dot" style="background:var(--yarn)"></span>selected</span>
+    </div>
+    <span style="margin-left:auto" class="row"><label class="chip" for="dur">Length</label><input id="dur" type="number" min="1" max="120" step="0.5" value="13" style="width:70px;border:1px solid var(--line);border-radius:7px;padding:4px 6px;background:var(--panel-2)"> s</span>
+  </div>
+  <div class="track" id="track" aria-label="Timeline"></div>
+</footer>
+
+<div class="dlg" id="dlg" hidden>
+  <div class="dlg-card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <h2 id="dlgTitle">Plan</h2>
+    <p class="note" id="dlgNote"></p>
+    <textarea id="dlgText" spellcheck="false"></textarea>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" id="dlgFile" type="button">Choose a file…</button>
+      <button class="btn" id="dlgClose" type="button">Close</button>
+      <button class="btn primary" id="dlgOk" type="button">Load</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+<script>
+"use strict";
+// ---------------------------------------------------------------- units & the work
+// Same space as the renderer (tools/choreo_sc.py): Z up, X along the row (worked right to left),
+// -Y toward the viewer, 1 unit = one yarn radius.
+const P = 4.6, H = 4.4, B = 1.45, RH = 1.15;          // stitch pitch, row height, V half-depth, hook shaft radius
+const FINGER = new THREE.Vector3(-3.6 * P, 6, 13);      // the left index finger the working yarn runs over
+const HOLES = [0, -P, -2 * P, -3 * P].map(x => new THREE.Vector3(x, 0, -H - 1.3));   // under each V: stitch 1..4
+const FMT = "hookpath/1";
+THREE.Object3D.DefaultUp.set(0, 0, 1);
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function scStatic(x, z) {     // way-points of one finished single crochet (right to left)
+  const zb = z - H;
+  return [V(x + .5*P, -.25, z + .15), V(x + .22*P, -B, z + .35), V(x - .22*P, -B, z + .35), V(x - .48*P, 0, z + .45),
+          V(x - .2*P, B, z + .3), V(x + .12*P, B*.9, z - .2), V(x + .18*P, .7, z - 1.6), V(x + .12*P, -.95, z - 2.6),
+          V(x + .05*P, 0, zb - 1.3), V(x - .05*P, 1.25, zb - .9), V(x - .15*P, 1, z - 2.2), V(x - .3*P, -.95, z - 1.4), V(x - .5*P, -.25, z + .15)];
+}
+const rowPts = (xs, z) => { const out = []; xs.forEach(x => out.push(...scStatic(x, z).slice(0, -1))); out.push(scStatic(xs[xs.length - 1], z).slice(-1)[0]); return out; };
+const chainPts = (xs, z) => { const out = []; xs.forEach(x => out.push(V(x+.5*P,-.25,z+.1), V(x+.2*P,-B,z+.3), V(x-.25*P,-B*.8,z+.35), V(x-.45*P,.4,z+.2), V(x-.15*P,B*.9,z-.1))); out.push(V(xs[xs.length-1]-.5*P,-.25,z+.1)); return out; };
+
+function hookProfile(y) {     // (centre x, radius) of the hook's cross-section y above the tip; throat on +x
+  const r = RH, lerp = (a, b, t) => a + (b - a) * t, ease = t => t * t * (3 - 2 * t);
+  if (y < .9*r) return [.12*r, r*.93*Math.sqrt(Math.max(0, 1 - (1 - y/(.9*r))**2)) + .02];
+  if (y < 1.55*r) return [.12*r, .93*r];
+  if (y < 1.95*r) { const t = (y - 1.55*r)/(.4*r); return [lerp(.12*r, -.42*r, t), lerp(.93*r, .5*r, t)]; }
+  if (y < 3*r) return [-.42*r, .5*r];
+  if (y < 5.2*r) { const t = ease((y - 3*r)/(2.2*r)); return [lerp(-.42*r, 0, t), lerp(.5*r, r, t)]; }
+  return [0, r];
+}
+function hookGeometry() {
+  const ys = []; for (let i = 0; i <= 70; i++) ys.push(i/70 * 5.6*RH); for (let i = 1; i <= 12; i++) ys.push(5.6*RH + i/12 * (60 - 5.6*RH));
+  const seg = 28, pos = [], idx = [];
+  ys.forEach(y => { const [cx, r] = hookProfile(y); for (let j = 0; j < seg; j++) { const a = j/seg*Math.PI*2; pos.push(cx + r*Math.cos(a), y, r*Math.sin(a)); } });
+  for (let i = 0; i < ys.length - 1; i++) for (let j = 0; j < seg; j++) {
+    const a = i*seg + j, b = i*seg + (j+1)%seg, c = a + seg, d = b + seg; idx.push(a, c, b, b, c, d); }
+  const tip = pos.length/3; pos.push(hookProfile(0)[0], 0, 0); for (let j = 0; j < seg; j++) idx.push(tip, (j+1)%seg, j);
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+
+// ---------------------------------------------------------------- scene
+const canvas = document.getElementById("view"), stage = document.getElementById("stage");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+if ("outputEncoding" in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(22, 1.6, 0.5, 2000);
+const LOOK = V(-.8*P, 0, -.4*H);
+camera.position.copy(LOOK).add(V(.3, -1, .8).normalize().multiplyScalar(150)); camera.lookAt(LOOK);
+const orbit = new THREE.OrbitControls(camera, canvas); orbit.target.copy(LOOK); orbit.enableDamping = true; orbit.update();
+scene.add(new THREE.HemisphereLight(0xfff6ec, 0x8a7f72, 0.85));
+const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(-30, -40, 60); scene.add(key);
+const rim = new THREE.DirectionalLight(0xffe7cc, 0.45); rim.position.set(20, 40, 30); scene.add(rim);
+
+const lin = hex => new THREE.Color(hex).convertSRGBToLinear();     // hex colours are sRGB; the renderer works in linear
+const fabricMats = [0.68, 1.0, 1.22].map(k => { const c = new THREE.Color("#4f7fc4"); if (k > 1) c.lerp(new THREE.Color(1, 1, 1), k - 1); else c.multiplyScalar(k);
+  return new THREE.MeshStandardMaterial({ color: c.convertSRGBToLinear(), roughness: .85 }); });
+const yarnMat = new THREE.MeshStandardMaterial({ color: lin("#f0862a"), roughness: .8 });
+const pickables = [];
+function tube(points, mat) {
+  const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points, false, "centripetal"), points.length * 10, 1, 10, false), mat);
+  scene.add(m); pickables.push(m); return m;
+}
+const XS = [3*P, 2*P, P, 0, -P, -2*P, -3*P];
+tube(rowPts(XS, -H), fabricMats[1]);                 // the row being worked into
+tube(rowPts(XS, -2*H), fabricMats[0]);               // older rows, darker
+tube(chainPts(XS, -3*H), fabricMats[0]);
+tube(rowPts([3*P, 2*P, P, 0], 0), fabricMats[2]);    // stitches already made in this row, lighter
+
+const hook = new THREE.Group(); scene.add(hook);    // pivot = the tip; local +Y up the shaft, +X = the throat
+const hookMesh = new THREE.Mesh(hookGeometry(), new THREE.MeshStandardMaterial({ color: lin("#d5dae2"), metalness: .35, roughness: .3 }));
+hook.add(hookMesh); pickables.push(hookMesh);
+const loop = new THREE.Mesh(new THREE.TorusGeometry(RH + .95, 1, 10, 36), yarnMat);
+loop.rotation.x = Math.PI / 2; loop.position.set(0, 7, 0); hook.add(loop);      // the live loop, sitting on the shaft
+const yarnLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0xf0862a, dashSize: 1.2, gapSize: .8 }));
+scene.add(yarnLine);
+const finger = new THREE.Mesh(new THREE.SphereGeometry(1.4, 16, 12), new THREE.MeshStandardMaterial({ color: lin("#e0b49a"), roughness: .6 }));
+finger.position.copy(FINGER); scene.add(finger);
+const ghost = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x2f5ea8, transparent: true, opacity: .55 }));
+scene.add(ghost);
+const keyDots = new THREE.Group(); scene.add(keyDots);
+const targetDot = new THREE.Mesh(new THREE.SphereGeometry(.7, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffd84a })); targetDot.visible = false; scene.add(targetDot);
+
+const xform = new THREE.TransformControls(camera, canvas); xform.setSize(.8); xform.attach(hook); scene.add(xform);
+xform.addEventListener("dragging-changed", e => { orbit.enabled = !e.value; if (e.value) beginEdit(); else endEdit(); });
+xform.addEventListener("objectChange", () => { if (editing) writePoseToKey(editing); });
+
+// ---------------------------------------------------------------- the plan
+let plan = { duration: 13, keys: [] }, t = 0, playing = false, sel = -1, editing = null, camMode = "free", picking = false;
+const keyAt = tt => plan.keys.findIndex(k => Math.abs(k.t - tt) < 1e-3);
+const sorted = () => plan.keys.sort((a, b) => a.t - b.t);
+const ease = u => u * u * (3 - 2 * u);
+
+function catmull(p0, p1, p2, p3, u) {
+  const u2 = u * u, u3 = u2 * u;
+  return p1.clone().multiplyScalar(2).add(p2.clone().sub(p0).multiplyScalar(u))
+    .add(p0.clone().multiplyScalar(2).sub(p1.clone().multiplyScalar(5)).add(p2.clone().multiplyScalar(4)).sub(p3).multiplyScalar(u2))
+    .add(p0.clone().negate().add(p1.clone().multiplyScalar(3)).sub(p2.clone().multiplyScalar(3)).add(p3).multiplyScalar(u3)).multiplyScalar(.5);
+}
+function poseAt(tt) {         // hook tip + orientation at time tt: Catmull-Rom through the tips, eased slerp between rotations
+  const K = plan.keys; if (!K.length) return null;
+  if (tt <= K[0].t) return { tip: V(...K[0].tip), q: new THREE.Quaternion(...K[0].quat) };
+  if (tt >= K[K.length - 1].t) { const k = K[K.length - 1]; return { tip: V(...k.tip), q: new THREE.Quaternion(...k.quat) }; }
+  let i = 0; while (K[i + 1].t < tt) i++;
+  const a = K[i], b = K[i + 1], u = (tt - a.t) / Math.max(1e-6, b.t - a.t);
+  const p = j => V(...K[Math.max(0, Math.min(K.length - 1, j))].tip);
+  const tip = catmull(p(i - 1), p(i), p(i + 1), p(i + 2), u);
+  const q = new THREE.Quaternion(...a.quat).slerp(new THREE.Quaternion(...b.quat), ease(u));
+  return { tip, q };
+}
+function camAt(tt) {          // planned shot: between keyframes that carry a camera
+  const C = plan.keys.filter(k => k.camera); if (!C.length) return null;
+  const pick = k => ({ pos: V(...k.camera.pos), target: V(...k.camera.target), fov: k.camera.fov || 22 });
+  if (tt <= C[0].t) return pick(C[0]); if (tt >= C[C.length - 1].t) return pick(C[C.length - 1]);
+  let i = 0; while (C[i + 1].t < tt) i++;
+  const a = pick(C[i]), b = pick(C[i + 1]), u = ease((tt - C[i].t) / Math.max(1e-6, C[i + 1].t - C[i].t));
+  const da = a.pos.clone().sub(a.target), db = b.pos.clone().sub(b.target);
+  const dir = da.clone().normalize().lerp(db.clone().normalize(), u).normalize().multiplyScalar(da.length() + (db.length() - da.length()) * u);
+  const target = a.target.clone().lerp(b.target, u);
+  return { pos: target.clone().add(dir), target, fov: a.fov + (b.fov - a.fov) * u };
+}
+function calloutAt(tt) {      // a callout shows for its hold after its keyframe
+  for (const k of plan.keys) if (k.callout && tt >= k.t - 0.02 && tt <= k.t + (k.callout.hold || 2.2)) return k.callout;
+  return null;
+}
+
+// ---------------------------------------------------------------- editing
+function beginEdit() {
+  pause();
+  let i = keyAt(t);
+  if (i < 0) { const p = poseAt(t) || { tip: hook.position.clone(), q: hook.quaternion.clone() };
+    plan.keys.push({ t: +t.toFixed(3), tip: p.tip.toArray(), quat: p.q.toArray(), label: "", camera: null, callout: null }); sorted(); i = keyAt(t); }
+  sel = i; editing = plan.keys[i]; renderInspector(); renderTrack();
+}
+function endEdit() { editing = null; save(); refresh(); }
+function writePoseToKey(k) {
+  k.tip = hook.position.toArray().map(x => +x.toFixed(3)); k.quat = hook.quaternion.toArray().map(x => +x.toFixed(5));
+  updateGhost(); fillXYZ();
+}
+function addKey() {
+  pause(); if (keyAt(t) >= 0) { sel = keyAt(t); renderInspector(); renderTrack(); return; }
+  const p = poseAt(t) || { tip: V(-2.3, -2.3, 1.5), q: new THREE.Quaternion() };
+  plan.keys.push({ t: +t.toFixed(3), tip: p.tip.toArray().map(x => +x.toFixed(3)), quat: p.q.toArray().map(x => +x.toFixed(5)), label: "", camera: null, callout: null });
+  sorted(); sel = keyAt(t); refresh(); save(); toast("Keyframe added at " + t.toFixed(2) + " s");
+}
+function removeKey(i) { plan.keys.splice(i, 1); sel = -1; refresh(); save(); }
+
+// ---------------------------------------------------------------- inspector
+const kfBody = document.getElementById("kfBody");
+function renderInspector() {
+  const k = plan.keys[sel];
+  document.getElementById("kfTitle").textContent = k ? "Keyframe at " + k.t.toFixed(2) + " s" : "Keyframe";
+  if (!k) { kfBody.innerHTML = `<p class="empty">No keyframe selected. Click a diamond on the timeline, or move the hook to make one at the playhead.</p>
+    <div><h3>Plan</h3><p class="note">${plan.keys.length} keyframes · ${plan.keys.filter(k => k.camera).length} camera shots · ${plan.keys.filter(k => k.callout).length} callouts</p></div>
+    <div><h3>Keys</h3><p class="note"><kbd>Space</kbd> play · <kbd>K</kbd> keyframe · <kbd>W</kbd>/<kbd>E</kbd> move/rotate · <kbd>Delete</kbd> remove · <kbd>←</kbd><kbd>→</kbd> step</p></div>`; return; }
+  kfBody.innerHTML = `
+    <div class="field"><label for="kLabel">Step name</label><input id="kLabel" value="${esc(k.label || "")}" placeholder="e.g. Yarn over"></div>
+    <div><h3>Hook tip</h3><div class="xyz">${["x","y","z"].map((a, j) => `<div class="field"><span>${a.toUpperCase()}</span><input id="kTip${j}" type="number" step="0.1" value="${k.tip[j]}"></div>`).join("")}</div>
+      <div class="row" style="margin-top:8px"><button class="btn small" id="kRollL" type="button">↺ Roll 15°</button><button class="btn small" id="kRollR" type="button">↻ Roll 15°</button></div>
+      <p class="note" style="margin-top:6px">Roll turns the throat around the shaft, the way the wrist turns to catch the yarn.</p></div>
+    <div><h3>Camera shot</h3><div class="row"><button class="btn small" id="kCamSet" type="button">${k.camera ? "Update from view" : "Use current view"}</button>${k.camera ? `<button class="btn small" id="kCamGo" type="button">Look through</button><button class="btn small danger" id="kCamDel" type="button">Remove</button>` : ""}</div>
+      <p class="note" style="margin-top:6px">${k.camera ? "Planned shots glide between keyframes that have one." : "Frame the view, then save it here as a shot."}</p></div>
+    <div><h3>Callout</h3>
+      <div class="field"><label for="kCText">Caption</label><textarea id="kCText" placeholder="e.g. Wrap the yarn over your hook">${esc(k.callout ? k.callout.text : "")}</textarea></div>
+      <div class="row" style="margin-top:8px"><button class="btn small" id="kCPick" type="button" aria-pressed="${picking}">${picking ? "Click the scene…" : (k.callout && k.callout.target ? "Move circle" : "Place circle")}</button>
+        <label class="chip" for="kCHold">Hold</label><input id="kCHold" type="number" min="0.5" max="8" step="0.1" value="${k.callout ? (k.callout.hold || 2.2) : 2.2}" style="width:62px;border:1px solid var(--line);border-radius:7px;padding:3px 6px;background:var(--panel-2)"> s
+        ${k.callout ? `<button class="btn small danger" id="kCDel" type="button">Remove</button>` : ""}</div></div>
+    <div class="row"><button class="btn small" id="kDup" type="button">Duplicate +0.5 s</button><button class="btn small danger" id="kDel" type="button">Delete keyframe</button></div>`;
+  const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+  on("kLabel", "input", e => { k.label = e.target.value; renderTrack(); save(); });
+  [0, 1, 2].forEach(j => on("kTip" + j, "change", e => { k.tip[j] = +e.target.value || 0; refresh(); save(); }));
+  const roll = s => { const q = new THREE.Quaternion(...k.quat), r = new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), s * Math.PI / 12); q.multiply(r); k.quat = q.toArray().map(x => +x.toFixed(5)); refresh(); save(); };
+  on("kRollL", "click", () => roll(1)); on("kRollR", "click", () => roll(-1));
+  on("kCamSet", "click", () => { k.camera = { pos: camera.position.toArray().map(x => +x.toFixed(2)), target: orbit.target.toArray().map(x => +x.toFixed(2)), fov: camera.fov }; renderInspector(); renderTrack(); save(); toast("Shot saved"); });
+  on("kCamGo", "click", () => { camera.position.set(...k.camera.pos); orbit.target.set(...k.camera.target); camera.fov = k.camera.fov || 22; camera.updateProjectionMatrix(); orbit.update(); });
+  on("kCamDel", "click", () => { k.camera = null; renderInspector(); renderTrack(); save(); });
+  on("kCText", "input", e => { k.callout = k.callout || { text: "", target: null, hold: 2.2 }; k.callout.text = e.target.value; save(); drawCue(); });
+  on("kCHold", "change", e => { if (k.callout) { k.callout.hold = Math.max(.5, +e.target.value || 2.2); save(); } });
+  on("kCPick", "click", () => { picking = !picking; document.body.classList.toggle("picking", picking); renderInspector(); setHint(); });
+  on("kCDel", "click", () => { k.callout = null; renderInspector(); save(); drawCue(); });
+  on("kDup", "click", () => { const c = JSON.parse(JSON.stringify(k)); c.t = +(k.t + .5).toFixed(3); c.camera = null; c.callout = null; plan.keys.push(c); sorted(); sel = keyAt(c.t); setTime(c.t); refresh(); save(); });
+  on("kDel", "click", () => removeKey(sel));
+}
+function fillXYZ() { const k = plan.keys[sel]; if (!k) return; [0, 1, 2].forEach(j => { const el = document.getElementById("kTip" + j); if (el && document.activeElement !== el) el.value = k.tip[j]; }); }
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------------------------------------------------------------- timeline
+const track = document.getElementById("track");
+function renderTrack() {
+  const D = plan.duration, w = track.clientWidth || 600;
+  const step = D > 40 ? 5 : D > 15 ? 2 : 1;
+  let html = "";
+  for (let s = 0; s <= D + 1e-6; s += step) html += `<div class="tick" style="left:${s / D * 100}%"><b>${s}s</b></div>`;
+  plan.keys.forEach((k, i) => {
+    html += `<div class="kf${i === sel ? " sel" : ""}${k.camera ? " cam" : ""}" data-i="${i}" style="left:${k.t / D * 100}%" title="${k.t.toFixed(2)} s${k.label ? " · " + esc(k.label) : ""}"></div>`;
+    const f = k.t / D, shift = f < .06 ? "0%" : f > .94 ? "-100%" : "-50%";   // keep end labels inside the track
+    if (k.label) html += `<div class="kf-label" style="left:${f * 100}%;transform:translateX(${shift})">${esc(k.label)}</div>`;
+  });
+  html += `<div class="head" id="head" style="left:${t / D * 100}%"></div>`;
+  track.innerHTML = html;
+}
+let drag = null;
+track.addEventListener("pointerdown", e => {
+  const r = track.getBoundingClientRect(), kf = e.target.closest(".kf");
+  track.setPointerCapture(e.pointerId); pause();
+  if (kf) { sel = +kf.dataset.i; drag = { kind: "key", k: plan.keys[sel], moved: false }; setTime(plan.keys[sel].t); renderInspector(); renderTrack(); }
+  else { drag = { kind: "head" }; setTime((e.clientX - r.left) / r.width * plan.duration); }
+});
+track.addEventListener("pointermove", e => {
+  if (!drag) return; const r = track.getBoundingClientRect(), tt = Math.max(0, Math.min(plan.duration, (e.clientX - r.left) / r.width * plan.duration));
+  if (drag.kind === "key") { drag.k.t = Math.round(tt * 20) / 20; drag.moved = true; sorted(); sel = plan.keys.indexOf(drag.k); setTime(drag.k.t); renderTrack(); renderInspector(); }
+  else setTime(tt);
+});
+["pointerup", "pointercancel"].forEach(ev => track.addEventListener(ev, () => { if (drag && drag.moved) { refresh(); save(); } drag = null; }));
+
+// ---------------------------------------------------------------- playback & drawing
+const timeEl = document.getElementById("time");
+function setTime(tt) { t = Math.max(0, Math.min(plan.duration, tt)); applyPose(); const h = document.getElementById("head"); if (h) h.style.left = (t / plan.duration * 100) + "%";
+  timeEl.textContent = t.toFixed(2) + " / " + plan.duration.toFixed(2) + " s"; }
+function applyPose() {
+  if (editing) return;
+  const p = poseAt(t); if (p) { hook.position.copy(p.tip); hook.quaternion.copy(p.q); }
+  if (camMode === "plan") { const c = camAt(t); if (c) { camera.position.copy(c.pos); orbit.target.copy(c.target); camera.fov = c.fov; camera.updateProjectionMatrix(); } }
+}
+function updateGhost() {
+  const pts = []; if (plan.keys.length > 1) for (let i = 0; i <= 240; i++) { const p = poseAt(i / 240 * plan.duration); pts.push(p.tip); }
+  ghost.geometry.setFromPoints(pts);
+  keyDots.clear(); plan.keys.forEach((k, i) => { const d = new THREE.Mesh(new THREE.SphereGeometry(i === sel ? .55 : .4, 10, 8), new THREE.MeshBasicMaterial({ color: i === sel ? 0xf0862a : 0x2f5ea8 })); d.position.set(...k.tip); keyDots.add(d); });
+}
+function refresh() { sorted(); updateGhost(); renderTrack(); renderInspector(); setTime(t); }
+function pause() { playing = false; document.getElementById("playIcon").innerHTML = '<path d="M3 1.5v11l9-5.5z" fill="currentColor"/>'; document.getElementById("play").setAttribute("aria-label", "Play"); }
+function play() { if (t >= plan.duration - 1e-3) setTime(0); playing = true; last = null; document.getElementById("playIcon").innerHTML = '<path d="M3 1.5h3v11H3zM8 1.5h3v11H8z" fill="currentColor"/>'; document.getElementById("play").setAttribute("aria-label", "Pause"); }
+document.getElementById("play").addEventListener("click", () => playing ? pause() : play());
+
+const nums = document.getElementById("nums");
+nums.innerHTML = HOLES.map((_, i) => `<div class="num${i === 1 ? " target" : ""}">${i + 1}</div>`).join("");
+const project = v => { const p = v.clone().project(camera); return [(p.x + 1) / 2 * stage.clientWidth, (1 - p.y) / 2 * stage.clientHeight, p.z < 1]; };
+function drawCue() {
+  const c = calloutAt(t), ring = document.getElementById("cueRing"), tx = document.getElementById("cueText");
+  targetDot.visible = !!(plan.keys[sel] && plan.keys[sel].callout && plan.keys[sel].callout.target);
+  if (targetDot.visible) targetDot.position.set(...plan.keys[sel].callout.target);
+  if (!c || !c.text) { tx.hidden = true; ring.setAttribute("r", 0); return; }
+  tx.hidden = false; tx.textContent = c.text;
+  if (c.target) { const v = V(...c.target), [x, y, vis] = project(v);
+    const edge = project(v.clone().add(V(0, 2.4, 0).applyQuaternion(camera.quaternion)));   // 2.4 yarn radii, measured up the screen
+    ring.setAttribute("cx", x); ring.setAttribute("cy", y); ring.setAttribute("r", vis ? Math.hypot(edge[0] - x, edge[1] - y) : 0); }
+  else ring.setAttribute("r", 0);
+}
+
+let last = null;
+function frame(ts) {
+  if (playing) { if (last != null) setTime(t + Math.min(.05, (ts - last) / 1000)); last = ts; if (t >= plan.duration) pause(); }
+  orbit.update();
+  const loopW = loop.getWorldPosition(V(0, 0, 0)); yarnLine.geometry.setFromPoints([loopW, loopW.clone().lerp(FINGER, .5).add(V(0, 2, -2)), FINGER]); yarnLine.computeLineDistances();
+  HOLES.forEach((h, i) => { const [x, y, vis] = project(h), el = nums.children[i]; el.style.left = x + "px"; el.style.top = y + "px"; el.style.display = vis ? "" : "none"; });
+  drawCue();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+function resize() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
+  document.getElementById("cueSvg").setAttribute("viewBox", `0 0 ${w} ${h}`); renderTrack(); }
+new ResizeObserver(resize).observe(stage);
+
+// pick a callout target
+const ray = new THREE.Raycaster();
+canvas.addEventListener("click", e => {
+  if (!picking) return; const k = plan.keys[sel]; if (!k) return;
+  const r = canvas.getBoundingClientRect(); ray.setFromCamera({ x: (e.clientX - r.left) / r.width * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
+  const hit = ray.intersectObjects(pickables, false)[0]; if (!hit) { toast("Click on the fabric or the hook"); return; }
+  k.callout = k.callout || { text: "", target: null, hold: 2.2 }; k.callout.target = hit.point.toArray().map(x => +x.toFixed(2));
+  picking = false; document.body.classList.remove("picking"); renderInspector(); setHint(); save(); toast("Circle placed");
+});
+
+// modes
+const setPressed = (on, off) => { document.getElementById(on).setAttribute("aria-pressed", "true"); document.getElementById(off).setAttribute("aria-pressed", "false"); };
+function setXform(m) { xform.setMode(m); xform.setSpace(m === "rotate" ? "local" : "world"); setPressed(m === "rotate" ? "mRotate" : "mMove", m === "rotate" ? "mMove" : "mRotate"); }
+document.getElementById("mMove").addEventListener("click", () => setXform("translate"));
+document.getElementById("mRotate").addEventListener("click", () => setXform("rotate"));
+document.getElementById("cFree").addEventListener("click", () => { camMode = "free"; setPressed("cFree", "cPlan"); xform.enabled = true; xform.visible = true; setHint(); });
+document.getElementById("cPlan").addEventListener("click", () => { if (!plan.keys.some(k => k.camera)) { toast("No shots yet: frame a view, then “Use current view” on a keyframe"); return; }
+  camMode = "plan"; setPressed("cPlan", "cFree"); setTime(t); setHint(); });
+function setHint() { document.getElementById("hint").textContent = picking ? "Click the spot to circle." :
+  camMode === "plan" ? "Showing the planned shots. Press play to watch the take; switch to Free camera to edit." :
+  "Drag the hook's arrows to move its tip, or rotate it. Changes become a keyframe at the playhead."; }
+document.getElementById("kfAdd").addEventListener("click", addKey);
+document.getElementById("dur").addEventListener("change", e => { plan.duration = Math.max(1, +e.target.value || 13); refresh(); save(); });
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input, textarea")) return;
+  if (e.code === "Space") { e.preventDefault(); playing ? pause() : play(); }
+  else if (e.key === "k" || e.key === "K") addKey();
+  else if (e.key === "w" || e.key === "W") setXform("translate");
+  else if (e.key === "e" || e.key === "E") setXform("rotate");
+  else if ((e.key === "Delete" || e.key === "Backspace") && sel >= 0) removeKey(sel);
+  else if (e.key === "ArrowRight") { pause(); setTime(t + 1 / 30); } else if (e.key === "ArrowLeft") { pause(); setTime(t - 1 / 30); }
+});
+
+// ---------------------------------------------------------------- files
+function toJSON() {
+  return JSON.stringify({ format: FMT, stitch: "sc", units: "yarn radius", axes: "Z up, X along the row (worked right to left), -Y toward the viewer",
+    duration: plan.duration, keys: plan.keys }, null, 1);
+}
+function load(obj) {
+  if (!obj || !Array.isArray(obj.keys)) throw new Error("That file isn't a Hookpath plan: it has no keyframes.");
+  plan = { duration: +obj.duration || 13, keys: obj.keys.map(k => ({ t: +k.t || 0, tip: (k.tip || [0, 0, 0]).map(Number), quat: (k.quat || [0, 0, 0, 1]).map(Number),
+    label: k.label || "", camera: k.camera || null, callout: k.callout || null })) };
+  document.getElementById("dur").value = plan.duration; sel = -1; refresh(); setTime(0); save();
+}
+let downloads = null;
+if (window.claude && window.claude.use) window.claude.use("downloads").then(d => { downloads = d; }).catch(() => {});
+document.getElementById("btnExport").addEventListener("click", async () => {
+  if (downloads) { try { await downloads.save({ filename: "hookpath-plan.json", data: toJSON() }); toast("Plan saved"); return; }
+    catch (err) { if (err && err.code === "declined") return; } }
+  openDialog("export");
+});
+document.getElementById("btnCopy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(toJSON()); toast("Plan copied"); } catch (e) { openDialog("export"); }
+});
+const dlg = document.getElementById("dlg"), dlgText = document.getElementById("dlgText");
+function openDialog(kind) {
+  dlg.hidden = false; dlg.dataset.kind = kind;
+  document.getElementById("dlgTitle").textContent = kind === "export" ? "Your plan" : "Import a plan";
+  document.getElementById("dlgNote").textContent = kind === "export" ? "Select all and copy, then paste it into a .json file to send." : "Paste a plan below, or choose a .json file.";
+  document.getElementById("dlgOk").hidden = kind === "export"; document.getElementById("dlgFile").hidden = kind === "export";
+  dlgText.value = kind === "export" ? toJSON() : ""; dlgText.readOnly = kind === "export"; if (kind === "export") dlgText.select(); dlgText.focus();
+}
+document.getElementById("dlgClose").addEventListener("click", () => { dlg.hidden = true; });
+document.getElementById("dlgOk").addEventListener("click", () => { try { load(JSON.parse(dlgText.value)); dlg.hidden = true; toast("Plan loaded"); } catch (e) { toast(e.message.startsWith("That") ? e.message : "That isn't valid JSON."); } });
+document.getElementById("btnImport").addEventListener("click", () => openDialog("import"));
+document.getElementById("dlgFile").addEventListener("click", () => document.getElementById("fileIn").click());
+document.getElementById("fileIn").addEventListener("change", e => readFile(e.target.files[0]));
+function readFile(f) { if (!f) return; const r = new FileReader(); r.onload = () => { try { load(JSON.parse(r.result)); dlg.hidden = true; toast("Loaded " + f.name); } catch (e) { toast("Couldn't read " + f.name + ": it isn't a Hookpath plan."); } }; r.readAsText(f); }
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); readFile(e.dataTransfer.files[0]); });
+document.getElementById("btnSample").addEventListener("click", () => { load(SAMPLE); toast("Sample loaded: single crochet"); });
+
+function save() { try { localStorage.setItem("hookpath-draft", toJSON()); } catch (e) {} }
+let toastT = null;
+function toast(msg) { const el = document.getElementById("toast"); el.textContent = msg; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 2200); }
+
+// ---------------------------------------------------------------- sample: single crochet (from tools/choreo_sc.py)
+const SAMPLE = { format: FMT, duration: 13, keys: [{"t":0.0,"tip":[-2.3,-2.3,1.5],"quat":[0.68876,0.16003,-0.47214,0.52638],"label":"Insert hook","camera":{"pos":[8.15,-39.44,29.79],"target":[-3.68,0,-1.76],"fov":22},"callout":{"text":"Go into stitch 2 \u2014 under both top loops","target":[-4.6,0,-5.7],"hold":2.2}},{"t":0.669,"tip":[-3.524,-3.016,-1.764],"quat":[0.69688,0.11984,-0.51641,0.48303],"label":"","camera":null,"callout":null},{"t":1.338,"tip":[-4.587,-0.323,-5.359],"quat":[0.70469,0.05841,-0.58962,0.39031],"label":"","camera":null,"callout":null},{"t":2.028,"tip":[-4.8,4.2,-6.0],"quat":[0.70641,0.0315,-0.62377,0.33303],"label":"","camera":{"pos":[0.94,-23.11,44.45],"target":[-3.68,0,-1.76],"fov":22},"callout":{"text":"The hook pokes out the back","target":[-4.8,4.2,-6.0],"hold":2.0}},{"t":2.6,"tip":[-4.8,4.2,-6.0],"quat":[0.70641,0.0315,-0.62377,0.33303],"label":"Yarn over","camera":null,"callout":null},{"t":3.269,"tip":[-4.621,4.559,-6.251],"quat":[0.94239,0.24367,-0.00153,0.22919],"label":"","camera":null,"callout":null},{"t":3.938,"tip":[-4.613,4.573,-6.261],"quat":[0.9414,0.25426,0.04312,0.21738],"label":"","camera":null,"callout":null},{"t":4.628,"tip":[-4.8,4.2,-6.0],"quat":[0.70641,0.0315,-0.62377,0.33303],"label":"","camera":null,"callout":null},{"t":5.2,"tip":[-4.8,4.2,-6.0],"quat":[0.70641,0.0315,-0.62377,0.33303],"label":"Pull up a loop","camera":null,"callout":null},{"t":5.869,"tip":[-4.631,0.55,-5.611],"quat":[0.70584,0.04233,-0.60578,0.36473],"label":"","camera":null,"callout":null},{"t":6.538,"tip":[-4.279,-2.683,-3.092],"quat":[0.70394,0.06688,-0.5675,0.42183],"label":"","camera":null,"callout":null},{"t":7.228,"tip":[-4.1,-2.6,-0.4],"quat":[0.70217,0.08337,-0.54344,0.4524],"label":"","camera":{"pos":[-24.57,-37.98,26.73],"target":[-3.68,0,-1.76],"fov":22},"callout":{"text":"Pull it back through \u2014 2 loops on your hook","target":[-4.1,-2.6,-0.4],"hold":2.2}},{"t":7.8,"tip":[-4.1,-2.6,-0.4],"quat":[0.70217,0.08337,-0.54344,0.4524],"label":"Yarn over","camera":null,"callout":null},{"t":8.469,"tip":[-4.387,-2.169,-0.185],"quat":[0.87937,0.38196,0.12282,0.25637],"label":"","camera":null,"callout":null},{"t":9.138,"tip":[-4.399,-2.152,-0.176],"quat":[0.87513,0.38974,0.15007,0.24438],"label":"","camera":null,"callout":null},{"t":9.828,"tip":[-4.1,-2.6,-0.4],"quat":[0.70217,0.08337,-0.54344,0.4524],"label":"","camera":null,"callout":null},{"t":10.4,"tip":[-4.1,-2.6,-0.4],"quat":[0.70217,0.08337,-0.54344,0.4524],"label":"Pull through both loops","camera":null,"callout":null},{"t":11.069,"tip":[-2.443,-4.17,1.471],"quat":[0.70217,0.08337,-0.54344,0.4524],"label":"","camera":null,"callout":null},{"t":11.738,"tip":[-1.758,-5.109,2.875],"quat":[0.70083,0.094,-0.53319,0.46444],"label":"","camera":null,"callout":null},{"t":12.428,"tip":[-6.9,-2.3,1.5],"quat":[0.68876,0.16003,-0.47214,0.52638],"label":"","camera":null,"callout":null},{"t":13.0,"tip":[-6.9,-2.3,1.5],"quat":[0.68876,0.16003,-0.47214,0.52638],"label":"Done","camera":{"pos":[8.15,-39.44,29.79],"target":[-3.68,0,-1.76],"fov":22},"callout":{"text":"Your new stitch \u2014 on top of stitch 2","target":[-4.6,-0.6,0.2],"hold":2.0}}] };
+(function boot() {
+  let draft = null; try { draft = JSON.parse(localStorage.getItem("hookpath-draft") || "null"); } catch (e) {}
+  try { load(draft && draft.keys && draft.keys.length ? draft : SAMPLE); } catch (e) { load(SAMPLE); }
+  setXform("translate"); resize(); requestAnimationFrame(frame);
+})();
+</script>

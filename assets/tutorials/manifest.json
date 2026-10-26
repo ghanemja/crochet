@@ -1,0 +1,12 @@
+{
+ "sc": {
+  "views": [
+   "Guided"
+  ],
+  "grid": [
+   1,
+   1
+  ],
+  "cues": true
+ }
+}

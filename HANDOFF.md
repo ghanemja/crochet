@@ -13,7 +13,7 @@ Deliver **Route A first** (safety net, ~20 min of compute), then **Route B**
 
 ## Repo orientation
 
-- Single-page app, everything in `index.html` (~3500 lines, one `<script>`).
+- Single-page app, everything in `index.html` (~4100 lines, one `<script>`).
   three.js r128 is vendored in `vendor/three/`. No build step; serve with any
   static server (`python3 -m http.server 8765`).
 - Deploys: GitHub Pages from `main` via `.github/workflows/pages.yml`.
@@ -30,15 +30,15 @@ Deliver **Route A first** (safety net, ~20 min of compute), then **Route B**
 
 | What | Where |
 |---|---|
-| Modal markup: `#learnModal`, `#learnCanvas`, `#learnReadout`, `#learnScrub`, `#learnSteps` | ~line 1061 |
-| Step text per stitch: `STITCH_STEPS` (ch, sl, sc, hdc, dc, tr, inc, dec, mr) | ~1138 |
-| Seconds per written step: `STEP_DUR = 2.6` | ~2766 |
-| Scene setup: `initLearn3D()`, `buildLearnScene(key)` | ~2769, ~3003 |
-| Per-frame choreography: `animateLearn3D()` — reads `Learn.t` (seconds), sets hook pose and rebuilds every strand | ~3094 |
-| Step → hand acts: `stepActs(text)`, loop-stack simulation `simulateActs(acts, upto)` | ~3055, ~3071 |
-| Strand builders: `setTube(mesh, pts, closed, radius)` (yarn from a point list), `chainPts`, `postPts`, `postWraps`, `ringPts` | ~2985–3050 |
-| Yarn geometry/material: `yarnGeometry` (plies + fibres), `yarnMesh`, `makeYarnMaterial` | ~1838–2100 |
-| Open / play: `openLearn(key)`, `learnLoop(ts)`, `setLearnPlaying(on)`, `learnTotal()` | ~3229–3270 |
+| Modal markup: `#learnModal`, `#learnCanvas`, `#learnReadout`, `#learnScrub`, `#learnSteps` | ~line 888 |
+| Step text per stitch: `STITCH_STEPS` (ch, sl, sc, hdc, dc, tr, inc, dec, mr) | ~977 |
+| Seconds per written step: `STEP_DUR = 2.6` | ~2671 |
+| Scene setup: `initLearn3D()`, `buildLearnScene(key)` | ~2674, ~2909 |
+| Per-frame choreography: `animateLearn3D()` — reads `Learn.t` (seconds), sets hook pose and rebuilds every strand | ~3000 |
+| Step → hand acts: `stepActs(text)`, loop-stack simulation `simulateActs(acts, upto)` | ~2961, ~2977 |
+| Strand builders: `setTube(mesh, pts, closed, radius)` (yarn from a point list), `chainPts`, `postPts`, `postWraps`, `ringPts` | ~2890–2995 |
+| Yarn geometry/material: `yarnGeometry` (plies + fibres), `yarnMesh`, `makeYarnMaterial` | ~1677–1940 |
+| Open / play: `openLearn(key)`, `learnLoop(ts)`, `setLearnPlaying(on)`, `learnTotal()` | ~3143–3330 |
 
 Key facts for capture/export:
 - Total tutorial length = `STITCH_STEPS[key].length * STEP_DUR` seconds (sc = 13 s, dc = 13 s, tr = 15.6 s, ch = 5.2 s).
@@ -49,7 +49,7 @@ Key facts for capture/export:
 - `YR = 0.36` is the yarn radius in the Learn scene; hook shaft radius `HOOK_HALF = 0.42`; camera is a 24° lens set in `buildLearnScene` (position depends on stitch height `tall`).
 
 Studio performance notes (not needed for the tutorials, but don't regress them):
-`STUDIO_TRI_BUDGET` (~1726) adapts via a frame-rate probe and persists in
+`STUDIO_TRI_BUDGET` (~1565) adapts via a frame-rate probe and persists in
 `localStorage["yf_tri_budget"]`. The browser pane used for testing reported a
 phone-class GPU; measure with GPU sync (`gl.readPixels` after render), not
 `performance.now()` around `render()`.
@@ -66,7 +66,7 @@ phone-class GPU; measure with GPU sync (`gl.readPixels` after render), not
    - override detail for quality: in `learnMkMesh` the strands use `fibres: 6`; before building, you may bump by redefining `learnMkMesh` to pass `{fibres: 9, radial: 14}` and call `buildLearnScene(key)` again.
    - for `t` in `0 … learnTotal()` step `1/30`: `Learn.t = t; animateLearn3D(); L3.renderer.render(L3.scene, L3.camera);` then `page.screenshot({clip: canvasRect})` or `canvas.toDataURL()` (Learn renderer is created with `alpha:true` and no `preserveDrawingBuffer`; render and read in the same evaluate call, or recreate the renderer with `preserveDrawingBuffer:true`).
 3. Encode with ffmpeg: `-framerate 30 -i f_%04d.png -c:v libvpx-vp9 -b:v 0 -crf 32 -pix_fmt yuv420p out.webm` and an H.264 MP4 (`-c:v libx264 -crf 20 -pix_fmt yuv420p -movflags +faststart`). Poster = frame at `t = 0.8 × total`.
-4. Output to `assets/tutorials/<key>.webm|.mp4|.jpg`. Target ≤ 1.5 MB per WebM. Do **not** ship GIFs as the primary format (10–30 MB each); if a GIF is wanted for sharing, make a 480-px-wide 15 fps one with a palette (`palettegen`/`paletteuse`) and keep it out of the app.
+4. Output to `assets/tutorials/<key>.webm|.mp4|.jpg`. The `.jpg` is also the stitch's thumbnail in the studio's "Watch it up close" card and on the Learn stitches page; `tr`, `inc`, `dec` and `mr` have small 320×200 stand-in posters until their videos exist (keep the 16:10 aspect). Target ≤ 1.5 MB per WebM. Do **not** ship GIFs as the primary format (10–30 MB each); if a GIF is wanted for sharing, make a 480-px-wide 15 fps one with a palette (`palettegen`/`paletteuse`) and keep it out of the app.
 
 ## Route B — Cycles render (the real goal)
 

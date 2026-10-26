@@ -17,6 +17,7 @@ import numpy as np
 
 ap = argparse.ArgumentParser()
 ap.add_argument("out"); ap.add_argument("--fps", type=int, default=30)
+ap.add_argument("--plan", default="")      # a Hookpath plan (tools/hookpath): the hook, shots and callouts come from it
 ap.add_argument("--hands", action="store_true")   # draw hands in the guided take (work in progress)
 ap.add_argument("--cues", default="")      # also write the freeze-frame callouts (assets/tutorials/<key>.cues.json)
 A = ap.parse_args()
@@ -266,7 +267,64 @@ def hook_pose(t):
             tip = bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), T_REST - v(P, 0, 0) + v(0.8, -1.0, 1.0), T_REST - v(P, 0, 0), q)
             u = slerp_dir(U_UP, U_REST, q)
         th = DOWN
+    if PLAN:                                                   # a Hookpath plan drives the hook instead
+        ptip, prot = plan_pose(PLAN_T if PLAN_T is not None else act_to_plan(t))
+        return st, p, Hook(ptip, prot[:, 1], prot[:, 0])
     return st, p, Hook(tip + LIFT * LIFT_VEC, u, th)
+
+# ---------------------------------------------------------------- Hookpath plans
+# Keys: {t, tip, quat [x,y,z,w] (local +Y up the shaft, +X the throat), label, camera, callout}.
+# Keys with a label start the next step (Insert hook, Yarn over, ...), which tells the yarn which
+# phase it is in; between them the plan's clock maps linearly onto the steps.
+PLAN, PLAN_T = None, None
+if A.plan:
+    PLAN = json.load(open(A.plan)); PK = sorted(PLAN["keys"], key=lambda k: k["t"])
+    PDUR = float(PLAN.get("duration") or PK[-1]["t"])
+    STARTS = [k["t"] for k in PK if k.get("label")][:len(STEPS)] or [0.0]
+def _bounds(k):
+    return STARTS[k], (STARTS[k + 1] if k + 1 < len(STARTS) else PDUR)
+def plan_to_act(tv):
+    if tv <= STARTS[0]: return 0.0
+    for k in range(len(STARTS)):
+        a, b = _bounds(k)
+        if tv <= b or k == len(STARTS) - 1: return min(5 * STEP_DUR, k * STEP_DUR + STEP_DUR * min(1.0, (tv - a) / max(1e-6, b - a)))
+def act_to_plan(ta):
+    k = min(len(STARTS) - 1, int(ta // STEP_DUR)); a, b = _bounds(k)
+    return a + (b - a) * min(1.0, (ta - k * STEP_DUR) / STEP_DUR)
+def q_slerp(a, b, u):
+    a, b = np.array(a, float), np.array(b, float); d = a @ b
+    if d < 0: b, d = -b, -d
+    if d > 0.9995: q = a + (b - a) * u; return q / np.linalg.norm(q)
+    w = math.acos(d); return (math.sin((1 - u) * w) * a + math.sin(u * w) * b) / math.sin(w)
+def q_mat(q):
+    x, y, z, w = q
+    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+def plan_pose(tv):
+    """same interpolation as the planner: Catmull-Rom through the tips, eased slerp between rotations"""
+    K = PK
+    if tv <= K[0]["t"]: return np.array(K[0]["tip"], float), q_mat(K[0]["quat"])
+    if tv >= K[-1]["t"]: return np.array(K[-1]["tip"], float), q_mat(K[-1]["quat"])
+    i = 0
+    while K[i + 1]["t"] < tv: i += 1
+    u = (tv - K[i]["t"]) / max(1e-6, K[i + 1]["t"] - K[i]["t"])
+    pt = lambda j: np.array(K[max(0, min(len(K) - 1, j))]["tip"], float)
+    p0, p1, p2, p3 = pt(i - 1), pt(i), pt(i + 1), pt(i + 2)
+    tip = 0.5 * (2 * p1 + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (-p0 + 3 * p1 - 3 * p2 + p3) * u ** 3)
+    return tip, q_mat(q_slerp(K[i]["quat"], K[i + 1]["quat"], ease(u)))
+def plan_cam(tv):
+    """(eye, target, vertical fov) between the keys that carry a camera; None if the plan has none"""
+    C = [k for k in PK if k.get("camera")]
+    if not C: return None
+    pick = lambda k: (np.array(k["camera"]["pos"], float), np.array(k["camera"]["target"], float), float(k["camera"].get("fov", 22)))
+    if tv <= C[0]["t"]: return pick(C[0])
+    if tv >= C[-1]["t"]: return pick(C[-1])
+    i = 0
+    while C[i + 1]["t"] < tv: i += 1
+    (ea, ta_, fa), (eb, tb, fb) = pick(C[i]), pick(C[i + 1]); u = ease((tv - C[i]["t"]) / max(1e-6, C[i + 1]["t"] - C[i]["t"]))
+    da, db = ea - ta_, eb - tb; L = np.linalg.norm(da) + (np.linalg.norm(db) - np.linalg.norm(da)) * u
+    tgt = ta_ + (tb - ta_) * u; return tgt + nrm(nrm(da) * (1 - u) + nrm(db) * u) * L, tgt, fa + (fb - fa) * u
 
 RIGHT_RIG = hand_rig.skeleton(hand_rig.RIGHT_GRIP, "R")
 D_GRIP = 28.0 * R                     # the index finger rests on the shaft this far up from the tip
@@ -423,21 +481,27 @@ def guided_target(tv):
     """where the guided camera aims: the action focus averaged over ±0.5 s of video, so it glides."""
     ts = np.linspace(tv - 0.5, tv + 0.5, 9)
     return np.mean([action_focus(at_video(min(max(0.0, x), total))[0]) for x in ts], axis=0)
-total = sum(sh[0] for sh in SHOTS)
+total = PDUR if PLAN else sum(sh[0] for sh in SHOTS)
 n = int(round(total * A.fps)) + 1
 
 FIXED = [("Front", FRONT), ("Side", SIDE), ("Behind", BACK)]   # the free-look angles (tiles 1–3)
 cache = {}
 frames = []
 for i in range(n):
-    tv = i / A.fps; ta, cdir, zoom = at_video(tv); LIFT = lift_at(tv); key = (round(ta, 4), round(LIFT, 3))
+    tv = i / A.fps
+    if PLAN:
+        ta = plan_to_act(tv); PLAN_T = tv; key = (round(ta, 4), round(tv, 4)); pc = plan_cam(tv)
+        if pc is None: pc = (look + nrm(FRONT) * DIST, look, FOV)
+        camd = {"pos": app([pc[0]])[0], "target": app([pc[1]])[0], "fov": round(pc[2], 3), "aspect": 1.6}
+    else:
+        ta, cdir, zoom = at_video(tv); LIFT = lift_at(tv); key = (round(ta, 4), round(LIFT, 3)); camd = None
     if key not in cache: cache[key] = frame_strands(ta)
-    LIFT = 0.0
+    LIFT = 0.0; PLAN_T = None
     hk, strands = cache[key]
     rpos, rrot = right_hand(hk)
     hands = [{"side": "R", "pose": "RIGHT_GRIP", "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in rpos], "rot": [round(float(x), 5) for x in rrot.ravel()]},
              {"side": "L", "pose": "LEFT_HOLD", "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in L_POS], "rot": [round(float(x), 5) for x in L_ROT.ravel()]}]
-    frames.append({"t": round(tv, 4), "a": key[0] + key[1] * 1000, "cam": cam(cdir, guided_target(tv), zoom), "hands": hands if A.hands else None,
+    frames.append({"t": round(tv, 4), "a": (i if PLAN else key[0] + key[1] * 1000), "cam": camd or cam(cdir, guided_target(tv), zoom), "hands": hands if A.hands else None,
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 
 # ---------------------------------------------------------------- callouts
@@ -496,6 +560,30 @@ labels = {"until": round(label_until, 2), "target": 1,
           "stitches": [{"text": str(i + 1)} for i in range(len(LABEL_XS))],
           "track": track,                                      # [t, x1, y1, x2, y2, ...] for the guided tile
           "fixed": [[c for xy in project(d, look, LABEL_PTS)[0] for c in xy] for _, d in FIXED]}
+
+def project_cam(eye, tgt, fov, pts):
+    f = nrm(tgt - eye); r = nrm(np.cross(f, v(0, 0, 1))); u = np.cross(r, f); th = math.tan(math.radians(fov) / 2)
+    out = [[round(0.5 + ((p - eye) @ r) / ((p - eye) @ f) / th / 1.6 / 2, 4), round(0.5 - ((p - eye) @ u) / ((p - eye) @ f) / th / 2, 4)] for p in pts]
+    return out, np.linalg.norm(tgt - eye) * th
+if PLAN:                                                       # cues, stitch numbers and the step clock from the plan
+    def guided(tv):
+        pc = plan_cam(tv); return pc if pc else (look + nrm(FRONT) * DIST, look, FOV)
+    cues = []
+    for k in PK:
+        c = k.get("callout")
+        if not c or not c.get("text"): continue
+        tgt_pt = np.array(c["target"], float) if c.get("target") else None
+        step = sum(1 for s0 in STARTS if s0 <= k["t"] + 1e-6) - 1
+        views = []
+        for proj in [lambda pts: project_cam(*guided(k["t"]), pts)] + [lambda pts, d=d: project(d, look, pts) for _, d in FIXED]:
+            if tgt_pt is None: views.append({"x": 0.5, "y": 0.5, "r": 0, "trace": None, "arrow": None, "link": None}); continue
+            (xy,), half = proj([tgt_pt])
+            views.append({"x": xy[0], "y": xy[1], "r": round(2.4 / half / 2, 4), "trace": None, "arrow": None, "link": None})
+        cues.append({"t": round(k["t"], 3), "step": step if step >= 0 else None, "text": c["text"], "views": views, "hold": c.get("hold", 2.2)})
+    timeline = [[0.0, 0.0]] + [[round(s0, 3), round(i * STEP_DUR, 3)] for i, s0 in enumerate(STARTS)] + [[round(PDUR, 3), round(min(5, len(STARTS)) * STEP_DUR, 3)]]
+    label_until = STARTS[1] if len(STARTS) > 1 else min(PDUR, 3.0)
+    labels = dict(labels, until=round(label_until, 2),
+                  track=[[round(float(tv), 2)] + [c for xy in project_cam(*guided(tv), LABEL_PTS)[0] for c in xy] for tv in np.arange(0.0, label_until + 0.1, 0.1)])
 
 if A.cues:
     # timeline: [video time, action time] knots, so the app can follow the step list

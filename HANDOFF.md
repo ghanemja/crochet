@@ -13,7 +13,7 @@ Deliver **Route A first** (safety net, ~20 min of compute), then **Route B**
 
 ## Repo orientation
 
-- Single-page app, everything in `index.html` (~4100 lines, one `<script>`).
+- Single-page app, everything in `index.html` (~4250 lines, one `<script>`).
   three.js r128 is vendored in `vendor/three/`. No build step; serve with any
   static server (`python3 -m http.server 8765`).
 - Deploys: GitHub Pages from `main` via `.github/workflows/pages.yml`.
@@ -32,13 +32,14 @@ Deliver **Route A first** (safety net, ~20 min of compute), then **Route B**
 |---|---|
 | Modal markup: `#learnModal`, `#learnCanvas`, `#learnReadout`, `#learnScrub`, `#learnSteps` | ~line 888 |
 | Step text per stitch: `STITCH_STEPS` (ch, sl, sc, hdc, dc, tr, inc, dec, mr) | ~977 |
-| Seconds per written step: `STEP_DUR = 2.6` | ~2671 |
-| Scene setup: `initLearn3D()`, `buildLearnScene(key)` | ~2674, ~2909 |
-| Per-frame choreography: `animateLearn3D()` — reads `Learn.t` (seconds), sets hook pose and rebuilds every strand | ~3000 |
-| Step → hand acts: `stepActs(text)`, loop-stack simulation `simulateActs(acts, upto)` | ~2961, ~2977 |
-| Strand builders: `setTube(mesh, pts, closed, radius)` (yarn from a point list), `chainPts`, `postPts`, `postWraps`, `ringPts` | ~2890–2995 |
-| Yarn geometry/material: `yarnGeometry` (plies + fibres), `yarnMesh`, `makeYarnMaterial` | ~1677–1940 |
-| Open / play: `openLearn(key)`, `learnLoop(ts)`, `setLearnPlaying(on)`, `learnTotal()` | ~3143–3330 |
+| Seconds per written step: `STEP_DUR = 2.6` | ~2811 |
+| Scene setup: `initLearn3D()`, `buildLearnScene(key)` | ~2814, ~3049 |
+| Per-frame choreography: `animateLearn3D()` — reads `Learn.t` (seconds), sets hook pose and rebuilds every strand | ~3140 |
+| Step → hand acts: `stepActs(text)`, loop-stack simulation `simulateActs(acts, upto)` | ~3101, ~3117 |
+| Strand builders: `setTube(mesh, pts, closed, radius)` (yarn from a point list), `chainPts`, `postPts`, `postWraps`, `ringPts` | ~3030–3134 |
+| Yarn geometry/material: `yarnGeometry` (plies + fibres), `yarnMesh`, `makeYarnMaterial` | ~1677–1937 |
+| Open / play: `openLearn(key)`, `learnLoop(ts)`, `setLearnPlaying(on)`, `learnTotal()` | ~3283–3470 |
+| Studio live hook (every stitch of the make): `STITCH_OPS` (mirrors `tools/choreo.py` SPECS), `choreoAt`, `poseStudioChoreo` | ~2321–2470 |
 
 Key facts for capture/export:
 - Total tutorial length = `STITCH_STEPS[key].length * STEP_DUR` seconds (sc = 13 s, dc = 13 s, tr = 15.6 s, ch = 5.2 s).

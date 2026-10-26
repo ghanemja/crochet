@@ -2096,6 +2096,7 @@ function clearStudioMakes(){
   (Studio.labels||[]).forEach(l=>Studio.group.remove(l)); Studio.labels=[];
   (Studio.extras||[]).forEach(e=>{Studio.group.remove(e);e.traverse(o=>{if(o.geometry)o.geometry.dispose();});}); Studio.extras=[];
   ["hook","ball","strand"].forEach(k=>{if(Studio[k]){Studio.group.remove(Studio[k]);Studio[k]=null;}});
+  (Studio.hookLoops||[]).forEach(m=>{Studio.group.remove(m);disposeYarnMesh(m);}); Studio.hookLoops=[];
 }
 function buildStudioGeometry(){
   initStudio();buildYarnMaterial();
@@ -2310,20 +2311,159 @@ function placeStudioProps(rad){
   g.add(tail);
   Studio.props=g; Studio.scene.add(g);
 }
+// ---- live stitch choreography (studio) -------------------------------------
+// The studio's hook works every stitch as a program of hook operations, mirrored
+// from tools/choreo.py's SPECS (keep the two in sync; the step groups line up
+// with STITCH_STEPS). Poses use choreo.py's row space — yarn radius 1, x along the
+// row (worked right to left), -y toward the viewer, z up, the hole the hook goes
+// into at x = 0 and the row below's top at z = -CH_H — and are mapped into each
+// stitch's own frame. Faster than CHOREO_MAX_SPEED the hook just glides.
+const STITCH_OPS={
+  sc:[["insert"],["yo_catch"],["pull_up"],["yo_front"],["through"]],
+  sl:[["insert"],["yo_catch"],["pull_keep","through"]],
+  hdc:[["yo_free"],["insert"],["yo_catch","pull_up"],["yo_front"],["through"]],
+  dc:[["yo_free"],["insert"],["yo_catch","pull_up"],["yo_front","through2"],["yo_front","through"]],
+  tr:[["yo_free","yo_free"],["insert"],["yo_catch","pull_up"],["yo_front","through2"],["yo_front","through2"],["yo_front","through"]],
+  dec:[["insert","yo_catch","pull_up"],["insert","yo_catch","pull_up"],["yo_front","through"]],
+  ch:[["yo_front"],["through"]],
+  mr:[["form"],["form"],["form"]],
+};
+const CH_ZT={sl:-0.48,hdc:0.5,dc:1,tr:1.75};           // new row's top above the row below, in rows
+const CH_P=4.6, CH_H=4.4, CH_DB=4.4, CH_SPACE=2.6, CH_SPLIT=0.55;
+const CH_U={rest:[1,-0.55,0.8], in:[0.8,-1.35,0.75], up:[0.95,-0.9,0.85]};
+const OP_DUR=0.26;                                        // seconds per hook operation at Normal speed
+const CHOREO_MAX_SPEED=2;
+const chV=a=>new THREE.Vector3(a[0],a[1],a[2]).normalize();
+const chEase=t=>{ t=Math.min(1,Math.max(0,t)); return t*t*(3-2*t); };
+const chDir=(a,b,t)=>a.clone().lerp(b,t).normalize();
+function chBez(a,b,c,d,t){ const u=1-t; return a.clone().multiplyScalar(u*u*u).addScaledVector(b,3*u*u*t).addScaledVector(c,3*u*t*t).addScaledVector(d,t*t*t); }
+// one stitch's operations, flattened: [{name, step, hx}]; an inc unit is one sc into the
+// shared stitch (the first of a pair is step 1, the second step 2 then "Two stitches made")
+function unitOps(i){
+  const P=App.parsed, cache=P._ops||(P._ops=[]); if(cache[i]) return cache[i];
+  const u=P.flat[i]; let prog;
+  if(u.key==="inc"){ let k=0; for(let j=i-1;j>=0&&P.flat[j].key==="inc"&&P.flat[j].row===u.row;j--) k++;
+    const sc=STITCH_OPS.sc.flat(); prog=k%2?[[],sc,["hold"]]:[sc,[],[]]; }
+  else prog=STITCH_OPS[u.key]||STITCH_OPS.sc;
+  const ops=[]; let ins=0, hx=0;
+  prog.forEach((st,si)=>st.forEach(name=>{ if(name==="insert") hx=u.key==="dec"?(ins++?-0.35:0.35)*CH_P:0; ops.push({name,step:si,hx}); }));
+  return cache[i]=ops;
+}
+function unitSeconds(i){ return unitOps(i).length*OP_DUR; }
+function choreoLive(){ return !!App.parsed&&!App.plan&&App.speed<=CHOREO_MAX_SPEED; }
+// which op of which stitch the playhead is in: {i, ops, k, p}
+function unitPhase(prog){
+  const T=App.parsed.flat.length, i=Math.max(0,Math.min(Math.floor(prog),T-1)), done=prog>=T;
+  const ops=unitOps(i), x=(done?1:prog-i)*ops.length, k=Math.min(ops.length-1,Math.floor(x));
+  return {i,ops,k,p:done?1:x-k};
+}
+function chNext(op,s){ const e={...s};
+  if(op.name==="insert") e.inserted=true;
+  else if(op.name==="yo_free") e.loops=s.loops+1;
+  else if(op.name==="pull_up"){ e.loops=s.loops+1; e.inserted=false; }
+  else if(op.name==="pull_keep") e.inserted=false;
+  else if(op.name==="through2"){ e.loops=s.loops-1; e.nthr=s.nthr+1; }
+  else if(op.name==="through"){ e.loops=1; e.inserted=false; }
+  return e; }
+// growth of the stitch being made once op j has finished
+function chGrowth(ops,j){ let g=0;
+  for(let k=0;k<=j;k++){ const n=ops[k].name;
+    if(n==="pull_up"||n==="pull_keep") g=Math.max(g,0.3);
+    else if(n==="through2"){ const nt=ops.filter(o=>o.name==="through2").length+1, done=ops.slice(0,k+1).filter(o=>o.name==="through2").length; g=0.3+0.6*done/nt; }
+    else if(n==="through") g=1;
+    else if(n==="form") g=(ops.slice(0,k+1).filter(o=>o.name==="form").length)/ops.filter(o=>o.name==="form").length; }
+  return g; }
+// hook pose (row space) at op k, progress p of stitch i, with the hook state before the op
+function choreoAt(i,k,p){
+  const key=App.parsed.flat[i].key, ops=unitOps(i), H=CH_H, V=THREE.Vector3, DOWN=new V(0,0,-1);
+  const ZT=(CH_ZT[key]||0)*H, nAll=ops.filter(o=>o.name==="through2").length+1;
+  const lift=n=>Math.max(0,ZT)*(0.3+0.55*n/nAll);
+  const REST=E=>E.clone().add(new V(0,-2.05,1.35)), T_IN=hx=>new V(hx-0.2,4.2,-H-1.6), T_UP=(hx,l)=>new V(hx+0.5,-2.6,-H+4+l);
+  const pose=(op,p,h0,s0)=>{ const e=chEase(p), hx=op.hx;
+    switch(op.name){
+      case "insert": return {tip:chBez(h0.tip,new V(hx+0.3,-4,-H+1),new V(hx,-3,-H-1.4),T_IN(hx),e), u:chDir(h0.u,chV(CH_U.in),e), t:DOWN};
+      case "yo_catch": { const q=Math.sin(Math.PI*e); return {tip:h0.tip.clone().add(new V(0.25,0.5,-0.35).multiplyScalar(q)), u:h0.u, t:chDir(DOWN,chV([0,1,0.4]),q*0.8)}; }
+      case "pull_up": case "pull_keep": { const dst=op.name==="pull_keep"?new V(hx+0.4,-2.8,-H+2):T_UP(hx,lift(0));
+        return {tip:chBez(h0.tip,new V(hx,-1.5,-H-1.45),new V(hx+0.3,-3.5,-H),dst,e), u:chDir(h0.u,chV(CH_U.up),e), t:DOWN}; }
+      case "yo_front": case "yo_free": { const q=Math.sin(Math.PI*(op.name==="yo_free"?chEase(Math.min(1,p/0.55)):e));
+        return {tip:h0.tip.clone().add(new V(-0.4,0.6,0.3).multiplyScalar(q)), u:h0.u, t:chDir(DOWN,chV([0,1,0.5]),q*0.8)}; }
+      case "through": case "through2": { const out=h0.tip.clone().addScaledVector(h0.u,4.2).add(new V(0,0,0.6));
+        if(p<CH_SPLIT) return {tip:h0.tip.clone().lerp(out,chEase(p/CH_SPLIT)), u:h0.u, t:DOWN};
+        const q=chEase((p-CH_SPLIT)/(1-CH_SPLIT)), two=op.name==="through2", dst=two?T_UP(hx,lift(s0.nthr+1)):REST(new V(0,0,ZT));
+        return {tip:chBez(out,out.clone().add(new V(0.2,-0.6,1.2)),dst.clone().add(new V(0.8,-1,1)),dst,q), u:chDir(h0.u,chV(two?CH_U.up:CH_U.rest),q), t:DOWN}; }
+      default: return h0;
+    } };
+  let hk={tip:REST(new V(CH_P,0,ZT)), u:chV(CH_U.rest), t:DOWN}, st={loops:1,inserted:false,nthr:0};
+  for(let j=0;j<k;j++){ hk=pose(ops[j],1,hk,st); st=chNext(ops[j],st); }
+  return {op:ops[k], p, s0:st, s1:chNext(ops[k],st), hk:pose(ops[k],p,hk,st), ZT, key, g0:k?chGrowth(ops,k-1):0, g1:chGrowth(ops,k)};
+}
+// row space -> the studio group's space, through stitch i's frame
+function choreoFrame(i,ZT){
+  const pos=App.lay3d.positions, p=pos[i], q=stitchQuat(p), s=yarnRadius()*0.5, flat=p.key==="ch"||p.key==="mr";
+  const nb=pos[i+1]&&pos[i+1].part===p.part&&pos[i+1].row===p.row?pos[i+1]:null, pb=pos[i-1]&&pos[i-1].part===p.part&&pos[i-1].row===p.row?pos[i-1]:null;
+  const d=nb?new THREE.Vector3(nb.x-p.x,nb.y-p.y,nb.z-p.z):pb?new THREE.Vector3(p.x-pb.x,p.y-pb.y,p.z-pb.z):new THREE.Vector3(1,0,0);
+  const dir=d.applyQuaternion(q.clone().invert()).x>=0?1:-1;
+  const sv=flat?s:p.h/(CH_H+ZT), base=flat?p.h*0.5/s:CH_H, o=new THREE.Vector3(p.x,p.y,p.z);
+  return { pt:v=>new THREE.Vector3(-v.x*dir*s,(v.z+base)*sv,-v.y*s).applyQuaternion(q).add(o),
+           dir:v=>new THREE.Vector3(-v.x*dir,v.z,-v.y).normalize().applyQuaternion(q), s };
+}
+function studioHookLoop(n){ Studio.hookLoops=Studio.hookLoops||[];
+  while(Studio.hookLoops.length<=n){ const m=yarnMesh(new THREE.LineCurve3(new THREE.Vector3(),new THREE.Vector3(0,1,0)),yarnRadius()*0.5,false,8,Studio.yarnMat,{halo:false,fibres:0,radial:8,hairs:0});
+    Studio.group.add(m); Studio.hookLoops.push(m); }
+  return Studio.hookLoops[n]; }
+// pose the hook, the loops on it, the working yarn and the stitch being made
+function poseStudioChoreo(){
+  const ph=unitPhase(App.progress), c=choreoAt(ph.i,ph.k,ph.p), F=choreoFrame(ph.i,c.ZT), op=c.op.name, e=chEase(ph.p);
+  const tip=F.pt(c.hk.tip), U=F.dir(c.hk.u), T=F.dir(c.hk.t);
+  // hook: local +Y up the shaft, local -X is the throat
+  const X=T.clone().addScaledVector(U,-T.dot(U)).normalize().negate(), Z=new THREE.Vector3().crossVectors(X,U);
+  Studio.hook.position.copy(tip); Studio.hook.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,U,Z)); Studio.hook.visible=true;
+  // loops on the hook (0 = nearest the tip), each a ring round the shaft hanging a little
+  const s=F.s, rr=Math.max(0.22,s*1.6)+s*1.05, rings=[], n0=c.s0.loops, at=k=>(CH_DB+k*CH_SPACE)*s;
+  if(op==="pull_up"||op==="yo_free"){ const q=op==="yo_free"?chEase((ph.p-0.55)/0.45):e;
+    for(let k=0;k<n0;k++) rings.push({d:at(k)+CH_SPACE*s*q,r:rr});
+    if(op==="pull_up"||ph.p>0.55) rings.unshift({d:at(0),r:rr*(0.35+0.65*q)}); }
+  else if(op==="through"||op==="through2"){ const kk=op==="through2"?Math.min(2,n0):n0, q=chEase(ph.p/CH_SPLIT);
+    for(let k=0;k<n0;k++){ if(k<kk){ if(ph.p<CH_SPLIT) rings.push({d:at(k)*(1-q),r:rr*(1-0.6*q)}); }
+      else rings.push({d:at(k)-(kk-1)*CH_SPACE*s*chEase((ph.p-CH_SPLIT)/(1-CH_SPLIT)),r:rr}); }
+    if(op==="through2"&&ph.p>=CH_SPLIT) rings.unshift({d:at(0),r:rr}); }
+  else for(let k=0;k<n0;k++) rings.push({d:at(k),r:rr});
+  if(c.key==="ch"&&op==="through"&&ph.p>=CH_SPLIT) rings.push({d:at(0),r:rr});
+  const down=new THREE.Vector3(0,-1,0), A=down.clone().addScaledVector(U,-down.dot(U)).normalize(), B=new THREE.Vector3().crossVectors(U,A);
+  const ringPtsAt=(d,r)=>{ const cen=tip.clone().addScaledVector(U,d).addScaledVector(A,r*0.3), pts=[];
+    for(let a=0;a<16;a++){ const t=a/16*Math.PI*2; pts.push(cen.clone().addScaledVector(A,Math.cos(t)*r*1.15).addScaledVector(B,Math.sin(t)*r)); } return pts; };
+  rings.forEach((g,k)=>{ const m=studioHookLoop(k); setYarnCurve(m,new THREE.CatmullRomCurve3(ringPtsAt(g.d,g.r),true,"catmullrom",0.5),s,true,24); m.visible=true; });
+  for(let k=rings.length;k<(Studio.hookLoops||[]).length;k++) Studio.hookLoops[k].visible=false;
+  // working yarn: ball -> sag -> wrapped over the throat during a yarn over, waiting behind the
+  // fabric while the hook is in the stitch, otherwise up into the newest loop
+  if(Studio.strand&&Studio.ball){ const bp=Studio.ball.position.clone(), pts=[bp];
+    const yo=op==="yo_catch"||op==="yo_front"||op==="yo_free", inside=c.s0.inserted||(op==="insert"&&ph.p>0.6);
+    const near=tip.clone().addScaledVector(U,at(0)).addScaledVector(A,rr*1.6);
+    pts.push(bp.clone().lerp(near,0.5).add(new THREE.Vector3(0,-Math.min(2.5,bp.distanceTo(near)*0.12),0)));
+    if(yo){ const q=Math.sin(Math.PI*e), cen=tip.clone().addScaledVector(U,s*1.6);
+      for(let a=0;a<=6;a++){ const t=-0.6*Math.PI+a/6*q*1.7*Math.PI; pts.push(cen.clone().addScaledVector(B,Math.cos(t)*rr).addScaledVector(A,Math.sin(t)*rr)); } }
+    else if(inside) pts.push(F.pt(new THREE.Vector3(c.op.hx,3.2,-CH_H-1.2)), tip.clone().addScaledVector(A,rr*0.6));
+    else pts.push(near);
+    setYarnCurve(Studio.strand,new THREE.CatmullRomCurve3(pts,false,"catmullrom",0.5),yarnRadius()*0.55,false,40); Studio.strand.visible=true; }
+  return c.g0+(c.g1-c.g0)*(op.startsWith("through")?chEase((ph.p-CH_SPLIT)/(1-CH_SPLIT)):e);
+}
 function updateStudioProgress(){
   if(!Studio.ready||(!App.parsed&&!App.plan)) return;
   const prog=App.progress,complete=Math.floor(prog),frac=prog-complete,meshes=Studio.stitchMeshes;
+  const live=choreoLive()&&complete<meshes.length, grow=live?poseStudioChoreo():frac;
   for(let i=0;i<meshes.length;i++){const m=meshes[i];if(i<complete){m.visible=true;m.scale.y=1;}
-    else if(i===complete){m.visible=true;if(m.userData.grow!==false)m.scale.y=Math.max(0.04,frac);}
+    else if(i===complete){m.visible=!live||grow>0.02;if(m.userData.grow!==false)m.scale.y=Math.max(0.04,grow);}
     else m.visible=false;}
   // mirrored "make 2" duplicates appear once their part is fully worked
   (Studio.cloneGroups||[]).forEach(cg=>cg.group.visible = complete>cg.revealIdx);
   // section labels show once anything is worked
   (Studio.labels||[]).forEach(spr=>{ spr.visible = App.progress>0; });
+  if(live) return;
+  (Studio.hookLoops||[]).forEach(m=>m.visible=false);
   const idx=Math.min(complete,meshes.length-1),lay=App.lay3d;
   if(!App.plan&&lay&&Studio.hook&&lay.positions[idx]){const p=lay.positions[idx];const t=(complete<meshes.length)?Math.max(0.05,frac):1;const topY=p.y+p.h*t;const wob=Math.sin(performance.now()/220)*0.35;
     // sit the hook tip in the working loop, handle angled up toward the crocheter
-    Studio.hook.position.set(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6);
+    Studio.hook.position.set(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6); Studio.hook.rotation.set(0,0,0.32);
     Studio.hook.visible=complete<meshes.length;
     if(Studio.strand){const tip=new THREE.Vector3(p.x+p.half*0.3+wob,topY+0.2,p.z+0.6);
       const bp=Studio.ball.position, sag=new THREE.Vector3().lerpVectors(bp,tip,0.5).add(new THREE.Vector3(0,-Math.min(2.5,bp.distanceTo(tip)*0.12),0));
@@ -2355,7 +2495,7 @@ function totalUnits(){ return App.plan?Studio.stitchMeshes.length:(App.parsed?Ap
 function masterLoop(t){
   requestAnimationFrame(masterLoop);
   const T=totalUnits();
-  if(App.playing&&T){if(!App.lastT)App.lastT=t;const dt=(t-App.lastT)/1000;App.lastT=t;App.progress+=dt*1.6*App.speed;if(App.progress>=T){App.progress=T;pause();}}else App.lastT=t;
+  if(App.playing&&T){if(!App.lastT)App.lastT=t;const dt=(t-App.lastT)/1000;App.lastT=t;App.progress+=dt*App.speed*(choreoLive()?1/unitSeconds(Math.min(Math.floor(App.progress),T-1)):1.6);if(App.progress>=T){App.progress=T;pause();}}else App.lastT=t;
   if(Studio.ready){Studio.controls.update();updateStudioProgress();updateHUD();Studio.renderer.render(Studio.scene,Studio.camera);perfProbeTick(t);}
 }
 
@@ -2397,7 +2537,7 @@ function updateHUD(){
     line:finished?`All ${total} stitches done`:`${inRow} of ${len} stitch${len===1?"":"es"} in`});
   markRows(s.row,`${inRow}/${len}`,finished);
   const steps=STITCH_STEPS[s.key]||["Work the stitch"];
-  const stepIdx=finished?steps.length:Math.min(steps.length-1,Math.floor((App.progress-idx)*steps.length));
+  const ph=unitPhase(App.progress), stepIdx=finished?steps.length:Math.min(steps.length-1,ph.ops[ph.k].step);
   setNow({id:s.key+":"+stepIdx,key:s.key,abbr:s.key,name:STITCHES[s.key].name,color:STITCHES[s.key].color,
     kicker:finished?"Last stitch":"Now stitching",desc:STITCHES[s.key].desc,steps,stepIdx});
 }
@@ -2432,7 +2572,7 @@ function setNow(o){
   list.innerHTML=o.steps?o.steps.map((t,i)=>{ const c=i<o.stepIdx?"done":i===o.stepIdx?"on":"";
     return `<li class="${c}"><span class="n">${i<o.stepIdx?ICON_CHECK:i+1}</span>${escapeHtml(t)}</li>`; }).join(""):"";
   const watch=document.getElementById("learnNowBtn"); watch.hidden=!o.key;
-  if(o.key){ const img=document.getElementById("watchImg"),src="assets/tutorials/"+o.key+".jpg"; if(img.getAttribute("src")!==src) img.setAttribute("src",src);
+  if(o.key){ const img=document.getElementById("watchImg"),src="assets/tutorials/"+o.key+(TUTORIAL_MANIFEST[o.key]?".views":"")+".jpg"; if(img.getAttribute("src")!==src) img.setAttribute("src",src);
     setText("watchSub","Slow-motion hook, "+Math.round(o.steps.length*STEP_DUR)+" seconds"); }
 }
 function setText(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}

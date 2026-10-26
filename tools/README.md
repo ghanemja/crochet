@@ -122,6 +122,9 @@ blender -b -P tools/render_tutorial.py -- build/paths/dc.json build/frames/dc_v0
 tools/encode_views.sh dc 24 build/frames/dc_v0          # one view -> 1x1 dc.views.*; four -> the 2x2 grid
 ```
 
+The studio's live hook in `index.html` runs the same op programs (`STITCH_OPS`, posed with the same
+keypoints in `choreoAt`), so a change to `SPECS` belongs there too.
+
 Then list it in `assets/tutorials/manifest.json`, e.g. `"dc": {"views": ["Guided"], "grid": [1, 1], "cues": true}`.
 The paths JSON carries all four cameras, so the fixed angles can be rendered later (`--angle 1..3`)
 and the stitch re-encoded as a 2×2 grid without re-running the choreography. The renderer copies a

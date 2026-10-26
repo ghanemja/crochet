@@ -101,3 +101,28 @@ python3 tools/choreo_sc.py build/paths/sc_v2.json --cues build/sc.cues.json --ha
 the work with its index raised, cuts them out and writes `build/hands/hands.blend` +
 `hands.json` (named points such as `index_dip`, which the working yarn runs over).
 Without them, `tools/hand_rig.py` (a simple skinned skeleton) stands in.
+
+### Every other stitch (`choreo.py`)
+
+`choreo.py` is the general form of `choreo_sc.py`: a stitch is a spec (`SPECS`) — the new row's
+height, the bars a tall stitch wraps round its post, and a program of hook operations grouped
+into the app's steps (`STITCH_STEPS` in `index.html`, mirrored here — keep the texts in sync):
+`yo_free` (yarn over in front, before inserting), `insert`, `yo_catch`, `pull_up`, `pull_keep`
+(slip stitch: the yarn stays in the throat), `yo_front`, `through2`, `through` (all loops). The
+state (loops on the hook in yarn order, the post growing under it, stitches made) is simulated op
+by op and the yarn rebuilt from it each frame as one path; loops that come off morph segment by
+segment into the finished geometry. The guided camera, callouts and stitch numbers are generated
+per op in the same style as the single crochet. The magic ring works in a straight "row space"
+bent into a circle (the ring strand is the row below; pulling the tail shrinks the circle).
+
+```bash
+python3 tools/choreo.py dc build/paths/dc.json --cues assets/tutorials/dc.cues.json --hands   # 24 fps
+python3 tools/preview_paths.py build/paths/dc.json build/preview/dc.png --every 24          # line-drawing contact sheet, no Blender
+blender -b -P tools/render_tutorial.py -- build/paths/dc.json build/frames/dc_v0 --angle 0 --skip-existing
+tools/encode_views.sh dc 24 build/frames/dc_v0          # one view -> 1x1 dc.views.*; four -> the 2x2 grid
+```
+
+Then list it in `assets/tutorials/manifest.json`, e.g. `"dc": {"views": ["Guided"], "grid": [1, 1], "cues": true}`.
+The paths JSON carries all four cameras, so the fixed angles can be rendered later (`--angle 1..3`)
+and the stitch re-encoded as a 2×2 grid without re-running the choreography. The renderer copies a
+frame instead of rendering it when the pose and camera match the previous one (holds).

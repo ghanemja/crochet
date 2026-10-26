@@ -383,15 +383,16 @@ MOVING = bool(CAM.get("moving")) and not A.lookdev          # the guided view: c
 prev = None                                                 # (pose key, path) of the last frame rendered
 for fi in range(f0, f1, step):
     path = os.path.join(A.out, "f_%04d.png" % fi)
-    if A.skip_existing and os.path.exists(path): prev = None; continue
     t0 = time.time(); fr = D["frames"][fi]
+    akey = (fr.get("a"), json.dumps(fr["cam"]) if MOVING and "cam" in fr else None)   # pose + camera
+    if A.skip_existing and os.path.exists(path): prev = (akey, path); continue
+    if prev and "a" in fr and prev[0] == akey:
+        shutil.copyfile(prev[1], path)                      # same pose seen from the same place: same picture
+        print("frame %d/%d  copied" % (fi, nF - 1), flush=True); continue
     if MOVING and "cam" in fr:
         P = Vector(fr["cam"]["pos"]); T = Vector(fr["cam"]["target"])
         cam.location = to_bl(T + (P - T) * k); tgt = to_bl(T)
         cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler(); cam_fwd = (tgt - cam.location).normalized()
-    elif prev and "a" in fr and prev[0] == fr["a"]:
-        shutil.copyfile(prev[1], path)                      # fixed camera, same pose: same picture
-        print("frame %d/%d  copied" % (fi, nF - 1), flush=True); continue
     hook.location = to_bl(fr["hook"]["pos"])
     qx, qy, qz, qw = fr["hook"]["quat"]
     hook.rotation_quaternion = CQ @ Quaternion((qw, qx, qy, qz)) @ CQ.inverted()
@@ -400,5 +401,5 @@ for fi in range(f0, f1, step):
     cd.dof.focus_distance = max(0.05, ((hook.location if A.zoom == 1 else tgt) - cam.location).dot(cam_fwd))
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
-    prev = (fr.get("a"), path)
+    prev = (akey, path)
     print("frame %d/%d  %.1fs (build %.1fs)" % (fi, nF - 1, time.time() - t0, t1 - t0), flush=True)

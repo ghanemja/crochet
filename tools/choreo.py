@@ -715,7 +715,22 @@ def yo_pose(op, p, theta):
     return rolled(c - h0.u * THROAT_D - h.t * hook_profile(THROAT_D)[0], h0.u, theta)
 
 def op_pose(op, p):
-    """hook pose (row space) for op at progress p (0..1 of its move)"""
+    """hook pose (row space) for op at progress p (0..1 of its move), kept out of the left hand"""
+    return off_left_hook(_op_pose(op, p))
+def off_left_hook(hk):
+    """the hook's head slid out of the left hand where a move would take it into the fingers"""
+    if not HAND_PTS or RING and WARP["x0"] is None: return hk   # the ring: only once it is bent round for the frame
+    ds = np.linspace(0.0, 12.0, 13); axis = hk.tip + ds[:, None] * hk.u
+    need = np.array([hook_profile(d)[1] for d in ds]) + 0.15
+    sk = L_POS + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
+    if RING: axis = warp_pts(axis) if WARP["x0"] is not None else axis
+    near = np.all((sk > axis.min(0) - 6) & (sk < axis.max(0) + 6), axis=1)
+    if not near.any(): return hk
+    d, j = skin_clearance(axis, sk[near], sn[near]); short = need - d
+    if short.max() <= 0: return hk
+    i = int(np.argmax(short)); push = sn[near][j[i]] * short[i]
+    h = Hook(hk.tip + push, hk.u, hk.t); h.roll = hk.roll; return h
+def _op_pose(op, p):
     S0 = op.S; h0 = S0.hk; e = ease(p); hx = op.hx
     back = h0.roll * (1 - ease(min(1.0, p / 0.45)))              # a caught yarn over: the throat comes back down as the op begins
     if op.name == "insert":

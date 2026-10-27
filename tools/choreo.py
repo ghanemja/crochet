@@ -104,6 +104,8 @@ def hook_mesh():
             tris += [a, c, b, b, c, d]
     tip = (hook_profile(0)[0], 0.0, 0.0)
     for j in range(nseg): tris += [tip, rings[0][j], rings[0][(j + 1) % nseg]]
+    end = (0.0, float(ys[-1]), 0.0)                              # the far end closed (it showed as a black hole)
+    for j in range(nseg): tris += [end, rings[-1][(j + 1) % nseg], rings[-1][j]]
     return [{"metal": True, "color": "#c9ced6", "pos": [round(c / R * APP_R, 5) for p in tris for c in p]}]
 
 TO_APP = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], float)
@@ -913,10 +915,28 @@ def right_hand(hk):
         rot = frame_from(-hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
         q = (pt("index_pip") + pt("index_dip")) / 2 - np.array([0, 0, 0.009 * HAND_SCALE / UNIT + RH])
         return hk.at(28.0 * R) - rot @ q, rot
-    grip = (pt("thumb_tip") + pt("index_dip") + pt("middle_dip")) / 3
-    web = (pt("thumb_knuckle") + pt("index_knuckle")) / 2
-    rot = _rot_onto(web - grip, v(0, 0, 1), hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
-    return hk.at(D_GRIP) - rot @ grip, rot
+    if GRIP is None:
+        grip = (pt("thumb_tip") + pt("index_dip") + pt("middle_dip")) / 3
+        web = (pt("thumb_knuckle") + pt("index_knuckle")) / 2
+        rot = _rot_onto(web - grip, v(0, 0, 1), hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
+        return hk.at(D_GRIP) - rot @ grip, rot
+    o, d = GRIP                                   # the shaft's own line through the hand (grip_fit.py)
+    rot = _rot_onto(d, v(0, 0, 1), hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
+    return hk.at(D_GRIP) - rot @ o, rot
+def load_grip():
+    """the shaft's line in the right hand, fitted once per hands bake (cached beside hands.json)"""
+    if not HAND_PTS or "_verts" not in HAND_PTS["R"]: return None
+    cp = os.path.join(os.path.dirname(_HJ), "grip.json"); stamp = os.path.getmtime(_HJ)
+    if os.path.exists(cp):
+        c = json.load(open(cp))
+        if c.get("stamp") == stamp and c.get("r") == RH: return np.array(c["o"]), np.array(c["d"])
+    import grip_fit
+    Pj = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS["R"].items() if not k.startswith("_")}
+    o, d, gaps = grip_fit.fit(Pj, np.array(HAND_PTS["R"]["_verts"]) * HAND_SCALE / UNIT, RH)
+    print("right hand on the shaft, gaps (yarn radii):", gaps, file=sys.stderr)
+    json.dump({"stamp": stamp, "r": RH, "o": list(o), "d": list(d), "gaps": gaps}, open(cp, "w"))
+    return o, d
+GRIP = load_grip()
 
 FIXED = [("Front", FRONT), ("Side", SIDE), ("Behind", BACK)]
 cache = {}; frames = []

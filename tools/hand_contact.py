@@ -24,6 +24,10 @@ def to_bl_np(a): a = np.asarray(a, float); return np.stack([a[:, 0], -a[:, 2], a
 for o in list(bpy.data.objects): bpy.data.objects.remove(o)
 with bpy.data.libraries.load(HB) as (src, dst): dst.objects = ["HandR", "HandL"]
 for o in dst.objects: bpy.context.scene.collection.objects.link(o); o.modifiers["Sub"].levels = 2
+C0 = Matrix.Rotation(math.pi / 2, 4, "X")
+HOOK = []
+for part in D["hookMesh"]:
+    if part["metal"]: HOOK += [(C0 @ Vector(x)) * S for x in np.array(part["pos"]).reshape(-1, 3)]
 def check(fr):
     dg = bpy.context.evaluated_depsgraph_get()
     hands = {}
@@ -70,6 +74,19 @@ def check(fr):
             report[key]["inside_by_joint"] = bj
             if os.environ.get("VERBOSE"):
                 for d, p in bad[::4]: print("  inside %.1f mm at %s (design %s)" % (d * 1000, min(joints, key=lambda k: (joints[k] - Vector(p)).length), np.round(np.array([p[0], p[1], p[2]]) / 0.0036, 1)))
+    # the hook (steel part) against the hands: its surface points inside the skin
+    from mathutils import Quaternion
+    C = Matrix.Rotation(math.pi / 2, 4, "X"); CQ = C.to_quaternion()
+    qx, qy, qz, qw = fr["hook"]["quat"]; q = CQ @ Quaternion((qw, qx, qy, qz)) @ CQ.inverted()
+    loc = Vector(to_bl_np([fr["hook"]["pos"]])[0])
+    for side, (tree, joints) in hands.items():
+        worst = 1.0; bj = {}
+        for v in HOOK[::7]:
+            p = loc + q @ v; d, l = clearance(tree, p)
+            worst = min(worst, d)
+            if d < -0.0005:
+                j = min(joints, key=lambda k: (joints[k] - p).length); bj[j] = min(bj.get(j, 0), round(d * 1000, 1))
+        if worst < 0.02: report["hook/%s" % side] = {"min_mm": round(worst * 1000, 2), "inside_pts": len(bj), "inside_by_joint": bj}
     return report
 
 allrep = {}

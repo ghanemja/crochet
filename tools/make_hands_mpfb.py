@@ -20,7 +20,8 @@ os.makedirs(OUT, exist_ok=True)
 # finger1 = thumb ... finger5 = pinky; curls are rotations about each bone's X (toward the palm), or (x, y, z) Euler angles
 POSES = {
     "R": {  # pencil grip: index along the hook, middle under it, ring and pinky tucked, thumb across
-        "finger2": (12, 18, 10), "finger3": (50, 68, 40), "finger4": (55, 70, 38), "finger5": (60, 72, 38),
+        # (index and middle chosen so thumb pad, index pad, middle fingertip and web all rest on one straight shaft)
+        "finger2": (22, 30, 20), "finger3": (35, 50, 30), "finger4": (55, 70, 38), "finger5": (60, 72, 38),
         "finger1": (10, 20, 20)},
     "L": {  # holding the work: index raised for the yarn, middle and thumb pinch, the rest relaxed
         # (thumb and middle chosen so their pads face squarely, as far apart as the work is thick)
@@ -127,12 +128,15 @@ for side in ("R", "L"):
     for fi, fname in enumerate(("thumb", "index", "middle", "ring", "pinky"), 1):   # every joint of every finger
         points[side].update({fname + "_knuckle": L(wpos(f"finger{fi}-1.{side}")), fname + "_pip": L(wpos(f"finger{fi}-2.{side}")),
                              fname + "_dip": L(wpos(f"finger{fi}-3.{side}")), fname + "_tip": L(wpos(f"finger{fi}-3.{side}", True))})
+    sub.levels = 2; bpy.context.view_layer.update()                # the surface as rendered, near enough
+    em = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
+    P_ = points[side]; V = [(Vector(x.co), Vector(x.normal)) for x in em.vertices]
+    # the skin of the whole hand: choreo.py lays the working yarn on the left one and the hook in the right one
+    P_["_verts"] = [[round(c, 5) for c in p] for p, _ in V]
+    P_["_normals"] = [[round(c, 4) for c in nv] for _, nv in V]
     # the pinch pads (left hand): the skin points of the thumb and middle fingertips that face each
     # other, with their normals — choreo.py lays them on the two faces of the fabric
     if side == "L":
-        sub.levels = 2; bpy.context.view_layer.update()            # the surface as rendered, near enough
-        em = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
-        P_ = points[side]; V = [(Vector(x.co), Vector(x.normal)) for x in em.vertices]
         def pad(f, other):
             a, b = Vector(P_[f + "_dip"]), Vector(P_[f + "_tip"]); o = Vector(P_[other + "_tip"])
             def seg_t(p): return (p - a).dot(b - a) / (b - a).length_squared
@@ -143,10 +147,7 @@ for side in ("R", "L"):
             p, nv = pad(f, other); P_[f + "_pad"] = list(p); P_[f + "_pad_n"] = list(nv)
         g = Vector(P_["thumb_pad"]) - Vector(P_["middle_pad"])
         print("PINCH gap %.1f mm, facing %.2f %.2f" % (g.length * 1000, Vector(P_["middle_pad_n"]).dot(g.normalized()), -Vector(P_["thumb_pad_n"]).dot(g.normalized())))
-        # the skin of the whole hand, for laying the working yarn on it (choreo.py hand_route_local)
-        P_["_verts"] = [[round(c, 5) for c in p] for p, _ in V]
-        P_["_normals"] = [[round(c, 4) for c in nv] for _, nv in V]
-        ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh_clear(); sub.levels = 1
+    ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh_clear(); sub.levels = 1
     print("HAND", side, len(me.vertices), "verts")
 
 bpy.data.libraries.write(os.path.join(OUT, "hands.blend"), set(objs), fake_user=True)

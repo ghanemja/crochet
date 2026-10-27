@@ -20,11 +20,11 @@ os.makedirs(OUT, exist_ok=True)
 # finger1 = thumb ... finger5 = pinky; curls are rotations about each bone's X (toward the palm)
 POSES = {
     "R": {  # pencil grip: index along the hook, middle under it, ring and pinky tucked, thumb across
-        "finger2": (12, 18, 10), "finger3": (38, 55, 30), "finger4": (55, 70, 38), "finger5": (60, 72, 38),
+        "finger2": (12, 18, 10), "finger3": (50, 68, 40), "finger4": (55, 70, 38), "finger5": (60, 72, 38),
         "finger1": (10, 20, 20)},
     "L": {  # holding the work: index raised for the yarn, middle and thumb pinch, the rest relaxed
-        "finger2": (-8, 8, 6), "finger3": (30, 40, 22), "finger4": (42, 52, 28), "finger5": (48, 55, 28),
-        "finger1": (8, 15, 12)},
+        "finger2": (-8, 8, 6), "finger3": (48, 60, 36), "finger4": (42, 52, 28), "finger5": (48, 55, 28),
+        "finger1": (18, 30, 24)},
 }
 
 for o in list(bpy.data.objects): bpy.data.objects.remove(o)
@@ -44,20 +44,38 @@ dg = bpy.context.evaluated_depsgraph_get()
 posed = bpy.data.meshes.new_from_object(human.evaluated_get(dg))      # armature + mask applied
 posed.transform(human.matrix_world)
 
-# skin: MakeHuman diffuse map, subsurface scattering, fine pore/crease bump
+# skin: MakeHuman diffuse map with subsurface scattering; creases and knuckles a little darker and
+# redder (Cycles pointiness), roughness that varies over the surface, and pore-scale bump
 skin_png = os.path.join(OUT, "skin.png"); shutil.copyfile(SKIN, skin_png)
 mat = bpy.data.materials.new("HandSkin"); mat.use_nodes = True
 n = mat.node_tree.nodes; l = mat.node_tree.links; bs = n["Principled BSDF"]
 tex = n.new("ShaderNodeTexImage"); tex.image = bpy.data.images.load(skin_png); tex.image.pack()
-hsv = n.new("ShaderNodeHueSaturation")          # studio light flattens it: a touch deeper and warmer
-hsv.inputs["Saturation"].default_value = 1.25; hsv.inputs["Value"].default_value = 0.78; hsv.inputs["Hue"].default_value = 0.49
-l.new(tex.outputs["Color"], hsv.inputs["Color"]); l.new(hsv.outputs["Color"], bs.inputs["Base Color"])
-bs.inputs["Roughness"].default_value = 0.48
-bs.inputs["Subsurface Weight"].default_value = 0.3; bs.inputs["Subsurface Radius"].default_value = (1.0, 0.4, 0.25)
-bs.inputs["Subsurface Scale"].default_value = 0.003; bs.inputs["Specular IOR Level"].default_value = 0.45
-noise = n.new("ShaderNodeTexNoise"); noise.inputs["Scale"].default_value = 900; noise.inputs["Detail"].default_value = 6
-bump = n.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.06; bump.inputs["Distance"].default_value = 0.0003
-l.new(noise.outputs["Fac"], bump.inputs["Height"]); l.new(bump.outputs["Normal"], bs.inputs["Normal"])
+hsv = n.new("ShaderNodeHueSaturation")          # studio light flattens it: deeper and warmer
+hsv.inputs["Saturation"].default_value = 1.3; hsv.inputs["Value"].default_value = 0.7; hsv.inputs["Hue"].default_value = 0.49
+l.new(tex.outputs["Color"], hsv.inputs["Color"])
+geo = n.new("ShaderNodeNewGeometry")
+cr = n.new("ShaderNodeValToRGB")                # pointiness: < 0.5 in creases, > 0.5 on knuckles and tips
+cr.color_ramp.elements[0].position = 0.42; cr.color_ramp.elements[0].color = (0.55, 0.32, 0.30, 1)
+cr.color_ramp.elements[1].position = 0.56; cr.color_ramp.elements[1].color = (1, 1, 1, 1)
+l.new(geo.outputs["Pointiness"], cr.inputs["Fac"])
+mul = n.new("ShaderNodeMix"); mul.data_type = "RGBA"; mul.blend_type = "MULTIPLY"; mul.inputs["Factor"].default_value = 0.8
+l.new(hsv.outputs["Color"], mul.inputs[6]); l.new(cr.outputs["Color"], mul.inputs[7])
+l.new(mul.outputs[2], bs.inputs["Base Color"])
+bs.inputs["Subsurface Weight"].default_value = 1.0; bs.inputs["Subsurface Radius"].default_value = (1.0, 0.38, 0.22)
+bs.inputs["Subsurface Scale"].default_value = 0.0035; bs.inputs["Specular IOR Level"].default_value = 0.5
+co = n.new("ShaderNodeTexCoord")
+rn = n.new("ShaderNodeTexNoise"); rn.inputs["Scale"].default_value = 60; rn.inputs["Detail"].default_value = 4
+l.new(co.outputs["Object"], rn.inputs["Vector"])
+rr = n.new("ShaderNodeMapRange"); rr.inputs["To Min"].default_value = 0.36; rr.inputs["To Max"].default_value = 0.56
+l.new(rn.outputs["Fac"], rr.inputs["Value"]); l.new(rr.outputs["Result"], bs.inputs["Roughness"])
+pores = n.new("ShaderNodeTexVoronoi"); pores.inputs["Scale"].default_value = 2200
+l.new(co.outputs["Object"], pores.inputs["Vector"])
+fine = n.new("ShaderNodeTexNoise"); fine.inputs["Scale"].default_value = 700; fine.inputs["Detail"].default_value = 8
+l.new(co.outputs["Object"], fine.inputs["Vector"])
+hsum = n.new("ShaderNodeMath"); hsum.operation = "ADD"
+l.new(pores.outputs["Distance"], hsum.inputs[0]); l.new(fine.outputs["Fac"], hsum.inputs[1])
+bump = n.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.12; bump.inputs["Distance"].default_value = 0.0002
+l.new(hsum.outputs["Value"], bump.inputs["Height"]); l.new(bump.outputs["Normal"], bs.inputs["Normal"])
 
 points = {}
 objs = []

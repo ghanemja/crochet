@@ -31,6 +31,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("key"); ap.add_argument("out"); ap.add_argument("--fps", type=int, default=24)
 ap.add_argument("--hands", action="store_true")
 ap.add_argument("--cues", default="")
+ap.add_argument("--max-frames", type=int, default=0)      # tests: stop after this many frames
 A = ap.parse_args()
 KEY = A.key
 
@@ -68,8 +69,26 @@ def local_pt(rig, name, lift=0.0, side=None):
 def frame_from(yh, zh):
     yh = nrm(yh); zh = nrm(zh - yh * (zh @ yh)); return np.stack([np.cross(yh, zh), yh, zh], 1)
 LEFT_RIG = hand_rig.skeleton(hand_rig.LEFT_HOLD, "L")
-L_ROT = frame_from(v(0.42, 0.1, 1.0), v(-0.25, -1.0, 0.35))
-F_WANT = v(-3.6 * P, 6.0, 13.0)
+SPEC_ZT = {"hdc": 0.5 * H, "dc": 1.0 * H, "tr": 1.75 * H}.get(KEY, 0.0)   # top of the new row (SPECS below)
+# The left hand holds the work the way a crocheter does: it comes in from the left, fingers
+# pointing along the row (and a little down), thumb in front of the fabric and middle finger
+# behind it pinching just below the stitches being worked into, index raised to carry the yarn.
+def _env_vec(name, default):
+    e = os.environ.get(name); return v(*map(float, e.split(","))) if e else default
+L_PINCH = _env_vec("L_PINCH", v(-12.0, 0.0, -6.5))             # midway between thumb tip and middle fingertip
+L_FINGERS = nrm(_env_vec("L_FINGERS", v(0.55, 0.45, 0.7)))     # where the fingers point: up and in, the forearm toward the viewer
+def _rot_onto(a1, a2, b1, b2):
+    """rotation taking a1 to b1, and a2 (as far as it is perpendicular to a1) to b2"""
+    def basis(x, y):
+        x = nrm(x); y = nrm(y - x * (x @ y)); return np.stack([x, y, np.cross(x, y)], 1)
+    return basis(b1, b2) @ basis(a1, a2).T
+if HAND_PTS:
+    _J = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS["L"].items()}
+    L_THUMB = _env_vec("L_THUMB", v(0, -1, 0))                    # from middle fingertip to thumb tip: through the work
+    L_ROT = _rot_onto(v(0, 1, 0), _J["thumb_tip"] - _J["middle_tip"], L_FINGERS, L_THUMB)
+    L_POS = L_PINCH - L_ROT @ ((_J["thumb_tip"] + _J["middle_tip"]) / 2)
+else:
+    L_ROT = frame_from(v(0.42, 0.1, 1.0), v(-0.25, -1.0, 0.35)); L_POS = v(-3.6 * P, 6.0, 13.0)
 FINGER_R = {"index": 0.0085, "middle": 0.0088, "ring": 0.0082, "pinky": 0.0072}
 YARN_M = R * UNIT
 def hand_route_local():
@@ -89,8 +108,9 @@ def hand_route_local():
     pts += [k + np.array([-0.01, -0.035, -0.02])]
     return pts
 _route = hand_route_local()
-L_POS = F_WANT - L_ROT @ (_route[2] / UNIT)
 YARN_HAND = [L_POS + L_ROT @ (p / UNIT) for p in _route]
+# from behind the work the yarn climbs over the top edge to the raised index finger (not across the front)
+YARN_HAND = [v(-2.4 * P, 1.6, 4.2 + max(0.0, SPEC_ZT)), v(-3.2 * P, 0.4, 5.0 + max(0.0, SPEC_ZT))] + YARN_HAND
 YARN_HAND = YARN_HAND + [YARN_HAND[-1] + v(-6.0, 8.0, -20.0)]
 
 # ---------------------------------------------------------------- hook (as choreo_sc.py)
@@ -377,9 +397,9 @@ else:
     STATIC = [(row_of(ROW_XS, -H), 1.0), (row_of(ROW_XS, -2 * H), SHADE_OLD), (chain(ROW_XS, -3 * H), SHADE_OLD)]
 E0 = FABRIC0[-1]
 DOWN = v(0, 0, -1)
-U_REST, U_IN, U_UP = v(1.0, -0.55, 0.8), v(0.8, -1.35, 0.75), v(0.95, -0.9, 0.85)
+U_REST, U_IN, U_UP = v(1.0, -0.55, 0.8), v(0.8, -1.35, 0.45), v(0.95, -0.9, 0.85)   # U_IN flatter: the tip comes up behind the work
 def HOLE(hx): return v(hx, 0.0, -H - 1.3)
-def T_IN(hx): return v(hx - 0.2, 4.2, -H - 1.6)
+def T_IN(hx): return v(hx - 0.2, 4.2, -H - 1.6) - nrm(U_IN) * 4.5     # well out the back, along the shaft
 def T_UP(hx, lift): return v(hx + 0.5, -2.6, -H + 4.0 + lift)
 def REST(E): return E + v(0, -2.05, 1.35)
 def ANCHOR(E): return E + v(0.3 * P, -0.25, 0.85)
@@ -531,14 +551,18 @@ def op_pose(op, p):
     """hook pose (row space) for op at progress p (0..1 of its move)"""
     S0 = op.S; h0 = S0.hk; e = ease(p); hx = op.hx
     if op.name == "insert":
-        tip = bez(h0.tip, v(hx + 0.3, -4.0, -H + 1.0), v(hx, -3.0, -H - 1.4), T_IN(hx), e)
-        return Hook(tip, slerp_dir(h0.u, U_IN, e), DOWN)
+        # come down in front of the stitch already turned to the insert angle, then slide straight
+        # in along the shaft (the tip leads; nothing moves sideways through the fabric)
+        tip = bez(h0.tip, v(hx + 0.3, -4.0, -H + 1.0), T_IN(hx) + nrm(U_IN) * 7.5, T_IN(hx), e)
+        return Hook(tip, slerp_dir(h0.u, U_IN, ease(min(1.0, p / 0.55))), DOWN)
     if op.name == "yo_catch":
         return Hook(h0.tip + v(0.25, 0.5, -0.35) * math.sin(math.pi * e), h0.u, slerp_dir(DOWN, v(0, 1, 0.4), math.sin(math.pi * e) * 0.8))
     if op.name in ("pull_up", "pull_keep"):
         k = 0.55 if op.name == "pull_keep" else 1.0
-        tip = bez(h0.tip, v(hx, -1.5, -H - 1.45), v(hx + 0.3, -3.5, -H), T_UP(hx, lift_for(0)) if k == 1 else v(hx + 0.4, -2.8, -H + 2.0), e)
-        return Hook(tip, slerp_dir(h0.u, U_UP, e), DOWN)
+        # back out the way it went in (along the shaft) before lifting the loop up in front
+        dst = T_UP(hx, lift_for(0)) if k == 1 else v(hx + 0.4, -2.8, -H + 2.0)
+        tip = bez(h0.tip, h0.tip + h0.u * 7.5, v(hx + 0.3, -3.5, -H), dst, e)
+        return Hook(tip, slerp_dir(h0.u, U_UP, ease(max(0.0, (p - 0.35) / 0.65))), DOWN)
     if op.name in ("yo_front", "yo_free"):
         q = math.sin(math.pi * ease(min(1.0, p / 0.55))) if op.name == "yo_free" else math.sin(math.pi * e)
         return Hook(h0.tip + v(-0.4, 0.6, 0.3) * q, h0.u, slerp_dir(DOWN, v(0, 1, 0.5), q * 0.8))
@@ -825,16 +849,23 @@ def guided_target(tv):
     return np.mean([action_focus(at_video(min(max(0.0, x), total))[0]) for x in ts], axis=0)
 
 RIGHT_RIG = hand_rig.skeleton(hand_rig.RIGHT_GRIP, "R")
-D_GRIP = 28.0 * R
+D_GRIP = 22.0 * R                     # the fingertips hold the shaft this far up from the tip
 def right_hand(hk):
-    rot = frame_from(-hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
-    q = (local_pt(RIGHT_RIG, "index_pip", side="R") + local_pt(RIGHT_RIG, "index_dip", side="R")) / 2 \
-        - np.array([0, 0, 0.009 * HAND_SCALE / UNIT + RH])
-    return hk.at(D_GRIP) - rot @ q, rot
+    """tripod (pencil) grip: the shaft runs between the thumb pad and the index and middle
+    fingertips and back through the web between thumb and index; turns with the hook (the wrist)"""
+    pt = lambda k: local_pt(RIGHT_RIG, k, side="R")
+    if not HAND_PTS:
+        rot = frame_from(-hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
+        q = (pt("index_pip") + pt("index_dip")) / 2 - np.array([0, 0, 0.009 * HAND_SCALE / UNIT + RH])
+        return hk.at(28.0 * R) - rot @ q, rot
+    grip = (pt("thumb_tip") + pt("index_dip") + pt("middle_dip")) / 3
+    web = (pt("thumb_knuckle") + pt("index_knuckle")) / 2
+    rot = _rot_onto(web - grip, v(0, 0, 1), hk.u, -hk.t * math.cos(0.5) + hk.z * math.sin(0.5))
+    return hk.at(D_GRIP) - rot @ grip, rot
 
 FIXED = [("Front", FRONT), ("Side", SIDE), ("Behind", BACK)]
 cache = {}; frames = []
-for i in range(n):
+for i in range(min(n, A.max_frames) if A.max_frames else n):
     tv = i / A.fps
     ta, cdir, zoom = at_video(tv); key = round(ta, 4)
     if key not in cache: cache[key] = frame_strands(ta)

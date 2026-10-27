@@ -2573,7 +2573,7 @@ function setNow(o){
     return `<li class="${c}"><span class="n">${i<o.stepIdx?ICON_CHECK:i+1}</span>${escapeHtml(t)}</li>`; }).join(""):"";
   const watch=document.getElementById("learnNowBtn"); watch.hidden=!o.key;
   if(o.key){ const img=document.getElementById("watchImg"),src="assets/tutorials/"+o.key+(TUTORIAL_MANIFEST[o.key]?".views":"")+".jpg"; if(img.getAttribute("src")!==src) img.setAttribute("src",src);
-    setText("watchSub","Slow-motion hook, "+Math.round(o.steps.length*STEP_DUR)+" seconds"); }
+    setText("watchSub",TUTORIAL_MANIFEST[o.key]?"Guided 3D video, step by step":"Slow-motion hook, "+Math.round(o.steps.length*STEP_DUR)+" seconds"); }
 }
 function setText(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
 function buildStepList(){

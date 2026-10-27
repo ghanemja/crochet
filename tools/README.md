@@ -62,7 +62,7 @@ BLENDER=/path/to/blender OUT=assets/tutorials tools/render_all.sh "sc:30 dc:30 c
 twisted plies, spun fibres around each ply, flyaways anchored by arc length —
 with an HDRI + area lights, a 100 mm lens with f/4 depth of field focused on
 the hook, a shadow-catcher floor and transparent film; `encode_tutorial.sh`
-composites onto the cream stage and encodes (two-pass VP9 aimed at ~1.35 MB,
+composites onto the cream stage and encodes (two-pass VP9 aimed at ~1.35 MB — `encode_views.sh` holds quality instead, since the fibres smear in motion at that size,
 H.264 MP4 for Safari, poster at 80%). Defaults (800×500, 16 samples +
 OpenImageDenoise, no subsurface) take ~13 s/frame on 4 CPU cores; `key:15`
 renders every other frame. Rendering is resumable (`--skip-existing`).

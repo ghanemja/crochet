@@ -782,6 +782,7 @@ def off_left_hand(c):
     m = np.all((c > sk.min(0) - 2) & (c < sk.max(0) + 2), axis=1)
     if not m.any(): return c
     c = c.copy(); q = c[m]
+    near = np.all((sk > q.min(0) - 3) & (sk < q.max(0) + 3), axis=1); sk, sn = sk[near], sn[near]
     for _ in range(3):
         d, j = skin_clearance(q, sk, sn); q = q + sn[j] * np.maximum(0.0, 1.06 * R - d)[:, None]
     c[m] = q; return c
@@ -801,7 +802,8 @@ def frame_strands(ta):
             c = lerp(straight, c, e)
         ts = spline(tail + [c[0]]); c = np.vstack([ts, c[1:]]); sp += len(ts) - 1
     c = push_out(c, hk)
-    c[sp:] = off_left_hand(c[sp:])
+    h = min(len(c), cv.idx["hand"] + (len(ts) - 1 if RING else 0) + 1)    # the route round the fingers is settled already
+    if h > sp: c[sp:h] = off_left_hand(c[sp:h])
     segs = [(c[:sp + 1], False), (c[sp:], True)]
     for s, acc in segs:
         if len(s) < 2: continue

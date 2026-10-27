@@ -1,0 +1,12 @@
+build/paths/sc.json build/frames/sc_v0 0
+build/paths/sc.json build/frames/sc_v1 1
+build/paths/sc.json build/frames/sc_v2 2
+build/paths/sc.json build/frames/sc_v3 3
+build/paths/ch.json build/frames/ch_v0 0
+build/paths/sl.json build/frames/sl_v0 0
+build/paths/hdc.json build/frames/hdc_v0 0
+build/paths/dc.json build/frames/dc_v0 0
+build/paths/tr.json build/frames/tr_v0 0
+build/paths/inc.json build/frames/inc_v0 0
+build/paths/dec.json build/frames/dec_v0 0
+build/paths/mr.json build/frames/mr_v0 0

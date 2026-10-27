@@ -1,0 +1,10 @@
+sc 24 build/frames/sc_v0
+sc 24 build/frames/sc_v0 build/frames/sc_v1 build/frames/sc_v2 build/frames/sc_v3
+ch 24 build/frames/ch_v0
+sl 24 build/frames/sl_v0
+hdc 24 build/frames/hdc_v0
+dc 24 build/frames/dc_v0
+tr 24 build/frames/tr_v0
+inc 24 build/frames/inc_v0
+dec 24 build/frames/dec_v0
+mr 24 build/frames/mr_v0

@@ -15,38 +15,53 @@ A single-angle video is `"views": ["Guided"], "grid": [1, 1]`. Only list stitche
 committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fps.
 `tools/queue/publish.sh` writes the files and the manifest entry for you.
 
-## Where things stand
-- `tools/choreo.py` choreographs every stitch from a spec (`tools/README.md`, "Every other stitch").
-  sc comes from it too now (`choreo_sc.py` is the older single-crochet original).
-- `assets/tutorials/sc.views.*` on main is an **old** take: old hands, hook and transparent film.
-  Everything has to be re-rendered once the two open issues below are fixed. Nothing is rendering.
-- Settings approved by the user so far (all in git): an opaque cream stage (`render_tutorial.py
-  --stage`, the default; the transparent film left speckled fibre edges), no shadow-catcher floor,
-  matte flyaways, constant-quality encoding (`encode_views.sh`; low bitrates smeared the fibres in
-  motion), the left hand placed by its pinch on the work (forearm toward the viewer, thumb in
-  front, index raised carrying the yarn), a tripod right-hand grip, a hook that turns before it
-  reaches the stitch, slides in and backs out along its shaft and goes well out the back, less waxy
-  skin (`make_hands_mpfb.py`).
+## Where things stand (2026-10-27 21:30 UTC)
+- **Rendering now**, in queue order: sc Guided is **published** (`6610110`; the manifest lists it as
+  `["Guided"]`). Now rendering sc Front/Side/Behind (`sc_v1..3`, no hands); when all four are done
+  the publisher re-encodes sc as the 2×2 grid. Then ch sl hdc dc tr inc dec mr, Guided only, 24 fps.
+- **All paths and cues are final** in `build/paths/<key>.json` + `<key>.cues.json` (git-ignored;
+  regenerate with the Setup loop in a fresh container). Don't change choreo/hands without
+  restarting the affected renders (see the queue section).
+- Measured speed: ~45–60 s/frame for the Guided view with hands (close-ups), less for the fixed
+  views. Remaining ≈ 5,400 Guided frames + ~1,000 sc fixed-view frames → roughly 60–70 h.
+- Settings approved by the user (all in git): opaque cream stage, no shadow-catcher floor, matte
+  flyaways, constant-quality encoding, tripod right-hand grip, a hook that turns before the stitch,
+  slides in and out along its shaft and goes well out the back, less waxy skin.
 
-## Open issues (from the user, fix these first)
-1. **How the left hand holds the yarn, physics-wise.** The fabric and yarn pass through the left
-   fingers (see the close-ups at the start of the guided take). The thumb/middle pinch must sit on
-   the fabric's surfaces, not inside it. The working yarn's route over the index, under
-   middle/ring and round the pinky (`hand_route_local` in `choreo.py`) must lie on the skin. Check
-   with full-quality close-up frames (`tools/queue/handtest.sh`, `L_PINCH` / `L_FINGERS` /
-   `L_THUMB` env overrides in `choreo.py`). The finger poses are in `make_hands_mpfb.py` (`POSES`).
-2. **The bottom row isn't connected to the row above.** The foundation chain (`chain(ROW_XS, -3*H)`
-   in `choreo.py`) floats on its own: the legs of the row above (`row_of(ROW_XS, -2*H)`) must go
-   down into the chain's V's, the way each row's legs go into the row below.
+## Done in this session (the two issues the user raised, and what came out of checking them)
+1. **Left hand physics.** `make_hands_mpfb.py` now exports the pinch pads and the whole rendered
+   skin (`_verts`/`_normals` in `hands.json`). `choreo.py` places the left hand by its pads on the
+   work's two faces along `L_AXIS`, then slides it until thumb and fingers touch equally
+   (`skin_clearance`); the yarn route round the fingers is laid on the skin (`on_skin`, `settle`),
+   and every frame the hook-to-hand stretch is pushed off the skin (`off_left_hand`). Op blends keep
+   the hand's yarn fixed (it used to slide through the index).
+2. **Rows joined.** Every static row has legs into the row below; the first row's go through the
+   foundation chain's links (`row_of(..., zh, hole_dz)`, `CHAIN_DZ`).
+3. **Right hand.** It didn't hold the hook (the shaft ran through the palm). `tools/grip_fit.py`
+   fits the shaft's line so thumb pad, index pad, middle fingertip and web rest on it (cached in
+   `build/hands/grip.json`); the index/middle curls changed to make that possible. Hook end capped.
+4. **ch**: the older chain hangs down from the hook (`droop`) and the hand pinches it there, turned
+   so the raised index stands in front of the chain. **mr**: a tighter pinch variant (`HandLc`)
+   rests on the ring strand and backs off (`L_RELEASE`) before the finished stitches turn into it.
+   Per-stitch placement lives in `_PINCH` / `L_VARIANT` in `choreo.py`.
+5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
+   a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
+   close-ups of both fixes were sent to the user before the long run.
 
-The user also cares that the hands look real (skin), and that the hook's direction makes sense in
-every step. After fixing, render one full-quality frame per issue and show it before the long run.
+## Checking tools
+- `blender -b -P tools/hand_contact.py -- build/paths/<key>.json a:b:step` — yarn/fabric/hook vs hands.
+- `tools/queue/closeup.sh <paths> <frame> <name> q|full "dx,dy,dz@tx,ty,tz@dist" ...` — close-ups
+  from any camera (design space: Z up, -Y toward the camera), tiled into `build/closeup/<name>.jpg`.
+- Env overrides in `choreo.py`: `L_PINCH`, `L_FINGERS`, `L_AXIS`, `L_VARIANT`, `CHAIN_DZ`;
+  `HAND_POSE_<R|L|Lc>` in `make_hands_mpfb.py`.
 
 ## Setup (nothing in build/ is in git; a fresh container needs all of it)
 - Blender 4.2.3: `mkdir -p /opt/blender-dl && curl -sSL https://download.blender.org/release/Blender4.2/blender-4.2.3-linux-x64.tar.xz | tar xJ -C /opt/blender-dl`
 - HDRI: `mkdir -p build/hdri && curl -o build/hdri/studio_small_09_2k.hdr https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/studio_small_09_2k.hdr`
 - MPFB2: `curl -sSL -o build/dl/mpfb.zip "https://extensions.blender.org/download/sha256:c075b3e9b94b8e5556a5f03f4653602d02ea306de08126e8f55ed6dee28a2dad/add-on-mpfb-v2.0.18.zip"`, then
   `blender -b --command extension install-file -r user_default -e build/dl/mpfb.zip` (no `--factory-startup` with it).
+- MPFB2 is a user extension and is lost if the container's home is reset — reinstall it before
+  re-baking hands (rendering only needs `build/hands/`).
 - MakeHuman CC0 assets: `https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip`,
   unzip into `build/dl/mh/x`. Then `blender -b -P tools/make_hands_mpfb.py -- build/hands build/dl/mh/x/skins/young_caucasian_female/young_lightskinned_female_diffuse.png`
 - `pip install matplotlib` (for `tools/preview_paths.py`).
@@ -66,11 +81,12 @@ every step. After fixing, render one full-quality frame per issue and show it be
   as a contact sheet. `tools/queue/handtest.sh <name>` renders one frame of the hands.
 
 ## Pitfalls already hit
-- **The container is recycled whenever the session is idle** and the renders die (twice, ~15 h
-  lost). Keep a `run_in_background` Bash task running at all times (max timeout 2 h): an until-loop
-  that runs `tools/queue/ensure.sh` every minute and exits when something publishes, then re-arm
-  it. Also schedule a `send_later` check-in every ~30 min that re-runs `ensure.sh` and re-arms
-  the watcher.
+- **The container/worker restarts and the renders die** (four times so far; files in `build/`
+  survived each time, processes didn't). After any restart run `sh tools/queue/ensure.sh` (it
+  resumes with `--skip-existing`). Keep a `run_in_background` Bash watcher alive (max timeout 2 h):
+  an until-loop running `ensure.sh` every minute that exits when something publishes; re-arm it.
+  The user declined further `send_later` check-ins at 20:50 — don't schedule them.
+- Heavy checks (hand_contact sweeps, choreo runs) share the 4 cores and slow the render 2–3×.
 - ffmpeg reads stdin: inside a `while read` loop, give it `< /dev/null` (it ate the job list).
 - This shell is bash: a `-pattern_type glob -i dir/f_*.png` in a variable gets expanded unless you
   `set -f` first.
@@ -82,6 +98,6 @@ every step. After fixing, render one full-quality frame per issue and show it be
 - `tools/__pycache__` and `build/` are git-ignored — never commit them.
 
 ## Budget
-4 CPU cores, CPU-only Cycles: ~15–28 s/frame at 800×500, 16 samples + OIDN. sc 486 frames × 4
-angles, the others ~5,400 frames → ~40 h. Commit each stitch as soon as it's encoded. Finish with a
+4 CPU cores, CPU-only Cycles at 800×500, 16 samples + OIDN: ~45–60 s/frame Guided with hands. sc
+486 frames × 4 angles, the others ~5,400 frames → ~60–70 h in total. Commit each stitch as soon as it's encoded. Finish with a
 short summary of which stitches/angles were rendered and anything cut.

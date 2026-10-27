@@ -15,10 +15,11 @@ A single-angle video is `"views": ["Guided"], "grid": [1, 1]`. Only list stitche
 committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fps.
 `tools/queue/publish.sh` writes the files and the manifest entry for you.
 
-## Where things stand (2026-10-27 21:30 UTC)
-- **Rendering now**, in queue order: sc Guided is **published** (`6610110`; the manifest lists it as
-  `["Guided"]`). Now rendering sc Front/Side/Behind (`sc_v1..3`, no hands); when all four are done
-  the publisher re-encodes sc as the 2×2 grid. Then ch sl hdc dc tr inc dec mr, Guided only, 24 fps.
+## Where things stand (2026-10-27 23:10 UTC)
+- **Rendering now**, in queue order: sc again from scratch (Guided, then Front/Side/Behind), after
+  the user's feedback on the yarn overs (below, item 6). The sc Guided video on main (`6610110`)
+  is the previous take; the publisher replaces it when the new sc_v0 is done, and replaces that with
+  the 2×2 grid when all four angles are. Then ch sl hdc dc tr inc dec mr, Guided only, 24 fps.
 - **All paths and cues are final** in `build/paths/<key>.json` + `<key>.cues.json` (git-ignored;
   regenerate with the Setup loop in a fresh container). Don't change choreo/hands without
   restarting the affected renders (see the queue section).
@@ -44,6 +45,13 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    so the raised index stands in front of the chain. **mr**: a tighter pinch variant (`HandLc`)
    rests on the ring strand and backs off (`L_RELEASE`) before the finished stitches turn into it.
    Per-stitch placement lives in `_PINCH` / `L_VARIANT` in `choreo.py`.
+6. **Yarn overs** (user, relayed: "not rotating the hook enough"; "the yarn moves by itself"): the
+   working yarn is held straight from where it leaves the work (`BT`, lowered to be within reach)
+   to the left index and bends only where the hook pushes into it (`contact`). A yarn over dips the
+   hook under it and lifts it in (`yo_plan`/`yo_pose`; a hook in a stitch backs out 2.5 and tips
+   up ≤50° about it), rolling the throat `YO_ROLL` = 200° round through the front; the roll back
+   happens in the next op (`back` in `op_pose`), the throat carrying the yarn round. The right wrist
+   takes `WRIST_SHARE` of the roll. Checked with close-ups and `hand_contact.py` (sc clean).
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.

@@ -17,15 +17,18 @@ OUT = os.path.abspath(argv[0] if argv else "build/hands")
 SKIN = argv[1] if len(argv) > 1 else "/opt/mh/sys/skins/young_caucasian_female/young_lightskinned_female_diffuse.png"
 os.makedirs(OUT, exist_ok=True)
 
-# finger1 = thumb ... finger5 = pinky; curls are rotations about each bone's X (toward the palm)
+# finger1 = thumb ... finger5 = pinky; curls are rotations about each bone's X (toward the palm), or (x, y, z) Euler angles
 POSES = {
     "R": {  # pencil grip: index along the hook, middle under it, ring and pinky tucked, thumb across
         "finger2": (12, 18, 10), "finger3": (50, 68, 40), "finger4": (55, 70, 38), "finger5": (60, 72, 38),
         "finger1": (10, 20, 20)},
     "L": {  # holding the work: index raised for the yarn, middle and thumb pinch, the rest relaxed
-        "finger2": (-8, 8, 6), "finger3": (48, 60, 36), "finger4": (42, 52, 28), "finger5": (48, 55, 28),
-        "finger1": (18, 30, 24)},
+        # (thumb and middle chosen so their pads face squarely, as far apart as the work is thick)
+        "finger2": (-8, 8, 6), "finger3": (30, 60, 35), "finger4": (42, 52, 28), "finger5": ((30, 0, 15), 45, 25),   # pinky spread: room to wrap the yarn round it
+        "finger1": ((18, 0, 10), 10, 30)},
 }
+for side in ("R", "L"):     # tests: HAND_POSE_L='{"finger1": [10, 20, 20]}'
+    if os.environ.get("HAND_POSE_" + side): POSES[side].update(json.loads(os.environ["HAND_POSE_" + side]))
 
 for o in list(bpy.data.objects): bpy.data.objects.remove(o)
 human = HumanService.create_human()
@@ -34,7 +37,8 @@ pb = rig.pose.bones
 for side, pose in POSES.items():
     for f, curls in pose.items():
         for j, a in enumerate(curls, 1):
-            b = pb[f"{f}-{j}.{side}"]; b.rotation_mode = "XYZ"; b.rotation_euler = (math.radians(a), 0, 0)
+            b = pb[f"{f}-{j}.{side}"]; b.rotation_mode = "XYZ"
+            b.rotation_euler = [math.radians(x) for x in (a if isinstance(a, (list, tuple)) else (a, 0, 0))]
 bpy.context.view_layer.update()
 
 def wpos(name, tail=False):
@@ -123,6 +127,26 @@ for side in ("R", "L"):
     for fi, fname in enumerate(("thumb", "index", "middle", "ring", "pinky"), 1):   # every joint of every finger
         points[side].update({fname + "_knuckle": L(wpos(f"finger{fi}-1.{side}")), fname + "_pip": L(wpos(f"finger{fi}-2.{side}")),
                              fname + "_dip": L(wpos(f"finger{fi}-3.{side}")), fname + "_tip": L(wpos(f"finger{fi}-3.{side}", True))})
+    # the pinch pads (left hand): the skin points of the thumb and middle fingertips that face each
+    # other, with their normals — choreo.py lays them on the two faces of the fabric
+    if side == "L":
+        sub.levels = 2; bpy.context.view_layer.update()            # the surface as rendered, near enough
+        em = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
+        P_ = points[side]; V = [(Vector(x.co), Vector(x.normal)) for x in em.vertices]
+        def pad(f, other):
+            a, b = Vector(P_[f + "_dip"]), Vector(P_[f + "_tip"]); o = Vector(P_[other + "_tip"])
+            def seg_t(p): return (p - a).dot(b - a) / (b - a).length_squared
+            near = [(p, nv) for p, nv in V if 0.25 < seg_t(p) < 1.05 and ((a + (b - a) * seg_t(p)) - p).length < 0.013]
+            p, nv = max(near, key=lambda q: q[1].dot((o - q[0]).normalized()))
+            return p, nv
+        for f, other in (("thumb", "middle"), ("middle", "thumb")):
+            p, nv = pad(f, other); P_[f + "_pad"] = list(p); P_[f + "_pad_n"] = list(nv)
+        g = Vector(P_["thumb_pad"]) - Vector(P_["middle_pad"])
+        print("PINCH gap %.1f mm, facing %.2f %.2f" % (g.length * 1000, Vector(P_["middle_pad_n"]).dot(g.normalized()), -Vector(P_["thumb_pad_n"]).dot(g.normalized())))
+        # the skin of the whole hand, for laying the working yarn on it (choreo.py hand_route_local)
+        P_["_verts"] = [[round(c, 5) for c in p] for p, _ in V]
+        P_["_normals"] = [[round(c, 4) for c in nv] for _, nv in V]
+        ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh_clear(); sub.levels = 1
     print("HAND", side, len(me.vertices), "verts")
 
 bpy.data.libraries.write(os.path.join(OUT, "hands.blend"), set(objs), fake_user=True)

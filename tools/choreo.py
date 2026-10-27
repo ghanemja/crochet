@@ -82,37 +82,6 @@ def _rot_onto(a1, a2, b1, b2):
     def basis(x, y):
         x = nrm(x); y = nrm(y - x * (x @ y)); return np.stack([x, y, np.cross(x, y)], 1)
     return basis(b1, b2) @ basis(a1, a2).T
-if HAND_PTS:
-    _J = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS["L"].items()}
-    L_THUMB = _env_vec("L_THUMB", v(0, -1, 0))                    # from middle fingertip to thumb tip: through the work
-    L_ROT = _rot_onto(v(0, 1, 0), _J["thumb_tip"] - _J["middle_tip"], L_FINGERS, L_THUMB)
-    L_POS = L_PINCH - L_ROT @ ((_J["thumb_tip"] + _J["middle_tip"]) / 2)
-else:
-    L_ROT = frame_from(v(0.42, 0.1, 1.0), v(-0.25, -1.0, 0.35)); L_POS = v(-3.6 * P, 6.0, 13.0)
-FINGER_R = {"index": 0.0085, "middle": 0.0088, "ring": 0.0082, "pinky": 0.0072}
-YARN_M = R * UNIT
-def hand_route_local():
-    if not HAND_PTS: return [np.array([0.0, 0.17, 0.0])]
-    J = {k: np.array(x) * HAND_SCALE for k, x in HAND_PTS["L"].items()}
-    across = nrm(J["pinky_knuckle"] - J["index_knuckle"]); back = np.array([0.0, 0.0, 1.0])
-    def ring(f, t, angles, slide=0.0):
-        k, pip = J[f + "_knuckle"], J[f + "_pip"]; ax = nrm(pip - k); c = k + (pip - k) * t
-        zf = nrm(back - ax * (back @ ax)); df = nrm(np.cross(ax, zf)); df = df if df @ across > 0 else -df
-        r = FINGER_R[f] * HAND_SCALE + YARN_M + 0.0004
-        return [c + ax * slide * (i / max(1, len(angles) - 1)) + r * (math.cos(math.radians(a)) * zf + math.sin(math.radians(a)) * df)
-                for i, a in enumerate(angles)]
-    pts = ring("index", 0.6, [-80, -30, 0, 40, 85, 140])
-    pts += ring("middle", 0.45, [180]) + ring("ring", 0.4, [180])
-    pts += ring("pinky", 0.45, [200, 150, 90, 30, -30, -90, -150, -200], slide=-0.008)
-    k = J["pinky_knuckle"]
-    pts += [k + np.array([-0.01, -0.035, -0.02])]
-    return pts
-_route = hand_route_local()
-YARN_HAND = [L_POS + L_ROT @ (p / UNIT) for p in _route]
-# from behind the work the yarn climbs over the top edge to the raised index finger (not across the front)
-YARN_HAND = [v(-2.4 * P, 1.6, 4.2 + max(0.0, SPEC_ZT)), v(-3.2 * P, 0.4, 5.0 + max(0.0, SPEC_ZT))] + YARN_HAND
-YARN_HAND = YARN_HAND + [YARN_HAND[-1] + v(-6.0, 8.0, -20.0)]
-
 # ---------------------------------------------------------------- hook (as choreo_sc.py)
 def hook_profile(y):
     r = RH
@@ -266,13 +235,16 @@ def morph(ca, cb, e, lag=0.35):
     return Curve(out, idx, min(len(out) - 1, max(0, sp)), min(len(out) - 1, remap(bb, cb.own_e)))
 
 def blend(ca, cb, w):
-    """plain arc-length blend of two nearly equal curves from each one's end of fabric (op joins)"""
-    ta, tb = ca.c[ca.own_e:], cb.c[cb.own_e:]; n = max(len(ta), len(tb), 2)
+    """plain arc-length blend of two nearly equal curves from each one's end of fabric (op joins);
+    the yarn round the left hand is the same in both and stays put"""
+    ta, tb = ca.c[ca.own_e:ca.idx["hand"] + 1], cb.c[cb.own_e:cb.idx["hand"] + 1]; n = max(len(ta), len(tb), 2)
     mid = lerp(resample(ta, n=n), resample(tb, n=n), w)
-    out = np.vstack([cb.c[:cb.own_e], mid])
+    out = np.vstack([cb.c[:cb.own_e], mid, cb.c[cb.idx["hand"] + 1:]])
+    hand_at = cb.own_e + n - 1
     fa = (ca.split - ca.own_e) / max(1, len(ta) - 1); fb = (cb.split - cb.own_e) / max(1, len(tb) - 1)
     sp = cb.own_e + int(round(lerp(fa, fb, w) * (n - 1))) if min(fa, fb) >= 0 else cb.split
     idx = {m: (i if i <= cb.own_e else cb.own_e + int(round((i - cb.own_e) / max(1, len(tb) - 1) * (n - 1)))) for m, i in cb.idx.items()}
+    idx["hand"] = hand_at
     return Curve(out, idx, min(len(out) - 1, max(0, sp)), cb.own_e)
 
 # ---------------------------------------------------------------- fabric geometry
@@ -284,10 +256,11 @@ def bar_heights(zt, zh, nb):
     lo, hi = zh + 1.8, zt - 1.6
     return [lo + (hi - lo) * (j + 1) / (nb + 1) for j in range(nb)]    # bottom to top
 
-def stitch_static(x, zt, holes, nb=0, zh=-H):
+def stitch_static(x, zt, holes, nb=0, zh=-H, hole_dz=-1.3):
     """way-points of a finished stitch whose top V is centred at (x, ., zt), entered from its right
     neighbour and leaving to the left; legs into the hole(s) under the V of the row below at x = h
-    (two holes for a decrease), wrapped by nb bars (the yarn overs of hdc / dc / tr)."""
+    (two holes for a decrease), wrapped by nb bars (the yarn overs of hdc / dc / tr). hole_dz: how far
+    below the row under it the legs pass through (under its V; into a chain, through the link)."""
     pts = [v(x + 0.5 * P, -0.25, zt + 0.15),
            v(x + 0.22 * P, -B, zt + 0.35), v(x - 0.22 * P, -B, zt + 0.35),
            v(x - 0.48 * P, 0.0, zt + 0.45),
@@ -301,7 +274,7 @@ def stitch_static(x, zt, holes, nb=0, zh=-H):
         pts += [v(xa(0.1) + 0.18 * P, 0.7, zt - 1.6)]
         for zj in reversed(bar_heights(zt, zh, nb)):
             pts += bar(xa(1 - (zj - zh) / L), zj)
-        pts += [v(xa(0.75) + 0.12 * P, -0.95, zh + 1.8), v(hx + 0.05 * P, 0.0, zh - 1.3), v(hx - 0.05 * P, 1.25, zh - 0.9), v(xa(0.75) - 0.15 * P, 1.0, zh + 2.2)]
+        pts += [v(xa(0.75) + 0.12 * P, -0.95, zh + 1.8), v(hx + 0.05 * P, 0.0, zh + hole_dz), v(hx - 0.05 * P, 1.25, zh + hole_dz + 0.4), v(xa(0.75) - 0.15 * P, 1.0, zh + 2.2)]
         if L > 6: pts += [v(xa(0.4) - 0.28 * P, 0.95, zh + 0.55 * L)]
         pts += [v(xa(0.1) - 0.3 * P, -0.95, zt - 1.4 if k == len(holes) - 1 else zt - 2.4)]
     return pts + [v(x - 0.5 * P, -0.25, zt + 0.15)]
@@ -315,10 +288,10 @@ def chain(xs, z):
     for x in xs: pts += chain_link(x, z)[:-1]
     return pts + [chain_link(xs[-1], z)[-1]]
 
-def row_of(xs, zt, nb=0, zh=-H):
+def row_of(xs, zt, nb=0, zh=-H, hole_dz=-1.3):
     pts = []
-    for x in xs: pts += stitch_static(x, zt, [x], nb, zh)[:-1]
-    return pts + [stitch_static(xs[-1], zt, [xs[-1]], nb, zh)[-1]]
+    for x in xs: pts += stitch_static(x, zt, [x], nb, zh, hole_dz)[:-1]
+    return pts + [stitch_static(xs[-1], zt, [xs[-1]], nb, zh, hole_dz)[-1]]
 
 def post_partial(hx, zt_hook, nb_done, zt, nb, zh=-H):
     """the post under the hook after a 'yarn over, through 2' (dc / tr): down the front through the
@@ -394,8 +367,90 @@ elif RING:
     STATIC = []
 else:
     FABRIC0 = row_of(CUR_XS, ZT, NB)
-    STATIC = [(row_of(ROW_XS, -H), 1.0), (row_of(ROW_XS, -2 * H), SHADE_OLD), (chain(ROW_XS, -3 * H), SHADE_OLD)]
+    # the rows below, each one's legs down into the one under it, the first into the foundation chain
+    CHAIN_DZ = float(os.environ.get("CHAIN_DZ", "-0.5"))
+    STATIC = [(row_of(ROW_XS, -H, zh=-2 * H), 1.0), (row_of(ROW_XS, -2 * H, zh=-3 * H, hole_dz=CHAIN_DZ), SHADE_OLD), (chain(ROW_XS, -3 * H), SHADE_OLD)]
 E0 = FABRIC0[-1]
+
+# ---------------------------------------------------------------- the left hand on the work
+def skin_clearance(pts, sk, sn):
+    """for each point: (signed distance to the nearest skin vertex along its normal, that vertex's index)"""
+    out_d = np.empty(len(pts)); out_i = np.empty(len(pts), int)
+    for k in range(0, len(pts), 256):
+        q = pts[k:k + 256]; d2 = ((q[:, None, :] - sk[None, :, :]) ** 2).sum(-1); j = d2.argmin(1)
+        out_i[k:k + 256] = j; out_d[k:k + 256] = ((q - sk[j]) * sn[j]).sum(-1)
+    return out_d, out_i
+if HAND_PTS:
+    # the thumb pad on the front face of the work and the middle fingertip's pad on the back: the
+    # pads' axis goes straight through the work (-Y), the fingers point L_FINGERS as far as that
+    # allows, and the hand slides through the work until thumb and middle touch it equally
+    _J = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS["L"].items() if not k.startswith("_")}
+    SKIN_L = np.array(HAND_PTS["L"]["_verts"]) * HAND_SCALE / UNIT; SKIN_LN = np.array(HAND_PTS["L"]["_normals"])
+    _gap = _J["thumb_pad"] - _J["middle_pad"]
+    L_ROT = _rot_onto(_gap, v(0, 1, 0), v(0, -1, 0), L_FINGERS)
+    L_POS = v(L_PINCH[0], 0.0, L_PINCH[2]) - L_ROT @ ((_J["thumb_pad"] + _J["middle_pad"]) / 2)
+    _fab = np.vstack([spline(s) for s, _ in STATIC] + [spline(FABRIC0)])
+    _thumb = np.linalg.norm(SKIN_L - _J["thumb_tip"], axis=1) < np.linalg.norm(SKIN_L - _J["middle_tip"], axis=1)
+    for _ in range(4):
+        sk = L_POS + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
+        lo, hi = sk.min(0) - 3, sk.max(0) + 3; f = _fab[np.all((_fab > lo) & (_fab < hi), axis=1)]
+        d, j = skin_clearance(f, sk, sn); d -= R
+        cf = d[_thumb[j]].min() if _thumb[j].any() else 9.0; cb = d[~_thumb[j]].min() if (~_thumb[j]).any() else 9.0
+        L_POS = L_POS + v(0, (cf - cb) / 2, 0)
+    L_SLACK = (cf + cb) / 2                                   # > 0: air between the pads and the work; < 0: in it
+    print("left hand: thumb %.2f, fingers %.2f clear of the work (yarn radii)" % (cf, cb), file=sys.stderr)
+else:
+    L_ROT = frame_from(v(0.42, 0.1, 1.0), v(-0.25, -1.0, 0.35)); L_POS = v(-3.6 * P, 6.0, 13.0); L_SLACK = 0.0
+FINGER_R = {"index": 0.0085, "middle": 0.0088, "ring": 0.0082, "pinky": 0.0072}
+YARN_M = R * UNIT
+def on_skin(c, d, f):
+    """the yarn's centre where it lies on finger f's skin, going out from c on its axis along d (design units, hand frame)"""
+    if not HAND_PTS or "_verts" not in HAND_PTS["L"]: return c + d * (FINGER_R[f] * HAND_SCALE / UNIT + R + 0.1)
+    q = SKIN_L - c; t = q @ d; perp = np.linalg.norm(q - t[:, None] * d, axis=1)
+    rf = FINGER_R[f] * HAND_SCALE / UNIT
+    ok = (t > 0) & (perp < 0.45)                  # the first skin the ray meets is this finger's own
+    p = c + d * ((t[ok].min() if ok.any() else rf) + 1.06 * R)
+    for _ in range(3):                            # then settle onto the skin along its normal
+        j = np.argmin(((SKIN_L - p) ** 2).sum(1)); p = SKIN_L[j] + SKIN_LN[j] * 1.06 * R
+    return p
+def hand_route_local():
+    """the working yarn round the left fingers, in the hand frame (design units): over the index,
+    under the middle and ring fingers, once round the pinky; every point laid on the skin"""
+    if not HAND_PTS: return [np.array([0.0, 0.17, 0.0]) / UNIT]
+    J = _J
+    across = nrm(J["pinky_knuckle"] - J["index_knuckle"]); back = np.array([0.0, 0.0, 1.0])
+    def ring(f, t, angles, slide=0.0):
+        k, pip = J[f + "_knuckle"], J[f + "_pip"]; ax = nrm(pip - k); c = k + (pip - k) * t
+        zf = nrm(back - ax * (back @ ax)); df = nrm(np.cross(ax, zf)); df = df if df @ across > 0 else -df
+        out = []
+        for i, a in enumerate(angles):
+            d = math.cos(math.radians(a)) * zf + math.sin(math.radians(a)) * df
+            out.append(on_skin(c + ax * slide / UNIT * (i / max(1, len(angles) - 1)), d, f))
+        return out
+    pts = ring("index", 0.6, [-115, -90, -60, -30, 0, 30, 60, 90, 120, 145])   # the yarn comes up from the hook on the thumb side
+    pts += ring("middle", 0.45, [180]) + ring("ring", 0.4, [180])
+    pts += ring("pinky", 0.45, [210, 180, 150, 120, 90, 60, 30, 0, -30, -60, -90, -120, -150, -180, -210], slide=-0.008)
+    pts += [J["pinky_knuckle"] + np.array([-0.01, -0.035, -0.02]) / UNIT]
+    # settled together with the yarn's way up from the back of the work (BT below), so the stretch
+    # where it meets the index lies on the skin too; it starts where it first touches the hand
+    bt = L_ROT.T @ (v(X1 + 0.25 * P, 2.2, -1.2 + 0.5 * max(0.0, SPEC_ZT)) - L_POS)
+    c = settle([bt] + pts)
+    near = np.array([np.sqrt(((SKIN_L - q) ** 2).sum(1).min()) for q in c]) < 1.5 * R
+    return c[int(np.argmax(near)):]
+def settle(pts, clear=1.06 * R, its=8):
+    """the route as a dense line, pushed out of the skin wherever the curve between way-points dips
+    into it, and lightly smoothed (the ends stay put)"""
+    c = spline(pts, 0.3 * R)
+    for _ in range(its):
+        for k in range(0, len(c), 128):
+            q = c[k:k + 128]; j = ((q[:, None, :] - SKIN_L[None]) ** 2).sum(-1).argmin(1)
+            d = ((q - SKIN_L[j]) * SKIN_LN[j]).sum(-1); c[k:k + 128] = q + SKIN_LN[j] * np.maximum(0.0, clear - d)[:, None]
+        c[1:-1] = 0.5 * c[1:-1] + 0.25 * (c[:-2] + c[2:])
+    return list(c)
+_route = hand_route_local()
+YARN_HAND = [L_POS + L_ROT @ p for p in _route]
+YARN_HAND = YARN_HAND + [YARN_HAND[-1] + v(-6.0, 8.0, -20.0)]
+
 DOWN = v(0, 0, -1)
 U_REST, U_IN, U_UP = v(1.0, -0.55, 0.8), v(0.8, -1.35, 0.45), v(0.95, -0.9, 0.85)   # U_IN flatter: the tip comes up behind the work
 def HOLE(hx): return v(hx, 0.0, -H - 1.3)

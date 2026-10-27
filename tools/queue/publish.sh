@@ -19,6 +19,6 @@ git commit -q -m "Tutorial: $KEY rendered, $V
 Cycles render of tools/choreo*.py at ${FPS} fps, with freeze-frame callouts.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01Ay6331HA75Zgi2RxDMTWXS" || exit 1
+Claude-Session: https://claude.ai/code/session_01RFXApAbCj3oAniAKo1gr3k" || exit 1
 for d in 2 4 8 16 32; do git pull -q --rebase --autostash origin main && git push -q -u origin main && { echo "$(date) PUBLISHED $KEY $NV" >> build/queue/log.txt; exit 0; }; sleep $d; done
 echo "$(date) PUSHFAIL $KEY" >> build/queue/log.txt; exit 1

@@ -51,7 +51,7 @@ mat = bpy.data.materials.new("HandSkin"); mat.use_nodes = True
 n = mat.node_tree.nodes; l = mat.node_tree.links; bs = n["Principled BSDF"]
 tex = n.new("ShaderNodeTexImage"); tex.image = bpy.data.images.load(skin_png); tex.image.pack()
 hsv = n.new("ShaderNodeHueSaturation")          # studio light flattens it: deeper and warmer
-hsv.inputs["Saturation"].default_value = 1.3; hsv.inputs["Value"].default_value = 0.7; hsv.inputs["Hue"].default_value = 0.49
+hsv.inputs["Saturation"].default_value = 1.3; hsv.inputs["Value"].default_value = 0.64; hsv.inputs["Hue"].default_value = 0.49
 l.new(tex.outputs["Color"], hsv.inputs["Color"])
 geo = n.new("ShaderNodeNewGeometry")
 cr = n.new("ShaderNodeValToRGB")                # pointiness: < 0.5 in creases, > 0.5 on knuckles and tips
@@ -60,21 +60,29 @@ cr.color_ramp.elements[1].position = 0.56; cr.color_ramp.elements[1].color = (1,
 l.new(geo.outputs["Pointiness"], cr.inputs["Fac"])
 mul = n.new("ShaderNodeMix"); mul.data_type = "RGBA"; mul.blend_type = "MULTIPLY"; mul.inputs["Factor"].default_value = 0.8
 l.new(hsv.outputs["Color"], mul.inputs[6]); l.new(cr.outputs["Color"], mul.inputs[7])
-l.new(mul.outputs[2], bs.inputs["Base Color"])
+
 bs.inputs["Subsurface Weight"].default_value = 1.0; bs.inputs["Subsurface Radius"].default_value = (1.0, 0.38, 0.22)
-bs.inputs["Subsurface Scale"].default_value = 0.0035; bs.inputs["Specular IOR Level"].default_value = 0.5
+bs.inputs["Subsurface Scale"].default_value = 0.0016; bs.inputs["Specular IOR Level"].default_value = 0.5
 co = n.new("ShaderNodeTexCoord")
 rn = n.new("ShaderNodeTexNoise"); rn.inputs["Scale"].default_value = 60; rn.inputs["Detail"].default_value = 4
 l.new(co.outputs["Object"], rn.inputs["Vector"])
 rr = n.new("ShaderNodeMapRange"); rr.inputs["To Min"].default_value = 0.36; rr.inputs["To Max"].default_value = 0.56
 l.new(rn.outputs["Fac"], rr.inputs["Value"]); l.new(rr.outputs["Result"], bs.inputs["Roughness"])
+# blotchy redness: real skin is never one even tone
+mot = n.new("ShaderNodeTexNoise"); mot.inputs["Scale"].default_value = 35; mot.inputs["Detail"].default_value = 3
+mr = n.new("ShaderNodeValToRGB"); mr.color_ramp.elements[0].color = (1.0, 0.86, 0.84, 1); mr.color_ramp.elements[1].color = (1.0, 1.0, 0.97, 1)
+mr.color_ramp.elements[0].position = 0.35; mr.color_ramp.elements[1].position = 0.65
+l.new(co.outputs["Object"], mot.inputs["Vector"]); l.new(mot.outputs["Fac"], mr.inputs["Fac"])
+mul2 = n.new("ShaderNodeMix"); mul2.data_type = "RGBA"; mul2.blend_type = "MULTIPLY"; mul2.inputs["Factor"].default_value = 1.0
+l.new(mul.outputs[2], mul2.inputs[6]); l.new(mr.outputs["Color"], mul2.inputs[7])
+l.new(mul2.outputs[2], bs.inputs["Base Color"])
 pores = n.new("ShaderNodeTexVoronoi"); pores.inputs["Scale"].default_value = 2200
 l.new(co.outputs["Object"], pores.inputs["Vector"])
 fine = n.new("ShaderNodeTexNoise"); fine.inputs["Scale"].default_value = 700; fine.inputs["Detail"].default_value = 8
 l.new(co.outputs["Object"], fine.inputs["Vector"])
 hsum = n.new("ShaderNodeMath"); hsum.operation = "ADD"
 l.new(pores.outputs["Distance"], hsum.inputs[0]); l.new(fine.outputs["Fac"], hsum.inputs[1])
-bump = n.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.12; bump.inputs["Distance"].default_value = 0.0002
+bump = n.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.35; bump.inputs["Distance"].default_value = 0.0004
 l.new(hsum.outputs["Value"], bump.inputs["Height"]); l.new(bump.outputs["Normal"], bs.inputs["Normal"])
 
 points = {}
@@ -108,7 +116,7 @@ for side in ("R", "L"):
     me.transform(to_local); me.materials.clear(); me.materials.append(mat)
     for p in me.polygons: p.use_smooth = True
     ob = bpy.data.objects.new("Hand" + side, me); bpy.context.scene.collection.objects.link(ob)
-    sub = ob.modifiers.new("Sub", "SUBSURF"); sub.levels = 1; sub.render_levels = 2
+    sub = ob.modifiers.new("Sub", "SUBSURF"); sub.levels = 1; sub.render_levels = 3
     objs.append(ob)
     L = lambda p: list(to_local @ p)
     points[side] = {"wrist": [0, 0, 0]}

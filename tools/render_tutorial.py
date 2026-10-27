@@ -33,6 +33,11 @@ ap.add_argument("--sss", type=float, default=0.0)          # subsurface doubles 
 ap.add_argument("--bounces", type=int, default=6)
 ap.add_argument("--view", default="AgX")
 ap.add_argument("--exposure", type=float, default=0.0)
+ap.add_argument("--fuzz-fix", type=int, default=1)
+ap.add_argument("--floor", type=int, default=0)             # 1: the shadow-catcher floor (a shadow under the work)
+# the app's cream #f3ece3 rendered opaque: these linear values come out as it through AgX Punchy
+# (solved by test renders). A transparent film left the fibres' edges noisy — the denoiser skips alpha.
+ap.add_argument("--stage", default="9.9249,7.3645,4.5288")   # "" for a transparent film          # 0: the old flyaway look (white glints at the edges)
 A = ap.parse_args(argv)
 D = json.load(open(A.paths))
 os.makedirs(A.out, exist_ok=True)
@@ -59,6 +64,8 @@ sc.cycles.adaptive_threshold = 0.02
 sc.cycles.use_denoising = True
 sc.cycles.denoiser = "OPENIMAGEDENOISE"
 sc.cycles.max_bounces = A.bounces; sc.cycles.transparent_max_bounces = 8
+if A.fuzz_fix:                                             # no fireflies off the fibres' highlights
+    sc.cycles.blur_glossy = 1.0; sc.cycles.sample_clamp_indirect = 3.0
 sc.render.use_persistent_data = True
 sc.render.resolution_x, sc.render.resolution_y, sc.render.resolution_percentage = W, H, 100
 sc.render.film_transparent = True
@@ -82,6 +89,14 @@ if os.path.exists(A.hdri):
 else:
     print("no HDRI at", A.hdri, "- using a flat warm environment")
     bg.inputs["Color"].default_value = (0.85, 0.8, 0.74, 1); bg.inputs["Strength"].default_value = 0.8
+if A.stage:
+    # an opaque film: camera rays see the stage colour, everything else still sees the HDRI. With a
+    # transparent film the denoiser leaves alpha noisy, and the loose fibres' edges came out as specks.
+    sc.render.film_transparent = False
+    lp = wn.new("ShaderNodeLightPath"); em = wn.new("ShaderNodeBackground"); mx = wn.new("ShaderNodeMixShader")
+    em.inputs["Color"].default_value = [float(x) for x in A.stage.split(",")] + [1]; em.inputs["Strength"].default_value = 1.0
+    wl.new(lp.outputs["Is Camera Ray"], mx.inputs["Fac"]); wl.new(bg.outputs["Background"], mx.inputs[1]); wl.new(em.outputs["Background"], mx.inputs[2])
+    wl.new(mx.outputs["Shader"], wn["World Output"].inputs["Surface"])
 
 # key: big soft area light up and to the left (matches the app's key at (8,16,12) mirrored for the long lens)
 key = bpy.data.objects.new("Key", bpy.data.lights.new("Key", "AREA")); sc.collection.objects.link(key)
@@ -96,6 +111,11 @@ rim.location = to_bl((6, 10, -16)); rim.rotation_euler = (to_bl((0, 0, 0)) - rim
 fm = bpy.data.meshes.new("Floor"); g = -10.0 * S; e = 3.0
 fm.from_pydata([(-e, -e, g), (e, -e, g), (e, e, g), (-e, e, g)], [], [(0, 1, 2, 3)])
 floor = bpy.data.objects.new("Floor", fm); sc.collection.objects.link(floor); floor.is_shadow_catcher = True
+if not A.floor:   # its shadow showed through the stitches' holes as grey, speckled with noise; keep the light it bounces
+    floor.is_shadow_catcher = False; floor.visible_camera = False; floor.visible_shadow = False
+    fmat = bpy.data.materials.new("Floor"); fmat.use_nodes = True
+    fmat.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.85, 0.80, 0.74, 1)
+    fm.materials.append(fmat)
 
 # camera: the app's framing, pulled back along the view line for a long lens
 cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam")); sc.collection.objects.link(cam); sc.camera = cam
@@ -156,8 +176,22 @@ def fibre_mat(name, hexcol):
     l.new(h.outputs["BSDF"], n["Material Output"].inputs["Surface"])
     return m
 
-MAT = {False: (yarn_mat("Yarn", D["yarn"]), fibre_mat("YarnFibre", D["yarn"]), fibre_mat("YarnFuzz", D["yarn"])),
-       True: (yarn_mat("Accent", D["accent"]), fibre_mat("AccentFibre", D["accent"]), fibre_mat("AccentFuzz", D["accent"]))}
+def flyaway_mat(name, hexcol):
+    """the loose fibres round the yarn: matte and yarn-coloured. As shiny hair they caught the rim
+    light as white glints, and being thinner than a pixel they sparkled from frame to frame."""
+    if not A.fuzz_fix: return fibre_mat(name, hexcol)
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    n = m.node_tree.nodes; l = m.node_tree.links
+    n.remove(n["Principled BSDF"])
+    h = n.new("ShaderNodeBsdfHairPrincipled"); h.parametrization = "COLOR"
+    h.inputs["Color"].default_value = [c ** 1.7 * 0.9 for c in srgb_lin(hexcol)[:3]] + [1]
+    h.inputs["Roughness"].default_value = 0.6; h.inputs["Radial Roughness"].default_value = 0.9
+    h.inputs["Coat"].default_value = 0.0; h.inputs["IOR"].default_value = 1.3
+    l.new(h.outputs["BSDF"], n["Material Output"].inputs["Surface"])
+    return m
+
+MAT = {False: (yarn_mat("Yarn", D["yarn"]), fibre_mat("YarnFibre", D["yarn"]), flyaway_mat("YarnFuzz", D["yarn"])),
+       True: (yarn_mat("Accent", D["accent"]), fibre_mat("AccentFibre", D["accent"]), flyaway_mat("AccentFuzz", D["accent"]))}
 
 steel = bpy.data.materials.new("Steel"); steel.use_nodes = True
 sb = steel.node_tree.nodes["Principled BSDF"]
@@ -344,7 +378,7 @@ def mats_for(acc, shade):
     key = (acc, shade)
     if key not in MATS:
         hx = shade_hex(D["accent"] if acc else D["yarn"], shade); nm = ("Acc" if acc else "Yarn") + "%.2f" % shade
-        MATS[key] = (yarn_mat(nm, hx), fibre_mat(nm + "Fibre", hx), fibre_mat(nm + "Fuzz", hx))
+        MATS[key] = (yarn_mat(nm, hx), fibre_mat(nm + "Fibre", hx), flyaway_mat(nm + "Fuzz", hx))
     return MATS[key]
 YOBJ, YOBJ_KEYS = {}, set()
 def set_yarn(fr):

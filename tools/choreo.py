@@ -491,7 +491,7 @@ def hand_route_local():
     pts += [J["pinky_knuckle"] + np.array([-0.01, -0.035, -0.02]) / UNIT]
     # settled together with the yarn's way up from the back of the work (BT below), so the stretch
     # where it meets the index lies on the skin too; it starts where it first touches the hand
-    bt = v(X1 + 0.25 * P, 2.2, -3.0 + 0.1 * max(0.0, SPEC_ZT))       # BT() below
+    bt = v(X1 + 0.6 * P, 1.6, 1.5) if CHAIN else v(X1 + 0.25 * P, 2.2, -3.0 + 0.1 * max(0.0, SPEC_ZT))       # BT() below
     if RING:                                                     # where it sits once the ring is bent round
         WARP["x0"] = MR_XS - 0.5 * P; bt = warp_pts([v(MR_XS - 0.25 * P, 2.2, -3.0)])[0]; WARP["x0"] = None
     bt = L_ROT.T @ (bt - L_POS)
@@ -519,7 +519,10 @@ def T_IN(hx): return v(hx - 0.2, 4.2, -H - 1.6) - nrm(U_IN) * 4.5     # well out
 def T_UP(hx, lift): return v(hx + 0.5, -2.6, -H + 4.0 + lift)
 def REST(E): return E + v(0, -2.05, 1.35)
 def ANCHOR(E): return E + v(0.3 * P, -0.25, 0.85)
-def BT(x): return v(x + 0.25 * P, 2.2, -3.0 + 0.1 * max(0.0, ZT))       # the working yarn comes over the top of the work here, behind
+def BT(x):
+    """where the working yarn comes over the top of the work, behind it (low enough for a hook in a
+    stitch to reach); a chain has nothing behind it: just behind and above the loop on the hook"""
+    return v(x + 0.6 * P, 1.6, 1.5) if CHAIN else v(x + 0.25 * P, 2.2, -3.0 + 0.1 * max(0.0, ZT))
 NTHR = sum(1 for s in SPEC["steps"] for o in s if o in ("through2",)) + 1
 def lift_for(k): return max(0.0, ZT) * (0.3 + 0.55 * k / max(1, NTHR))
 
@@ -686,7 +689,7 @@ def yo_plan(op):
     S0 = op.S; h0 = S0.hk; c0 = h0.axis_centre(THROAT_D); dn, _ = h0.basis()
     last_pulled = bool(S0.loops) and S0.loops[-1].kind == "pulled"
     A = BT(S0.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S0.xw); B = YARN_HAND[0]
-    d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 1)
+    d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.3)       # near the work, clear of the left hand
     plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3))
     if op.name == "yo_catch":                                    # in the stitch: back out a little, tip up about it
         hole = HOLE(S0.xw); k = 2.5; cr = c0 + h0.u * k

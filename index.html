@@ -1066,6 +1066,7 @@
     </div>
     <div class="modal-body">
       <canvas id="learnCanvas" style="width:100%;border-radius:10px;display:block;background:var(--stage-bg)"></canvas>
+      <video id="learnVideo" playsinline muted preload="auto" style="width:100%;aspect-ratio:16/10;border-radius:10px;display:none;background:var(--stage-bg);object-fit:cover"></video>
       <div id="learnReadout" class="learn-readout"></div>
       <div class="learn-scrub-row">
         <button class="learn-play" id="learnPlay" title="Play / pause">⏸</button>
@@ -1140,8 +1141,8 @@ const STITCH_STEPS = {
   sl:  ["Insert hook","Yarn over","Pull through stitch & loop"],
   sc:  ["Insert hook","Yarn over","Pull up a loop (2 on hook)","Yarn over","Pull through both loops"],
   hdc: ["Yarn over first","Insert hook","Yarn over, pull up loop (3 on hook)","Yarn over","Pull through all 3 loops"],
-  dc:  ["Yarn over first","Insert hook","Pull up a loop (3 on hook)","Yarn over, pull through 2","Yarn over, pull through 2"],
-  tr:  ["Yarn over twice","Insert hook","Pull up a loop (4 on hook)","Yarn over, through 2","Yarn over, through 2","Yarn over, through 2"],
+  dc:  ["Yarn over first","Insert hook","Yarn over, pull up a loop (3 on hook)","Yarn over, pull through 2","Yarn over, pull through 2"],
+  tr:  ["Yarn over twice","Insert hook","Yarn over, pull up a loop (4 on hook)","Yarn over, through 2","Yarn over, through 2","Yarn over, through 2"],
   inc: ["Work 1 stitch","Work a 2nd in the same stitch","Two stitches made"],
   dec: ["Pull up loop in st 1","Pull up loop in st 2","Yarn over, pull through all"],
   mr:  ["Loop the yarn","Work stitches into ring","Pull tail to close"],
@@ -2508,11 +2509,14 @@ function matFor(hex){
 function clearMatCache(){ for(const k in matCache){matCache[k].dispose();delete matCache[k];} }
 // total buildable units of the current make — pattern stitches or plan pieces
 function totalUnits(){ return App.plan?Studio.stitchMeshes.length:(App.parsed?App.parsed.flat.length:0); }
+const learnModalEl=document.getElementById("learnModal");
 function masterLoop(t){
   requestAnimationFrame(masterLoop);
   const T=totalUnits();
   if(App.playing&&T){if(!App.lastT)App.lastT=t;const dt=(t-App.lastT)/1000;App.lastT=t;App.progress+=dt*1.6*App.speed;if(App.progress>=T){App.progress=T;pause();}}else App.lastT=t;
-  if(Studio.ready){Studio.controls.update();updateStudioProgress();updateHUD();Studio.renderer.render(Studio.scene,Studio.camera);perfProbeTick(t);}
+  // the Learn modal covers the studio: don't render (or perf-probe) a scene nobody can see
+  if(Studio.ready&&!learnModalEl.classList.contains("open")){Studio.controls.update();updateStudioProgress();updateHUD();Studio.renderer.render(Studio.scene,Studio.camera);perfProbeTick(t);}
+  else if(StudioPerf.probe&&!StudioPerf.probe.done){ StudioPerf.probe.t0=null; StudioPerf.probe.n=0; }   // restart the fps probe after the modal
 }
 
 // ---- HUD / steps -------------------------------------------------------
@@ -2973,15 +2977,13 @@ function learnFrame(dir){
   const pdown=new THREE.Vector3().crossVectors(side,U).normalize();
   if(pdown.y>0) pdown.negate();
   const nrm=new THREE.Vector3().crossVectors(side,pdown).normalize();
-  if(nrm.z<0) nrm.negate();
+  if(nrm.dot(U)>0) nrm.negate();   // nrm is parallel to the shaft; a sign test on z flipped it as the hook dipped
   return {U,side,pdown,nrm};
 }
 function learnMkMesh(){ const m=yarnMesh(new THREE.LineCurve3(new THREE.Vector3(),new THREE.Vector3(0,1,0)),YR,false,4,L3.yarnMat,{fibres:6});
   m.visible=false; L3.scene.add(m); L3.managed.push(m); return m; }
 function learnSetMat(m,accent){ const mat=accent?L3.newMat:L3.yarnMat; if(m.material!==mat){ m.material=mat;
   const h=m.getObjectByName("halo"); if(h) h.material=haloMaterial(mat.userData.yarnHex,settings.type); } return m; }
-function learnGetRing(i,accent){ while(L3.rings.length<=i) L3.rings.push(learnMkMesh()); return learnSetMat(L3.rings[i],accent); }
-function learnGetFab(i,accent){ while(L3.fabric.length<=i) L3.fabric.push(learnMkMesh()); return learnSetMat(L3.fabric[i],accent); }
 function setTube(mesh,pts,closed,radius){
   if(!pts||pts.length<3){ mesh.visible=false; return; }
   // Near-duplicate control points give the spline zero-length steps (NaN
@@ -2994,6 +2996,7 @@ function setTube(mesh,pts,closed,radius){
   const r=radius||YR, len=curve.getLength();
   const segs=Math.max(28,Math.min(400,Math.round(len/(r*0.5))));
   setYarnCurve(mesh,curve,r,closed,segs); mesh.visible=true;
+  mesh.userData.pts=pts; mesh.userData.closed=!!closed; mesh.userData.radius=r;   // read back by exportLearnPaths / capture tools
 }
 function ovalRing(center,axisL,axisS,rL,rS){ const pts=[];
   for(let k=0;k<16;k++){ const a=k/16*Math.PI*2;
@@ -3004,7 +3007,7 @@ function buildLearnScene(key){
   initLearn3D();
   ["hook","ball"].forEach(k=>{ if(L3[k]){L3.scene.remove(L3[k]);L3[k]=null;} });
   (L3.managed||[]).forEach(m=>{ L3.scene.remove(m); disposeYarnMesh(m); });
-  L3.managed=[]; L3.rings=[]; L3.fabric=[]; L3.work=null;
+  L3.managed=[]; L3.byName={};
   ["loopMesh","workMesh"].forEach(k=>{ if(Sim[k]){L3.scene.remove(Sim[k]);Sim[k].geometry&&Sim[k].geometry.dispose();Sim[k]=null;} });
   (L3.loopRings||[]).forEach(r=>L3.scene.remove(r)); L3.loopRings=[];
   const col=App.paintColor||settings.color, t=YARN_TYPES[settings.type];
@@ -3026,7 +3029,6 @@ function buildLearnScene(key){
   const ball=makeYarnBall(1.4,L3.yarnMat,YR,5);
   ball.position.set(LEARN_TIP.x-10.5, LEARN_TIP.y-8.5, LEARN_TIP.z-3.5);
   L3.ball=ball; L3.scene.add(ball);
-  L3.work=learnMkMesh();
   const tall=Math.max(0,(STITCHES[key]?STITCHES[key].h:1)-1);           // dc/tr need a wider frame
   const focus=LEARN_TIP.clone().add(new THREE.Vector3(0.2,-0.6-tall*0.7,0));   // the hook head and the stitch under it
   L3.camera.position.set(focus.x+3.2, focus.y+5.6+tall*0.8, focus.z+16.5+tall*3.4);
@@ -3091,19 +3093,48 @@ function ringPts(B,tip,d,rL,droop,sink,center){
       .addScaledVector(B.nrm,Math.cos(a)*0.05)); }
   return pts;
 }
-function animateLearn3D(){
-  if(!L3.ready||!Learn.key||!Learn.B) return;
+// Persistent ids for the loops on the hook (index 0 = nearest the tip), so a
+// loop keeps its identity across acts and can be morphed instead of snapping.
+function simulateLoopIds(acts,upto){
+  let ids=[0], next=1, inserted=false;
+  for(let i=0;i<upto;i++){ const a=acts[i], n=ids.length;
+    if(a==="insert") inserted=true;
+    else if(a==="yarnover"){ if(!inserted) ids.unshift(next++); }
+    else if(a==="pullup"){ ids.unshift(next++); inserted=false; }
+    else if(a==="through"){ const k=inserted?n:n-1; ids.splice(1,k); if(inserted) ids[0]=next++; inserted=false; }
+    else if(a==="through2"){ ids.splice(1,Math.min(2,n-1)); inserted=false; }
+  }
+  return ids;
+}
+// Hook roll about its own shaft, continuous through the whole stitch:
+// the throat turns toward the yarn to catch it, then back past rest so the
+// loops slide off the head; the head stays turned down inside the stitch.
+const ROLL_IN=-0.9, ROLL_CATCH=-1.5, ROLL_PULL=0.7;
+function learnRoll(act,af,before,after,prevAct){
+  const base=before.inserted?ROLL_IN:0, end=after.inserted?ROLL_IN:0;
+  if(act==="insert") return lerp(0,ROLL_IN,af);
+  if(act==="yarnover") return base+ROLL_CATCH*af;
+  if(act==="pullup"||act==="through"||act==="through2"){
+    const start=base+(prevAct==="yarnover"?ROLL_CATCH:0);
+    return lerp(start,end,af)+ROLL_PULL*Math.sin(af*Math.PI); }
+  return base;
+}
+function learnActs(key){ const steps=STITCH_STEPS[key]||["Work the stitch"];
+  const acts=[], actStart=[], actLen=[];
+  steps.map(stepActs).forEach((as,si)=>as.forEach((a,k)=>{ acts.push(a); actStart.push(si+k/as.length); actLen.push(1/as.length); }));
+  return {steps,acts,actStart,actLen}; }
+function learnPose(t){
   const B0=Learn.B, key=Learn.key, isChain=Learn.isChain;   // B0: resting hook frame (fabric is laid out against it)
   const steps=STITCH_STEPS[key]||["Work the stitch"], N=steps.length;
   const moves=steps.map(classifyMove), loops=loopTimeline(steps,moves,isChain);
-  const phase=Math.min(N,Learn.t/STEP_DUR);
+  const phase=Math.min(N,t/STEP_DUR);
   const mi=Math.max(0,Math.min(N-1,Math.floor(phase)));
   // ---- act timeline: every step's acts share that step's time evenly ----
-  const perStep=steps.map(stepActs), acts=[], actStart=[], actLen=[];
-  perStep.forEach((as,si)=>as.forEach((a,k)=>{ acts.push(a); actStart.push(si+k/as.length); actLen.push(1/as.length); }));
+  const {acts,actStart,actLen}=learnActs(key);
   let ai=acts.length-1; for(let i=0;i<acts.length;i++){ if(phase>=actStart[i]) ai=i; }
   const done=phase>=N, af=done?1:easeIO((phase-actStart[ai])/actLen[ai]);
   const act=acts[ai], before=simulateActs(acts,ai), after=simulateActs(acts,ai+1);
+  const strands={}, emit=(name,pts,closed,accent)=>{ strands[name]={pts,closed:!!closed,accent:!!accent}; };
 
   // ---- geometry of the fabric under the hook ----
   const baseD=0.55, gap=0.78, rL=0.9, pitch=1.35;
@@ -3124,18 +3155,15 @@ function animateLearn3D(){
   // loop the fabric is holding while its head travels down into the stitch
   const U=anchor.clone().sub(tip).normalize(), B=learnFrame(U);
   // pull-through: draw the hook back along the shaft so the loops ride off the head
-  let retract=0, roll=0;
-  if(act==="through"||act==="through2"){ retract=0.9*Math.sin(af*Math.PI); roll=0.9*Math.sin(af*Math.PI); }
-  if(act==="yarnover") roll=-0.45*Math.sin(af*Math.PI);                     // tilt the throat up to catch the strand
-  if(act==="insert") roll=-0.35*af; else if(before.inserted) roll=-0.35;      // head turned down while inside the stitch
+  const retract=(act==="through"||act==="through2")?0.9*Math.sin(af*Math.PI):0;
+  const roll=done?learnRoll("rest",1,after,after):learnRoll(act,af,before,after,acts[ai-1]);
   tip.addScaledVector(U,retract);
-  L3.hook.position.copy(tip);
   const qAim=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),U);
-  L3.hook.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(U,-0.6+roll).multiply(qAim));
+  const hookPos=tip.clone(), hookQuat=new THREE.Quaternion().setFromAxisAngle(U,-0.6+roll).multiply(qAim);
 
   // ---- loops on the hook (index 0 = nearest the tip) ----
   // stack entries: {d, r, droop, sink}; animated per act
-  const stack=[]; let ri=0;
+  const stack=[];
   const n0=before.loops;
   // loops already on the hook stay at the fabric's top edge while the shaft
   // slides through them, so they are pushed up the shaft by the dip
@@ -3168,9 +3196,11 @@ function animateLearn3D(){
   } else {
     for(let k=0;k<n0;k++) addRing(baseD+k*gap+shift, rL, 1.15);
   }
+  const idsB=simulateLoopIds(acts,ai), idsA=simulateLoopIds(acts,ai+1);
   stack.forEach((s,i)=>{ const live=(i===stack.length-1)&&!(act==="through"&&before.inserted);
-    setTube(learnGetRing(ri++,!live), ringPts(B,tip,s.d,s.r,s.droop,s.sink,s.center), true, YR); });
-  for(let k=ri;k<L3.rings.length;k++) L3.rings[k].visible=false;
+    const wrapFirst=act==="pullup"||(act==="through"&&before.inserted);   // index 0 is the wrap caught inside the stitch
+    const id=wrapFirst?(i===0?idsA[0]:idsB[i-1]):idsB[i];
+    emit("ring"+id, ringPts(B,tip,s.d,s.r,s.droop,s.sink,s.center), true, !live); });
   const ringBottom=s=>(s.center?s.center.clone():tip.clone().addScaledVector(B.U,s.d).addScaledVector(WDOWN,(s.r*s.droop)*0.55+s.sink)).addScaledVector(WDOWN,s.r*s.droop);
 
   // ---- working yarn: ball -> (wraps over the throat while a yarn-over forms) -> newest loop ----
@@ -3191,41 +3221,123 @@ function animateLearn3D(){
   } else {
     if(stack.length) wy.push(ringBottom(stack[0]).addScaledVector(B.nrm,0.25));
   }
-  learnSetMat(L3.work,true); setTube(L3.work, wy, false, YR);
+  emit("work", wy, false, true);
 
   // ---- fabric below ----
   let fi=0;
   if(isChain){
     const colTop=tip.clone().addScaledVector(B.U,baseD).addScaledVector(WDOWN,1.4);
-    setTube(learnGetFab(fi++), chainPts(colTop,WDOWN,WX,WZ,6), false, YR);
+    emit("fab"+(fi++), chainPts(colTop,WDOWN,WX,WZ,6), false, false);
     // the live loop's leg runs down into the top chain
-    const last=stack[stack.length-1]; if(last) setTube(learnGetFab(fi++),[colTop.clone().addScaledVector(WX,0.4), colTop.clone().addScaledVector(WDOWN,-0.6).addScaledVector(WZ,0.2), ringBottom(last)],false,YR);
+    const last=stack[stack.length-1]; if(last) emit("fab"+(fi++),[colTop.clone().addScaledVector(WX,0.4), colTop.clone().addScaledVector(WDOWN,-0.6).addScaledVector(WZ,0.2), ringBottom(last)],false,false);
   } else {
-    setTube(learnGetFab(fi++), chainPts(rowC.clone().addScaledVector(WX,-3.5*pitch),WX,WDOWN,WZ,6), false, YR);
+    emit("fab"+(fi++), chainPts(rowC.clone().addScaledVector(WX,-3.5*pitch),WX,WDOWN,WZ,6), false, false);
     for(let st=1;st<=2;st++){ const baseP=rowC.clone().addScaledVector(WX,-st*pitch).addScaledVector(WDOWN,-0.25);
-      setTube(learnGetFab(fi++), postPts(key,baseP,postLen,pitch), false, YR);
-      postWraps(key,baseP,postLen).forEach(w=>setTube(learnGetFab(fi++),w,false,YR)); }
+      emit("fab"+(fi++), postPts(key,baseP,postLen,pitch), false, false);
+      postWraps(key,baseP,postLen).forEach(w=>emit("fab"+(fi++),w,false,false)); }
     // live loop (outermost on the hook) is tied to the previous stitch's top
     const last=stack[stack.length-1];
-    if(last) setTube(learnGetFab(fi++),[prevTop, prevTop.clone().lerp(ringBottom(last),0.5).addScaledVector(B.nrm,0.35), ringBottom(last)],false,YR);
+    if(last) emit("liveLeg",[prevTop, prevTop.clone().lerp(ringBottom(last),0.5).addScaledVector(B.nrm,0.35), ringBottom(last)],false,false);
     // once a loop has been pulled up, its leg runs down through the insertion point (the post's first leg)
     const pulled=(after.loops>before.loops&&act==="pullup")?stack.find(s=>s.r<rL-0.01)||stack[0]:(before.loops>1&&!before.inserted&&stack.length>1?stack[Math.min(1,stack.length-1)]:null);
     if(pulled&&act!=="insert"&&!(act==="yarnover"&&before.inserted)){
       const top=ringBottom(pulled);
-      setTube(learnGetFab(fi++,true),[insPt, insPt.clone().lerp(top,0.5).addScaledVector(B.nrm,0.3), top],false,YR); }
+      emit("pulledLeg",[insPt, insPt.clone().lerp(top,0.5).addScaledVector(B.nrm,0.3), top],false,true); }
   }
-  for(let k=fi;k<L3.fabric.length;k++) L3.fabric[k].visible=false;
-
-  // readout
-  const ro=document.getElementById("learnReadout");
-  const shownLoops=done?after.loops:before.loops;
-  if(ro) ro.textContent=shownLoops+" loop"+(shownLoops===1?"":"s")+" on hook · "+(MOVE_LABEL[act]||"");
+  return {hookPos,hookQuat,strands,act,loops:done?after.loops:before.loops};
 }
+// Resample a point list to n points evenly by arc length (closed: wraps back to the start).
+function learnResample(pts,closed,n){
+  const P=closed?[...pts,pts[0]]:pts, L=[0];
+  for(let i=1;i<P.length;i++) L.push(L[i-1]+P[i].distanceTo(P[i-1]));
+  const tot=L[L.length-1]||1, out=[]; let i=1;
+  for(let k=0;k<n;k++){ const s=tot*k/(closed?n:n-1); while(i<L.length-1&&L[i]<s) i++;
+    const f=(s-L[i-1])/((L[i]-L[i-1])||1); out.push(P[i-1].clone().lerp(P[i],Math.max(0,Math.min(1,f)))); }
+  return out;
+}
+// Shape a strand appears from / vanishes into: shrunk onto its top point (a loop on the shaft) or its first point.
+function learnCollapsed(st){
+  let a=st.pts[0]; if(st.closed) st.pts.forEach(v=>{ if(v.y>a.y) a=v; });
+  return {pts:st.pts.map(()=>a.clone()),closed:st.closed,accent:st.accent}; }
+const LEARN_BLEND=0.28, LEARN_BLEND_MIN=0.45;   // fraction of each act (at least this many seconds, at most half the act) spent easing out of the previous act's pose
+function animateLearn3D(){
+  if(!L3.ready||!Learn.key||!Learn.B) return;
+  const cur=learnPose(Learn.t);
+  // At each act boundary the strands are rebuilt by a different rule; morph
+  // from where the previous act left them so no yarn moves on its own.
+  const {acts,actStart,actLen}=learnActs(Learn.key), phase=Learn.t/STEP_DUR;
+  let ai=-1; for(let i=0;i<acts.length;i++){ if(phase>=actStart[i]) ai=i; }
+  let w=1, prev=null;
+  const win=ai>0?Math.min(actLen[ai]*0.5,Math.max(actLen[ai]*LEARN_BLEND,LEARN_BLEND_MIN/STEP_DUR)):0;
+  if(ai>0&&phase<actStart[ai]+win){
+    w=easeIO((phase-actStart[ai])/win);
+    prev=learnPose(actStart[ai]*STEP_DUR-1e-4);
+  }
+  const out={};
+  for(const name in cur.strands){ const c=cur.strands[name];
+    if(!prev){ out[name]=c; continue; }
+    const p=prev.strands[name]||learnCollapsed(c), n=c.closed?32:48;
+    const a=learnResample(p.pts,c.closed,n), b=learnResample(c.pts,c.closed,n);
+    out[name]={pts:a.map((v,i)=>v.lerp(b[i],w)),closed:c.closed,accent:c.accent}; }
+  if(prev) for(const name in prev.strands){ if(cur.strands[name]||w>=1) continue;
+    const p=prev.strands[name], n=p.closed?32:48, a=learnResample(p.pts,p.closed,n), b=learnResample(learnCollapsed(p).pts,p.closed,n);
+    out[name]={pts:a.map((v,i)=>v.lerp(b[i],w)),closed:p.closed,accent:p.accent}; }
+  L3.hook.position.copy(prev?prev.hookPos.clone().lerp(cur.hookPos,w):cur.hookPos);
+  L3.hook.quaternion.copy(prev?prev.hookQuat.clone().slerp(cur.hookQuat,w):cur.hookQuat);
+  // one mesh per strand name, reused frame to frame
+  L3.byName=L3.byName||{}; const used=new Set();
+  for(const name in out){ const st=out[name];
+    let m=L3.byName[name]; if(!m) m=L3.byName[name]=learnMkMesh();
+    learnSetMat(m,st.accent); setTube(m,st.pts,st.closed,YR); m.userData.accent=st.accent; m.userData.name=name; used.add(m); }
+  for(const name in L3.byName){ const m=L3.byName[name]; if(!used.has(m)) m.visible=false; }
+  setLearnReadout(cur.loops,cur.act);
+}
+function setLearnReadout(loops,act){ const ro=document.getElementById("learnReadout");
+  if(ro) ro.textContent=loops+" loop"+(loops===1?"":"s")+" on hook · "+(MOVE_LABEL[act]||""); }
+// readout at time t without building the scene (video playback)
+function learnReadoutAt(t){ const {acts,actStart}=learnActs(Learn.key), N=(STITCH_STEPS[Learn.key]||[""]).length, phase=Math.min(N,t/STEP_DUR);
+  let ai=acts.length-1; for(let i=0;i<acts.length;i++){ if(phase>=actStart[i]) ai=i; }
+  setLearnReadout(simulateActs(acts,phase>=N?ai+1:ai).loops,acts[ai]); }
 
 
 function fitLearn3D(){ if(!L3.ready)return; const cv=L3.renderer.domElement;
   const w=cv.clientWidth||520, h=Math.round(w*0.62);
   L3.renderer.setSize(w,h,true); L3.camera.aspect=w/h; L3.camera.updateProjectionMatrix(); }
+// Pre-rendered tutorials (tools/capture_tutorials.mjs), shot in the default yarn.
+// Other colourways fall back to the live scene.
+const TUTORIAL_KEYS=new Set(["sc","dc"]);   // stitches with files in assets/tutorials/
+function learnUsesVideo(key){ const col=(App.paintColor||settings.color||"").toLowerCase();
+  return TUTORIAL_KEYS.has(key) && col==="#e0608a" && settings.type==="wool"; }
+function learnShowVideo(on){ Learn.video=on;
+  document.getElementById("learnVideo").style.display=on?"block":"none";
+  document.getElementById("learnCanvas").style.display=on?"none":"block"; }
+function openLearnVideo(key){
+  const v=document.getElementById("learnVideo");
+  const ext=v.canPlayType('video/webm; codecs="vp9"')?"webm":"mp4";
+  v.onerror=()=>{ if(Learn.key===key&&Learn.video) startLearn3D(key); };   // missing file → live scene
+  v.poster="assets/tutorials/"+key+".jpg"; v.src="assets/tutorials/"+key+"."+ext;
+  learnShowVideo(true); v.currentTime=0; v.play().catch(()=>{}); setLearnPlaying(true);
+  cancelAnimationFrame(Learn.raf); learnVideoLoop();
+}
+function learnVideoLoop(){
+  if(!Learn.video) return;
+  const v=document.getElementById("learnVideo"), N=(STITCH_STEPS[Learn.key]||[""]).length, total=N*STEP_DUR;
+  if(v.ended&&!Learn.scrubbing){ v.currentTime=0; v.play().catch(()=>{}); }
+  const t=v.currentTime; Learn.t=t;
+  const cur=Math.min(N-1,Math.floor(t/STEP_DUR));
+  document.querySelectorAll("#learnSteps li").forEach(li=>li.classList.toggle("on",+li.dataset.i===cur));
+  const scrub=document.getElementById("learnScrub");
+  if(scrub && !Learn.scrubbing) scrub.value=Math.round(Math.min(1,t/total)*1000);
+  learnReadoutAt(t);
+  Learn.raf=requestAnimationFrame(learnVideoLoop);
+}
+function startLearn3D(key){
+  const v=document.getElementById("learnVideo"); v.pause(); v.removeAttribute("src"); v.load();
+  learnShowVideo(false);
+  initLearn3D(); buildLearnScene(key); fitLearn3D();
+  setLearnPlaying(true);
+  Learn._last=null; cancelAnimationFrame(Learn.raf); learnLoop();
+}
 function openLearn(key){
   Learn.key=key;Learn.t=0;Learn.playing=true;
   document.getElementById("learnModal").classList.add("open");
@@ -3233,17 +3345,16 @@ function openLearn(key){
   setText("learnDesc",STITCHES[key].desc);
   const steps=STITCH_STEPS[key]||["Work the stitch"];
   document.getElementById("learnSteps").innerHTML=steps.map((s,i)=>`<li data-i="${i}">${s}</li>`).join("");
-  initLearn3D(); buildLearnScene(key); fitLearn3D();
-  setLearnPlaying(true);
-  Learn._last=null; cancelAnimationFrame(Learn.raf); learnLoop();
+  if(learnUsesVideo(key)) openLearnVideo(key); else startLearn3D(key);
 }
-function closeLearn(){Learn.playing=false;cancelAnimationFrame(Learn.raf);document.getElementById("learnModal").classList.remove("open");}
+function closeLearn(){Learn.playing=false;cancelAnimationFrame(Learn.raf);document.getElementById("learnVideo").pause();document.getElementById("learnModal").classList.remove("open");}
 document.getElementById("learnClose").addEventListener("click",closeLearn);
-document.getElementById("learnReplay").addEventListener("click",()=>{Learn.t=0;setLearnPlaying(true);Learn._last=null;cancelAnimationFrame(Learn.raf);learnLoop();});
+document.getElementById("learnReplay").addEventListener("click",()=>{ if(Learn.video){ const v=document.getElementById("learnVideo"); v.currentTime=0; v.play().catch(()=>{}); setLearnPlaying(true); return; } Learn.t=0;setLearnPlaying(true);Learn._last=null;cancelAnimationFrame(Learn.raf);learnLoop();});
 document.getElementById("learnModal").addEventListener("click",e=>{if(e.target.id==="learnModal")closeLearn();});
-document.getElementById("learnPlay").addEventListener("click",()=>{ if(!Learn.playing && Learn.t>=learnTotal()) Learn.t=0; setLearnPlaying(!Learn.playing); });
+document.getElementById("learnPlay").addEventListener("click",()=>{ if(Learn.video){ const v=document.getElementById("learnVideo"); if(v.paused){ v.play().catch(()=>{}); setLearnPlaying(true); } else { v.pause(); setLearnPlaying(false); } return; } if(!Learn.playing && Learn.t>=learnTotal()) Learn.t=0; setLearnPlaying(!Learn.playing); });
 (function(){ const sc=document.getElementById("learnScrub");
-  const seek=()=>{ setLearnPlaying(false); Learn.scrubbing=true; Learn.t=(+sc.value/1000)*learnTotal(); };
+  const seek=()=>{ setLearnPlaying(false); Learn.scrubbing=true; Learn.t=(+sc.value/1000)*learnTotal();
+    if(Learn.video){ const v=document.getElementById("learnVideo"); v.pause(); v.currentTime=Learn.t; } };
   sc.addEventListener("input",seek);
   sc.addEventListener("pointerdown",()=>{Learn.scrubbing=true;});
   window.addEventListener("pointerup",()=>{Learn.scrubbing=false;}); })();

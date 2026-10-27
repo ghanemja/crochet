@@ -117,3 +117,36 @@ In the Learn modal:
 - The Learn renderer is only sized when the modal opens (`fitLearn3D`); set viewport before `openLearn`.
 - `animateLearn3D` recreates strand geometry every frame (fine for capture, slow if you also leave the studio animating — pause the studio with `pause()` first).
 - Hook pivots about the live loop (`anchor`) each frame; the hook's rest direction is `HOOK_DIR`. Export the hook pose, don't recompute it.
+
+---
+
+## Progress (2026-10-27)
+
+Done:
+- **Choreography fixes** (user feedback: "not rotating the hook enough", "yarn moves by itself in some spots"):
+  - `animateLearn3D` is now a thin wrapper over a pure `learnPose(t)` that returns the hook pose and every
+    strand as named point lists (`work`, `ring<id>`, `fab<n>`, `liveLeg`, `pulledLeg`). Loop ids come from
+    `simulateLoopIds`, so a loop keeps its mesh across acts.
+  - At each act boundary every strand and the hook morph from the previous act's final pose
+    (`LEARN_BLEND`, at least `LEARN_BLEND_MIN` s). New loops grow from the shaft; finished ones shrink away.
+    Before this, the working yarn jumped 3-5 units in one frame at every boundary.
+  - Hook roll is continuous and bigger (`learnRoll`: `ROLL_IN`, `ROLL_CATCH`, `ROLL_PULL`): throat turns
+    ~85° to catch the yarn, back past rest to let loops slide off, head turned down inside the stitch.
+    Previously an `else if(before.inserted)` line clamped the roll to -0.35 rad for the whole pull-through.
+  - `learnFrame`: `nrm` sign test used `z` (≈0, since nrm ∥ shaft) and flipped mid-act; now relative to the shaft.
+  - `dc`/`tr` step 3 now "Yarn over, pull up a loop" (it pulled up a loop it had never caught).
+  - `setTube` stashes `mesh.userData.pts/closed/radius` (and `accent`, `name` are set) for Route B export.
+- **Route A capture**: `tools/capture_tutorials.mjs` (Playwright, already installed in the cloud image;
+  run with `NODE_PATH=/opt/node-tools/node_modules`). 960×600 @ 24 fps, fibres 9. SwiftShader takes
+  ~3-4 s/frame on 4 cores, so all nine stitches take ~2.5 h.
+- **App integration**: `<video id="learnVideo">` in the modal; `TUTORIAL_KEYS` lists the stitches that have
+  files. Video is used only for the default yarn (Rose / wool); otherwise, or on load error, the live scene.
+  Scrubber, step list, readout, play/pause and replay drive the video.
+- Studio no longer renders behind the open Learn modal (and its fps probe restarts afterwards).
+
+Still to do:
+- Remaining Route A videos (add each key to `TUTORIAL_KEYS` when its files land).
+- Route B (Blender is not installed in the container; `pip install bpy` or a Blender tarball would be needed).
+
+Dev tool worth keeping in mind: a frame-to-frame strand displacement check (resample each named strand to
+24 points, flag moves > 0.35 + 2 × hook movement) found every snap listed above in a few minutes.

@@ -75,8 +75,15 @@ SPEC_ZT = {"hdc": 0.5 * H, "dc": 1.0 * H, "tr": 1.75 * H}.get(KEY, 0.0)   # top 
 # behind it pinching just below the stitches being worked into, index raised to carry the yarn.
 def _env_vec(name, default):
     e = os.environ.get(name); return v(*map(float, e.split(","))) if e else default
-L_PINCH = _env_vec("L_PINCH", v(-12.0, 0.0, -6.5))             # midway between thumb tip and middle fingertip
-L_FINGERS = nrm(_env_vec("L_FINGERS", v(0.55, 0.45, 0.7)))     # where the fingers point: up and in, the forearm toward the viewer
+# per stitch (pinch point, finger direction, middle fingertip -> thumb): the chain is pinched where
+# it hangs down, the hand turned a little so the raised index stands in front of the chain; the
+# magic ring on its strand up and left of the work (MR_C and MR_R0 below)
+_PINCH = {"ch": (v(0.5 * P + 3.0, 0.0, -6.0), v(0.0, 0.0, 1.0), v(-0.5, -0.866, 0.0)),
+          "mr": (v(-4.6 + 5.125 * math.cos(math.radians(130)), 0.0, -9.225 + 5.125 * math.sin(math.radians(130))), v(0.5, 0.0, 0.866), v(0, -1, 0))}.get(KEY, (v(-12.0, 0.0, -6.5), v(0.55, 0.45, 0.7), v(0, -1, 0)))
+L_PINCH = _env_vec("L_PINCH", _PINCH[0])                       # midway between thumb tip and middle fingertip
+L_FINGERS = nrm(_env_vec("L_FINGERS", _PINCH[1]))              # where the fingers point: up and in, the forearm toward the viewer
+L_AXIS = nrm(_env_vec("L_AXIS", _PINCH[2]))                     # from the middle fingertip to the thumb: through the work
+L_VARIANT = os.environ.get("L_VARIANT", {"mr": "Lc"}.get(KEY, "L"))   # make_hands_mpfb.py: Lc pinches a single strand
 def _rot_onto(a1, a2, b1, b2):
     """rotation taking a1 to b1, and a2 (as far as it is perpendicular to a1) to b2"""
     def basis(x, y):
@@ -192,6 +199,8 @@ class Path:
         pts = s.pts
         if WARP["x0"] is not None:                               # the ring: bend the way-points, not the hand's
             h = s.marks["hand"]; pts = list(warp_pts(pts[:h])) + list(pts[h:])
+        elif CHAIN:                                              # the older chain hangs down from the hook
+            h = s.marks["hand"]; pts = list(droop(pts[:h])) + list(pts[h:])
         c = spline(pts); idx = {}; lo = 0
         P_ = np.asarray(pts, float); arc = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(P_, axis=0), axis=1))])
         def near(i, lo):
@@ -358,6 +367,18 @@ def warp_hook(hk):
     rot = lambda d: v(c * d[0] - s * d[2], d[1], s * d[0] + c * d[2])
     return Hook(tip, rot(hk.u), rot(hk.t))
 
+# ---------------------------------------------------------------- the chain: older links hang down
+DROOP_X, DROOP_R = 0.5 * P, 3.0                                # where the chain bends down, and how tightly
+def droop(pts):
+    """the chain right of DROOP_X bent down round a quarter circle, then straight down (x, z only)"""
+    p = np.array(pts, float); s_ = p[:, 0] - DROOP_X; dz = p[:, 2]; out = p.copy()
+    arc = DROOP_R * math.pi / 2
+    bend = (s_ > 0) & (s_ <= arc); down = s_ > arc
+    ph = s_[bend] / DROOP_R; rr = DROOP_R + dz[bend]
+    out[bend, 0] = DROOP_X + rr * np.sin(ph); out[bend, 2] = -DROOP_R + rr * np.cos(ph)
+    out[down, 0] = DROOP_X + DROOP_R + dz[down]; out[down, 2] = -DROOP_R - (s_[down] - arc)
+    return out
+
 # ---------------------------------------------------------------- scene layout
 ROW_XS = [3 * P, 2 * P, P, 0, -P, -2 * P, -3 * P]
 CUR_XS = [3 * P, 2 * P, P, 0]
@@ -386,19 +407,23 @@ if HAND_PTS:
     # the thumb pad on the front face of the work and the middle fingertip's pad on the back: the
     # pads' axis goes straight through the work (-Y), the fingers point L_FINGERS as far as that
     # allows, and the hand slides through the work until thumb and middle touch it equally
-    _J = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS["L"].items() if not k.startswith("_")}
-    SKIN_L = np.array(HAND_PTS["L"]["_verts"]) * HAND_SCALE / UNIT; SKIN_LN = np.array(HAND_PTS["L"]["_normals"])
+    _HL = HAND_PTS[L_VARIANT]
+    _J = {k: np.array(x) * HAND_SCALE / UNIT for k, x in _HL.items() if not k.startswith("_")}
+    SKIN_L = np.array(_HL["_verts"]) * HAND_SCALE / UNIT; SKIN_LN = np.array(_HL["_normals"])
     _gap = _J["thumb_pad"] - _J["middle_pad"]
-    L_ROT = _rot_onto(_gap, v(0, 1, 0), v(0, -1, 0), L_FINGERS)
+    L_ROT = _rot_onto(_gap, v(0, 1, 0), L_AXIS, L_FINGERS)
     L_POS = v(L_PINCH[0], 0.0, L_PINCH[2]) - L_ROT @ ((_J["thumb_pad"] + _J["middle_pad"]) / 2)
-    _fab = np.vstack([spline(s) for s, _ in STATIC] + [spline(FABRIC0)])
+    _f0 = droop(FABRIC0) if CHAIN else FABRIC0
+    if RING:                                                    # the ring as it sits for the first stitch
+        WARP["x0"] = MR_XS - 0.5 * P; _f0 = warp_pts(FABRIC0); WARP["x0"] = None
+    _fab = np.vstack([spline(s) for s, _ in STATIC] + [spline(_f0)])
     _thumb = np.linalg.norm(SKIN_L - _J["thumb_tip"], axis=1) < np.linalg.norm(SKIN_L - _J["middle_tip"], axis=1)
     for _ in range(4):
         sk = L_POS + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
         lo, hi = sk.min(0) - 3, sk.max(0) + 3; f = _fab[np.all((_fab > lo) & (_fab < hi), axis=1)]
         d, j = skin_clearance(f, sk, sn); d -= R
         cf = d[_thumb[j]].min() if _thumb[j].any() else 9.0; cb = d[~_thumb[j]].min() if (~_thumb[j]).any() else 9.0
-        L_POS = L_POS + v(0, (cf - cb) / 2, 0)
+        L_POS = L_POS - L_AXIS * (cf - cb) / 2
     L_SLACK = (cf + cb) / 2                                   # > 0: air between the pads and the work; < 0: in it
     print("left hand: thumb %.2f, fingers %.2f clear of the work (yarn radii)" % (cf, cb), file=sys.stderr)
 else:
@@ -435,7 +460,10 @@ def hand_route_local():
     pts += [J["pinky_knuckle"] + np.array([-0.01, -0.035, -0.02]) / UNIT]
     # settled together with the yarn's way up from the back of the work (BT below), so the stretch
     # where it meets the index lies on the skin too; it starts where it first touches the hand
-    bt = L_ROT.T @ (v(X1 + 0.25 * P, 2.2, -1.2 + 0.5 * max(0.0, SPEC_ZT)) - L_POS)
+    bt = v(X1 + 0.25 * P, 2.2, -1.2 + 0.5 * max(0.0, SPEC_ZT))
+    if RING:                                                     # where it sits once the ring is bent round
+        WARP["x0"] = MR_XS - 0.5 * P; bt = warp_pts([v(MR_XS - 0.25 * P, 2.2, -1.2)])[0]; WARP["x0"] = None
+    bt = L_ROT.T @ (bt - L_POS)
     c = settle([bt] + pts)
     near = np.array([np.sqrt(((SKIN_L - q) ** 2).sum(1).min()) for q in c]) < 1.5 * R
     return c[int(np.argmax(near)):]
@@ -532,7 +560,7 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None):
     else:
         pts += [BT(xw) + v(-1.2, 0.3, 0)] if last_pulled else [BT(xw), BT(xw) + v(-1.5, 1.5, 3.5)]
     marks["hand"] = len(pts)
-    pts += YARN_HAND
+    pts += [q + L_OFF[0] for q in YARN_HAND]
     return Path(pts, marks, split, len(S.prefix) - 1)
 
 # ---------------------------------------------------------------- ops
@@ -603,6 +631,17 @@ def make_ops():
         op.E = e; out.append(op); st = e
     return out
 OPLIST = make_ops()
+
+# the left hand lets go of the magic ring before the finished stitches turn round into its pinch:
+# it backs off outward, away from the ring's centre, as the sixth stitch is pulled through (and stays off)
+L_OFF = [np.zeros(3)]                                           # set per frame (frame_strands)
+L_RELEASE = None
+if RING and HAND_PTS:
+    _op = next(o for o in OPLIST if o.name == "through" and o.S.stitch == 5)
+    L_RELEASE = (_op.t0 + 0.15 * _op.dur * MOVE_SHARE, _op.t0 + 0.5 * _op.dur * MOVE_SHARE, 7.0 * nrm((L_PINCH - MR_C) * v(1, 0, 1)))
+def l_off(ta):
+    if L_RELEASE is None: return np.zeros(3)
+    a0, a1, off = L_RELEASE; return off * ease((ta - a0) / (a1 - a0))
 
 def op_pose(op, p):
     """hook pose (row space) for op at progress p (0..1 of its move)"""
@@ -735,8 +774,20 @@ def app(c):
     c = np.asarray(c) @ TO_APP.T * (APP_R / R)
     return [[round(float(x), 4) for x in p] for p in c]
 
+def off_left_hand(c):
+    """the working yarn kept on the left hand's skin, never in it (its way up from the hook to the
+    index changes every frame)"""
+    if not HAND_PTS: return c
+    sk = L_POS + L_OFF[0] + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
+    m = np.all((c > sk.min(0) - 2) & (c < sk.max(0) + 2), axis=1)
+    if not m.any(): return c
+    c = c.copy(); q = c[m]
+    for _ in range(3):
+        d, j = skin_clearance(q, sk, sn); q = q + sn[j] * np.maximum(0.0, 1.06 * R - d)[:, None]
+    c[m] = q; return c
+
 def frame_strands(ta):
-    op, p = op_at(ta)
+    op, p = op_at(ta); L_OFF[0] = l_off(ta)
     if RING: ring_setup(op, p)
     hk_row = op_pose(op, p)
     cv = op_curve(op, p)
@@ -750,6 +801,7 @@ def frame_strands(ta):
             c = lerp(straight, c, e)
         ts = spline(tail + [c[0]]); c = np.vstack([ts, c[1:]]); sp += len(ts) - 1
     c = push_out(c, hk)
+    c[sp:] = off_left_hand(c[sp:])
     segs = [(c[:sp + 1], False), (c[sp:], True)]
     for s, acc in segs:
         if len(s) < 2: continue
@@ -947,7 +999,7 @@ for i in range(min(n, A.max_frames) if A.max_frames else n):
     hk, strands = cache[key]
     rpos, rrot = right_hand(hk)
     hands = [{"side": "R", "pose": "RIGHT_GRIP", "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in rpos], "rot": [round(float(x), 5) for x in rrot.ravel()]},
-             {"side": "L", "pose": "LEFT_HOLD", "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in L_POS], "rot": [round(float(x), 5) for x in L_ROT.ravel()]}]
+             {"side": "L", "pose": "LEFT_HOLD", "obj": "Hand" + L_VARIANT, "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in L_POS + l_off(ta)], "rot": [round(float(x), 5) for x in L_ROT.ravel()]}]
     frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir, guided_target(tv), zoom), "hands": hands if A.hands else None,
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 

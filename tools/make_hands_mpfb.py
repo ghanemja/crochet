@@ -6,7 +6,7 @@
 #
 # Needs the MPFB2 extension (extensions.blender.org/add-ons/mpfb) installed in Blender, and a
 # MakeHuman CC0 skin texture (makehuman_system_assets_cc0.zip, skins/*/..._diffuse.png).
-# Writes <out>/hands.blend (objects HandR, HandL; metres) and <out>/hands.json (named points
+# Writes <out>/hands.blend (objects HandR, HandL, HandLc; metres) and <out>/hands.json (named points
 # in each hand's frame: wrist at the origin, fingers along +Y, back of the hand +Z).
 import bpy, bmesh, sys, os, json, math, shutil
 from mathutils import Vector, Matrix
@@ -28,26 +28,28 @@ POSES = {
         "finger2": (-8, 8, 6), "finger3": (30, 60, 35), "finger4": (42, 52, 28), "finger5": ((30, 0, 15), 45, 25),   # pinky spread: room to wrap the yarn round it
         "finger1": ((18, 0, 10), 10, 30)},
 }
-for side in ("R", "L"):     # tests: HAND_POSE_L='{"finger1": [10, 20, 20]}'
-    if os.environ.get("HAND_POSE_" + side): POSES[side].update(json.loads(os.environ["HAND_POSE_" + side]))
+# the same left hand pinching a single strand (the chain, the magic ring): the thumb closed further
+POSES["Lc"] = dict(POSES["L"], finger1=((25, 0, 10), 10, 30))
+for name in POSES:          # tests: HAND_POSE_L='{"finger1": [10, 20, 20]}'
+    if os.environ.get("HAND_POSE_" + name): POSES[name].update(json.loads(os.environ["HAND_POSE_" + name]))
 
 for o in list(bpy.data.objects): bpy.data.objects.remove(o)
 human = HumanService.create_human()
 rig = HumanService.add_builtin_rig(human, "default")
 pb = rig.pose.bones
-for side, pose in POSES.items():
-    for f, curls in pose.items():
+def set_pose(name):
+    """pose the hand of variant name (its side is its first letter) and return the posed body mesh"""
+    side = name[0]
+    for f, curls in POSES[name].items():
         for j, a in enumerate(curls, 1):
             b = pb[f"{f}-{j}.{side}"]; b.rotation_mode = "XYZ"
             b.rotation_euler = [math.radians(x) for x in (a if isinstance(a, (list, tuple)) else (a, 0, 0))]
-bpy.context.view_layer.update()
+    bpy.context.view_layer.update()
+    m = bpy.data.meshes.new_from_object(human.evaluated_get(bpy.context.evaluated_depsgraph_get()))   # armature + mask applied
+    m.transform(human.matrix_world); return m
 
 def wpos(name, tail=False):
     b = pb[name]; return rig.matrix_world @ (b.tail if tail else b.head)
-
-dg = bpy.context.evaluated_depsgraph_get()
-posed = bpy.data.meshes.new_from_object(human.evaluated_get(dg))      # armature + mask applied
-posed.transform(human.matrix_world)
 
 # skin: MakeHuman diffuse map with subsurface scattering; creases and knuckles a little darker and
 # redder (Cycles pointiness), roughness that varies over the surface, and pore-scale bump
@@ -92,7 +94,8 @@ l.new(hsum.outputs["Value"], bump.inputs["Height"]); l.new(bump.outputs["Normal"
 
 points = {}
 objs = []
-for side in ("R", "L"):
+for name in POSES:
+    side = name[0]; posed = set_pose(name)
     wrist = wpos(f"wrist.{side}")
     mid_k, idx_k, pnk_k = wpos(f"finger3-1.{side}"), wpos(f"finger2-1.{side}"), wpos(f"finger5-1.{side}")
     yh = (mid_k - wrist).normalized()
@@ -103,7 +106,7 @@ for side in ("R", "L"):
     zh = (zh - yh * zh.dot(yh)).normalized(); xh = yh.cross(zh)
     to_local = Matrix((xh, yh, zh)).to_4x4() @ Matrix.Translation(-wrist)
     # cut out the hand and ~28 cm of forearm (the cut stays out of frame)
-    me = posed.copy(); me.name = "Hand" + side
+    me = posed.copy(); me.name = "Hand" + name
     bm = bmesh.new(); bm.from_mesh(me)
     kill = [v for v in bm.verts if (v.co - wrist).length > 0.42 or (v.co - wrist).dot(yh) < -0.28]
     bmesh.ops.delete(bm, geom=kill, context="VERTS")
@@ -120,17 +123,17 @@ for side in ("R", "L"):
     bm.to_mesh(me); bm.free()
     me.transform(to_local); me.materials.clear(); me.materials.append(mat)
     for p in me.polygons: p.use_smooth = True
-    ob = bpy.data.objects.new("Hand" + side, me); bpy.context.scene.collection.objects.link(ob)
+    ob = bpy.data.objects.new("Hand" + name, me); bpy.context.scene.collection.objects.link(ob)
     sub = ob.modifiers.new("Sub", "SUBSURF"); sub.levels = 1; sub.render_levels = 3
     objs.append(ob)
     L = lambda p: list(to_local @ p)
-    points[side] = {"wrist": [0, 0, 0]}
+    points[name] = {"wrist": [0, 0, 0]}
     for fi, fname in enumerate(("thumb", "index", "middle", "ring", "pinky"), 1):   # every joint of every finger
-        points[side].update({fname + "_knuckle": L(wpos(f"finger{fi}-1.{side}")), fname + "_pip": L(wpos(f"finger{fi}-2.{side}")),
+        points[name].update({fname + "_knuckle": L(wpos(f"finger{fi}-1.{side}")), fname + "_pip": L(wpos(f"finger{fi}-2.{side}")),
                              fname + "_dip": L(wpos(f"finger{fi}-3.{side}")), fname + "_tip": L(wpos(f"finger{fi}-3.{side}", True))})
     sub.levels = 2; bpy.context.view_layer.update()                # the surface as rendered, near enough
     em = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
-    P_ = points[side]; V = [(Vector(x.co), Vector(x.normal)) for x in em.vertices]
+    P_ = points[name]; V = [(Vector(x.co), Vector(x.normal)) for x in em.vertices]
     # the skin of the whole hand: choreo.py lays the working yarn on the left one and the hook in the right one
     P_["_verts"] = [[round(c, 5) for c in p] for p, _ in V]
     P_["_normals"] = [[round(c, 4) for c in nv] for _, nv in V]
@@ -146,9 +149,9 @@ for side in ("R", "L"):
         for f, other in (("thumb", "middle"), ("middle", "thumb")):
             p, nv = pad(f, other); P_[f + "_pad"] = list(p); P_[f + "_pad_n"] = list(nv)
         g = Vector(P_["thumb_pad"]) - Vector(P_["middle_pad"])
-        print("PINCH gap %.1f mm, facing %.2f %.2f" % (g.length * 1000, Vector(P_["middle_pad_n"]).dot(g.normalized()), -Vector(P_["thumb_pad_n"]).dot(g.normalized())))
+        print(name, "PINCH gap %.1f mm, facing %.2f %.2f" % (g.length * 1000, Vector(P_["middle_pad_n"]).dot(g.normalized()), -Vector(P_["thumb_pad_n"]).dot(g.normalized())))
     ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh_clear(); sub.levels = 1
-    print("HAND", side, len(me.vertices), "verts")
+    print("HAND", name, len(me.vertices), "verts")
 
 bpy.data.libraries.write(os.path.join(OUT, "hands.blend"), set(objs), fake_user=True)
 json.dump(points, open(os.path.join(OUT, "hands.json"), "w"), indent=1)

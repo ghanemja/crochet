@@ -22,7 +22,7 @@ S = 0.01
 def to_bl_np(a): a = np.asarray(a, float); return np.stack([a[:, 0], -a[:, 2], a[:, 1]], 1) * S
 
 for o in list(bpy.data.objects): bpy.data.objects.remove(o)
-with bpy.data.libraries.load(HB) as (src, dst): dst.objects = ["HandR", "HandL"]
+with bpy.data.libraries.load(HB) as (src, dst): dst.objects = ["Hand" + k for k in PTS]
 for o in dst.objects: bpy.context.scene.collection.objects.link(o); o.modifiers["Sub"].levels = 2
 C0 = Matrix.Rotation(math.pi / 2, 4, "X")
 HOOK = []
@@ -32,11 +32,11 @@ def check(fr):
     dg = bpy.context.evaluated_depsgraph_get()
     hands = {}
     for h in fr["hands"] or []:
-        ob = bpy.data.objects["Hand" + h["side"]]; r = h["rot"]; p = h["pos"]
+        ob = bpy.data.objects[h.get("obj", "Hand" + h["side"])]; r = h["rot"]; p = h["pos"]
         M = Matrix(((r[0], r[1], r[2], p[0]), (r[3], r[4], r[5], p[1]), (r[6], r[7], r[8], p[2]), (0, 0, 0, 1))) @ Matrix.Scale(h["scale"], 4)
         me = ob.evaluated_get(dg).to_mesh()
         vs = [M @ v.co for v in me.vertices]; fs = [tuple(pl.vertices) for pl in me.polygons]
-        joints = {k: M @ Vector(x) for k, x in PTS[h["side"]].items() if not k.startswith("_") and not k.endswith("_n")}
+        joints = {k: M @ Vector(x) for k, x in PTS[h.get("obj", "Hand" + h["side"])[4:]].items() if not k.startswith("_") and not k.endswith("_n")}
         hands[h["side"]] = (BVHTree.FromPolygons(vs, fs), joints)
 
     def resample(c, step):

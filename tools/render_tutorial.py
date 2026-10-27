@@ -231,10 +231,10 @@ kb.inputs["Subsurface Scale"].default_value = 0.004; kb.inputs["Sheen Weight"].d
 HANDS_ON = bool((D["views"][A.angle] if "views" in D else {}).get("hands")) and not A.lookdev
 HAND_OBJ = {}
 HANDS_BLEND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "hands", "hands.blend")
-def hand_object(side, pose):
-    key = (side, pose)
+def hand_object(side, pose, obj=None):
+    key = (side, pose, obj)
     if key not in HAND_OBJ and os.path.exists(HANDS_BLEND):   # realistic MakeHuman hands (tools/make_hands_mpfb.py)
-        with bpy.data.libraries.load(HANDS_BLEND) as (src, dst): dst.objects = ["Hand" + side]
+        with bpy.data.libraries.load(HANDS_BLEND) as (src, dst): dst.objects = [obj or "Hand" + side]
         ob = dst.objects[0]; sc.collection.objects.link(ob); HAND_OBJ[key] = ob
     if key not in HAND_OBJ:
         V, E, Rd, Ro, _ = hand_rig.skeleton(getattr(hand_rig, pose), side)
@@ -250,7 +250,7 @@ def hand_object(side, pose):
 def set_hands(fr):
     if not HANDS_ON or not fr.get("hands"): return
     for h in fr["hands"]:
-        ob = hand_object(h["side"], h["pose"]); r = h["rot"]
+        ob = hand_object(h["side"], h["pose"], h.get("obj")); r = h["rot"]
         ob.matrix_world = Matrix(((r[0], r[1], r[2], h["pos"][0]), (r[3], r[4], r[5], h["pos"][1]),
                                   (r[6], r[7], r[8], h["pos"][2]), (0, 0, 0, 1))) @ Matrix.Scale(h.get("scale", 1.0), 4)
 

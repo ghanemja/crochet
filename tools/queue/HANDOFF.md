@@ -87,6 +87,15 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    reference photo of natural manicured nails): wide (covering most of the back of the fingertip),
    rounded-square just past the tip, a U-shaped cuticle line; a milky pale pink (88% its own colour,
    the skin only showing through a little), very glossy (full clear coat).
+13. **Nail placement** (user: "shifted to the wrong place on the finger"): the back of each last joint
+   is the short axis of the fingertip's cross-section, on the side where the bone lies nearer the
+   skin — from the mesh, so the thumb is right too; the free edge at the measured tip, the cuticle
+   halfway down the joint, ~75% of the width; the mask smoothed over the mesh (jagged outlines).
+14. **First yarn over in view** (user: "5–9 seconds still doesn't hook right"; only the tip's ball showed
+   over the top edge): a hook in a stitch no longer backs out; it tips its head up about the stitch to
+   catch the held yarn `YO_CATCH_Z` above the row it is in, drawn back 0.8 (the throat ~4 out the back).
+   The guided camera cuts (`shot(1e-3, …)`) to `BEHIND_OVER` for "pokes out the back" and the yarn over,
+   and cuts back for the pull — a swing over the top flips the picture (the renderer's up is world Z).
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.

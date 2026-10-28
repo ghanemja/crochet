@@ -554,7 +554,7 @@ def ANCHOR(E): return E + v(0.3 * P, -0.25, 0.85)
 def BT(x):
     """where the working yarn comes over the top of the work, behind it (low enough for a hook in a
     stitch to reach); a chain has nothing behind it: just behind and above the loop on the hook"""
-    return v(x + 0.6 * P, 1.6, 1.5) if CHAIN else v(x + 0.25 * P, 2.2 if RING else 3.0, (MR_BTZ if RING else -3.0) + 0.1 * max(0.0, ZT))
+    return v(x + 0.6 * P, 1.6, 1.5) if CHAIN else v(x + 0.25 * P, 2.2, (MR_BTZ if RING else -3.0) + 0.1 * max(0.0, ZT))
 NTHR = sum(1 for s in SPEC["steps"] for o in s if o in ("through2",)) + 1
 def lift_for(k): return max(0.0, ZT) * (0.3 + 0.55 * k / max(1, NTHR))
 
@@ -731,7 +731,7 @@ def yo_plan(op):
     A = BT(S0.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S0.xw); B = over_top(A)
     d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.6)       # on its way up behind the work
     if op.name == "yo_catch" and not RING:                       # a hook in a stitch: catch it up clear of the row it is in, in view
-        Q = A + d * np.clip((YO_CATCH_Z - A[2]) / d[2], 0, 0.6)
+        Q = A + v(0, 0.8, 0) + d * np.clip((YO_CATCH_Z - A[2]) / d[2], 0, 0.6)   # drawn back a little: the throat well out the back
     plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3),
                 u_yo=nrm(v(h0.u[0], h0.u[1], -0.25 * np.hypot(h0.u[0], h0.u[1]))))    # shaft falling toward the hand: the head higher
     if op.name == "yo_catch":                                    # in the stitch: back out a little, tip up about it

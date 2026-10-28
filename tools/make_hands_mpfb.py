@@ -97,7 +97,7 @@ bump = n.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.35; bu
 # a hint of the lunula at the base; the outline feathered into the skin, the plate barely raised
 na = n.new("ShaderNodeAttribute"); na.attribute_name = "nail"
 nt = n.new("ShaderNodeAttribute"); nt.attribute_name = "nail_t"
-nm = n.new("ShaderNodeValToRGB"); nm.color_ramp.elements[0].position = 0.15; nm.color_ramp.elements[1].position = 0.75
+nm = n.new("ShaderNodeValToRGB"); nm.color_ramp.elements[0].position = 0.42; nm.color_ramp.elements[1].position = 0.62
 l.new(na.outputs["Fac"], nm.inputs["Fac"])
 nc = n.new("ShaderNodeValToRGB"); el = nc.color_ramp.elements
 el[0].position = 0.36; el[0].color = (0.98, 0.86, 0.87, 1)       # lunula: barely paler
@@ -143,22 +143,38 @@ def nails(me, name, side, to_local, zh):
         a = np.array(to_local @ wpos(f"finger{fi}-3.{side}")); b = np.array(to_local @ wpos(f"finger{fi}-3.{side}", True))
         L = np.linalg.norm(b - a); ax = (b - a) / L
         perp = lambda d: (lambda e: e / (np.linalg.norm(e) + 1e-12))(d - ax * (d @ ax))
-        # the back of the last joint. Fingers bend about the hand's side-to-side axis (x), so their backs are
-        # x cross the joint's direction, straight or curled. The thumb bends across the palm: its back faces
-        # away from its own base knuckle. (The bones' twist axes point sideways on some fingers: not used.)
-        if fi > 1: dors = perp(np.cross([1.0, 0, 0], ax))
-        else:
-            k = np.array(to_local @ wpos(f"finger1-1.{side}")); dors = perp(a - k)
-        q = co - a; t = q @ ax / L; w = q - np.outer(t * L, ax)
-        # the bone runs just under the back of the fingertip: measure round the middle of the finger's
-        # own cross-section instead, or the plate comes out a narrow strip
-        sec = (t > 0.35) & (t < 0.9) & (owner == fi - 1) & (np.linalg.norm(w, axis=1) < 0.02)
-        w = w - w[sec].mean(0); r = np.linalg.norm(w, axis=1) + 1e-9
+        q = co - a; t = q @ ax / L; w0 = q - np.outer(t * L, ax); r0 = np.linalg.norm(w0, axis=1)
+        sec = (t > 0.35) & (t < 0.9) & (owner == fi - 1) & (r0 < 0.02)
+        # measure round the middle of the finger's own cross-section (the bone runs off-centre)
+        w = w0 - w0[sec].mean(0); r = np.linalg.norm(w, axis=1) + 1e-9
+        # the back of the last joint: a fingertip's cross-section is wider than it is deep, so the back is its
+        # short axis (the nail sits symmetric about it), on the side where the bone lies nearer the skin (~3 mm
+        # under the nail, ~7 mm under the pad). Found from the mesh, so the thumb (turned ~90 degrees to the
+        # fingers) is right too; the bones' twist axes and the hand's axes are not.
+        mid = sec & (t > 0.5) & (t < 0.8)
+        wv = w[mid] - np.outer(w[mid] @ ax, ax); C = np.cov(wv.T); ev, evec = np.linalg.eigh(C)
+        dors = perp(evec[:, 1])                                       # eigenvalues ascending: [~0 along the axis, short, long]
+        if (r0[sec] * (w[sec] @ dors > 0)).sum() / max(1, (w[sec] @ dors > 0).sum()) > (r0[sec] * (w[sec] @ dors < 0)).sum() / max(1, (w[sec] @ dors < 0).sum()):
+            dors = -dors                                              # the bone nearer the skin on the back
         ang = np.degrees(np.arccos(np.clip((w @ dors) / r, -1, 1)))
-        # covering most of the back of the fingertip, a rounded-square shape just past the tip, a soft cuticle line
-        c0 = 0.30 + 0.18 * (ang / 54) ** 2; e0 = 1.05 - 0.03 * (ang / 54) ** 4
-        m = sm(t, c0, c0 + 0.10) * (1 - sm(t, e0, e0 + 0.04)) * (1 - sm(ang, 44, 58)) * (r < 0.017) * (owner == fi - 1)
+        # where the fingertip ends on the back: the free edge sits right there, the cuticle halfway down the joint
+        own = (owner == fi - 1) & (ang < 30) & (r < 0.017)
+        tt = np.percentile(t[own], 99.5) if own.sum() > 20 else 1.05
+        t = t / tt
+        # 70-80% of the finger's width, centred; a rounded-square plate, a soft U-shaped cuticle
+        c0 = 0.45 + 0.16 * (ang / 50) ** 2; e0 = 0.97 - 0.04 * (ang / 50) ** 4
+        m = sm(t, c0, c0 + 0.08) * (1 - sm(t, e0, e0 + 0.035)) * (1 - sm(ang, 42, 54)) * (r < 0.017) * (owner == fi - 1)
         better = m > nail; nail[better] = m[better]; nailt[better] = t[better]
+    # smooth the outline: the mesh's vertices don't fall on the nail's curves, so a raw mask comes out jagged
+    ed = np.zeros(len(me.edges) * 2, int); me.edges.foreach_get("vertices", ed); ed = ed.reshape(-1, 2)
+    deg = np.bincount(ed.ravel(), minlength=len(co)).astype(float) + 1
+    def avg(x):
+        acc = x.copy(); np.add.at(acc, ed[:, 0], x[ed[:, 1]]); np.add.at(acc, ed[:, 1], x[ed[:, 0]]); return acc / deg
+    nt_w = nail * nailt
+    for _ in range(4):
+        nail, nt_w = avg(nail), avg(nt_w)
+    nailt = np.where(nail > 1e-4, nt_w / np.maximum(nail, 1e-4), nailt)   # the edge keeps its place along the nail
+    nail = np.clip((nail - 0.5) * 1.6 + 0.5, 0, 1)                  # keep the edge soft but defined
     for nm_, vals in (("nail", nail), ("nail_t", nailt)):
         at = me.attributes.new(nm_, "FLOAT", "POINT"); at.data.foreach_set("value", vals.astype(np.float32))
     print(name, "nail verts", int((nail > 0.5).sum()))

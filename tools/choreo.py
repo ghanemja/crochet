@@ -568,20 +568,22 @@ def legs_out(hx, s, w1):
     h2 = HOLE(hx) + v(-0.55, 0, 0)
     return [lerp(w1, h2 + v(0, -1.4, 0.4), s), lerp(w1, h2, s), lerp(w1, h2 + v(0, 1.4, 0.1), s)]
 
-def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None):
+def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings=None, thread=None):
     """the active yarn from E0 to the ball, for state S and hook hk.
     ds: shaft position per loop (default loop_ds); form: {loop index: (angles, legs blend)} for a
     loop being formed (angles, legs blend[, way-points before it]); throat: "touch" -> the working
     yarn bends over the hook where the throat pushes into it, "caught" -> it lies in the throat and
     goes round with the hook's roll (contact); keep: hole x of yarn held in the throat and pulled
-    through that stitch (slip stitch); tail: way-points that replace the working yarn up to the hand"""
+    through that stitch (slip stitch); tail: way-points that replace the working yarn up to the hand;
+    rings: {loop index: points} for loops off the shaft; thread: centres of those loops, farthest
+    first, that the caught yarn's two strands run back through on either side of the throat"""
     ds = ds if ds is not None else loop_ds(S, hk); form = form or {}
     pts = list(S.prefix); marks = {"e": len(S.prefix) - 1}
     pts.append(S.E + v(0, -0.6, 1.2))
     split = len(S.prefix) - 1
     for i, L in enumerate(S.loops):
         f = form.get(i, ((25, -295), 1.0)); (ain, aout), s = f[0], f[1]
-        r = wrap(hk, ds[i], ain, aout)
+        r = rings[i] if rings and i in rings else wrap(hk, ds[i], ain, aout)
         if L.kind == "drawn" and S.post is not None:
             pts += post_partial(*S.post)
         if len(f) > 2: pts += f[2]
@@ -607,9 +609,12 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None):
         pts += legs_in(keep, S.keep_s, r[0]) + r + legs_out(keep, S.keep_s, r[-1]) + [BT(keep) + v(-1.2, 0.3, 0)]
     else:
         pts += [A]
-        ang = contact(hk, A, over_top(A), throat == "caught") if throat else None
+        side = hk.z * 0.9 * R                                    # the caught yarn's two strands, side by side
+        tin = [c + side for c in thread] if thread else []; tout = [c - side for c in reversed(thread)] if thread else []
+        ang = contact(hk, tin[-1] if tin else A, tout[0] if tout else over_top(A), throat == "caught") if throat else None
+        pts += tin
         if ang: pts += wrap(hk, THROAT_D, *ang)
-        pts += [over_top(A)]
+        pts += tout + [over_top(A)]
     marks["hand"] = len(pts)
     pts += [q + L_OFF[0] for q in YARN_HAND]
     return Path(pts, marks, split, len(S.prefix) - 1)
@@ -774,9 +779,12 @@ def _op_pose(op, p):
         tip = bez(h0.tip, h0.tip + h0.u * 7.5, v(hx + 0.3, -3.5, -H), dst, e)
         return rolled(tip, slerp_dir(h0.u, U_UP, ease(max(0.0, (p - 0.35) / 0.65))), back(0.75))
     if op.name in ("through", "through2"):
-        T_OUT = h0.tip + h0.u * 4.2 + v(0, 0, 0.6)
+        # the loops crowd up to the head, then the hook draws back along its shaft through them, the
+        # caught yarn in the throat: each loop passes off over the head (raw_path: through_loops)
+        T_OUT = h0.tip + h0.u * slide_back(op, 1.0) + v(0, 0, 0.6)
         if p < PULL_SPLIT:
-            return rolled(lerp(h0.tip, T_OUT, ease(p / PULL_SPLIT)), h0.u, back(PULL_SPLIT))
+            qq = p / PULL_SPLIT
+            return rolled(h0.tip + h0.u * slide_back(op, qq) + v(0, 0, 0.6) * ease(qq), h0.u, back(PULL_SPLIT))
         q = ease((p - PULL_SPLIT) / (1 - PULL_SPLIT))
         if op.name == "through2":
             dst, ud = T_UP(S0.xw, lift_for(op.E.nthr)), U_UP
@@ -785,6 +793,13 @@ def _op_pose(op, p):
         return rolled(bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), dst + v(0.8, -1.0, 1.0), dst, q), slerp_dir(h0.u, ud, q), back(PULL_SPLIT))
     return h0
 PULL_SPLIT = 0.55
+RIDE = 0.4                                   # share of the pull-through spent crowding the loops up to the head
+def n_through(op): return 2 if op.name == "through2" else len(op.S.loops)
+def slide_back(op, qq):
+    """how far the hook has drawn back along its shaft at pull-through progress qq (0..1 of PULL_SPLIT):
+    a little while the loops crowd to the head, then enough for the last of them to pass off it"""
+    off = D_B + SPACING * (n_through(op) - 1) + 2.6
+    return 1.2 * ease(qq / RIDE) + off * ease((qq - RIDE) / (1 - RIDE))
 
 # end poses, chained: every op starts where the previous one left the hook
 for i, op in enumerate(OPLIST):
@@ -822,19 +837,34 @@ def raw_path(op, p):
         f = ease((p - 0.4) / 0.6); ang = (lerp(a0[0], 25, f), lerp(a0[1], -295, f))
         return assemble(S1, hk, ds=ds, form={n: (ang, s)}).curve()
     if op.name in ("through", "through2"):
-        k = 2 if op.name == "through2" else n
-        def riding(hk_, q):
-            ds = loop_ds(S0, hk_)
-            for j in range(k):                                   # nearest the tip first
-                i = n - 1 - j; ds[i] = lerp(ds[i], 0.35 + 0.75 * j, q)
-            keep = getattr(S0, "keep", None)
-            return assemble(S0, hk_, ds=ds, throat=None if keep is not None else "caught", keep=keep).curve()
-        if p < PULL_SPLIT: return riding(hk, ease(p / PULL_SPLIT))
+        if p < PULL_SPLIT: return through_loops(op, hk, p / PULL_SPLIT)
         hk0 = op_pose(op, PULL_SPLIT)
-        return morph(riding(hk0, 1.0), post_path(op, hk).curve(), ease((p - PULL_SPLIT) / (1 - PULL_SPLIT)))
+        return morph(through_loops(op, hk0, 1.0), post_path(op, hk).curve(), ease((p - PULL_SPLIT) / (1 - PULL_SPLIT)))
     if op.name == "mr_loop":
         return assemble(op.E, hk).curve()
     raise ValueError(op.name)
+
+def through_loops(op, hk_, qq):
+    """the pull-through at progress qq (0..1 of PULL_SPLIT): the loops being pulled through slide up
+    to the head, then stay where the fabric holds them while the hook draws back; each passes off over
+    the head and closes round the caught yarn, whose two strands run back through it"""
+    S0 = op.S; n = len(S0.loops); k = n_through(op); keep = getattr(S0, "keep", None)
+    ds = loop_ds(S0, hk_); near = {n - 1 - j: D_B + SPACING * j for j in range(k)}     # spaced up the shaft, nearest the tip first
+    if qq <= RIDE or keep is not None:
+        f = ease(min(1.0, qq / RIDE))
+        for i, d in near.items(): ds[i] = lerp(ds[i], d, f)
+        return assemble(S0, hk_, ds=ds, throat=None if keep is not None else "caught", keep=keep).curve()
+    hb = op_pose(op, RIDE * PULL_SPLIT)                          # where the loops were let go of
+    rings, thread = {}, []
+    for i, d in sorted(near.items(), key=lambda t: t[1]):
+        c = hb.axis_centre(d); dd = (c - hk_.tip) @ hk_.u
+        if dd > 0.25: ds[i] = dd; continue                       # still on the shaft
+        cen = hk_.tip + hk_.u * dd                               # off the head: round the caught yarn
+        dn, fr = hk_.basis(); a = np.radians(np.linspace(25, -295, 26)); lift = np.linspace(-0.4, 0.4, 26)[:, None] * R
+        ro = lerp(hook_profile(D_B)[1] + 0.92 * R, 1.6 * R, ease(-dd / 5.0))       # open as it leaves the head, closing round the strands
+        rings[i] = list(cen + ro * (np.cos(a)[:, None] * dn + np.sin(a)[:, None] * fr) + lift * hk_.u)
+        thread.append(cen)
+    return assemble(S0, hk_, ds=ds, throat="caught", rings=rings, thread=thread or None).curve()
 
 def post_path(op, hk):
     """the yarn after a pull-through, marked to match the yarn before it: the first loop on the hook

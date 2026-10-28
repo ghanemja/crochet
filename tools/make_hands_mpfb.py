@@ -92,25 +92,33 @@ l.new(co.outputs["Object"], fine.inputs["Vector"])
 hsum = n.new("ShaderNodeMath"); hsum.operation = "ADD"
 l.new(pores.outputs["Distance"], hsum.inputs[0]); l.new(fine.outputs["Fac"], hsum.inputs[1])
 bump = n.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.35; bump.inputs["Distance"].default_value = 0.0004
-# nails (the "nail" / "nail_t" attributes below): a glossy, slightly translucent pink bed, a paler
-# free edge, a hint of the lunula at the base, the plate a touch raised from the skin
+# nails (the "nail" / "nail_t" attributes below): a translucent plate, so the bed is the skin's own
+# colour a touch pinker and cooler, glossy (a clear highlight along its curve); a thin paler free edge,
+# a hint of the lunula at the base; the outline feathered into the skin, the plate barely raised
 na = n.new("ShaderNodeAttribute"); na.attribute_name = "nail"
 nt = n.new("ShaderNodeAttribute"); nt.attribute_name = "nail_t"
-nm = n.new("ShaderNodeValToRGB"); nm.color_ramp.elements[0].position = 0.42; nm.color_ramp.elements[1].position = 0.6
+nm = n.new("ShaderNodeValToRGB"); nm.color_ramp.elements[0].position = 0.0; nm.color_ramp.elements[1].position = 0.85
 l.new(na.outputs["Fac"], nm.inputs["Fac"])
 nc = n.new("ShaderNodeValToRGB"); el = nc.color_ramp.elements
-el[0].position = 0.36; el[0].color = (0.62, 0.42, 0.38, 1)      # lunula
-el[1].position = 0.52; el[1].color = (0.50, 0.27, 0.25, 1)      # nail bed
-e3 = el.new(0.90); e3.color = (0.52, 0.30, 0.27, 1)
-e4 = el.new(0.97); e4.color = (0.66, 0.52, 0.45, 1)             # free edge: just paler, not white
+el[0].position = 0.36; el[0].color = (0.98, 0.86, 0.87, 1)       # lunula: barely paler
+el[1].position = 0.52; el[1].color = (0.90, 0.66, 0.72, 1)       # bed: the skin through the plate, pinker and cooler
 l.new(nt.outputs["Fac"], nc.inputs["Fac"])
+bed = n.new("ShaderNodeMix"); bed.data_type = "RGBA"; bed.blend_type = "MULTIPLY"; bed.inputs["Factor"].default_value = 1.0
+l.new(mul2.outputs[2], bed.inputs[6]); l.new(nc.outputs["Color"], bed.inputs[7])
+fe = n.new("ShaderNodeValToRGB"); fe.color_ramp.elements[0].position = 0.93; fe.color_ramp.elements[1].position = 0.99
+l.new(nt.outputs["Fac"], fe.inputs["Fac"])
+edge = n.new("ShaderNodeMix"); edge.data_type = "RGBA"; edge.inputs[7].default_value = (0.74, 0.64, 0.57, 1)   # free edge: thin, ivory
+l.new(fe.outputs["Color"], edge.inputs["Factor"]); l.new(bed.outputs[2], edge.inputs[6])
 nb = n.new("ShaderNodeBsdfPrincipled")
-l.new(nc.outputs["Color"], nb.inputs["Base Color"])
-nb.inputs["Roughness"].default_value = 0.22; nb.inputs["Coat Weight"].default_value = 0.3; nb.inputs["Coat Roughness"].default_value = 0.06
-nb.inputs["Subsurface Weight"].default_value = 0.45; nb.inputs["Subsurface Radius"].default_value = (1.0, 0.45, 0.35)
-nb.inputs["Subsurface Scale"].default_value = 0.0008; nb.inputs["Specular IOR Level"].default_value = 0.5
-hn = n.new("ShaderNodeMath"); hn.operation = "MULTIPLY_ADD"; hn.inputs[1].default_value = 0.15
-l.new(nm.outputs["Color"], hn.inputs[0]); l.new(hsum.outputs["Value"], hn.inputs[2])
+l.new(edge.outputs[2], nb.inputs["Base Color"])
+nb.inputs["Roughness"].default_value = 0.14; nb.inputs["Coat Weight"].default_value = 0.6; nb.inputs["Coat Roughness"].default_value = 0.04
+nb.inputs["Subsurface Weight"].default_value = 0.6; nb.inputs["Subsurface Radius"].default_value = (1.0, 0.45, 0.35)
+nb.inputs["Subsurface Scale"].default_value = 0.0012; nb.inputs["Specular IOR Level"].default_value = 0.5
+hn = n.new("ShaderNodeMath"); hn.operation = "MULTIPLY_ADD"; hn.inputs[1].default_value = 0.12
+smooth = n.new("ShaderNodeMath"); smooth.operation = "MULTIPLY_ADD"; smooth.inputs[1].default_value = -0.9; smooth.inputs[2].default_value = 1.0
+l.new(nm.outputs["Color"], smooth.inputs[0])                    # the plate is smooth: no pores on it
+pl = n.new("ShaderNodeMath"); pl.operation = "MULTIPLY"; l.new(hsum.outputs["Value"], pl.inputs[0]); l.new(smooth.outputs["Value"], pl.inputs[1])
+l.new(nm.outputs["Color"], hn.inputs[0]); l.new(pl.outputs["Value"], hn.inputs[2])
 l.new(hn.outputs["Value"], bump.inputs["Height"]); l.new(bump.outputs["Normal"], bs.inputs["Normal"]); l.new(bump.outputs["Normal"], nb.inputs["Normal"])
 mix = n.new("ShaderNodeMixShader"); l.new(nm.outputs["Color"], mix.inputs["Fac"])
 l.new(bs.outputs["BSDF"], mix.inputs[1]); l.new(nb.outputs["BSDF"], mix.inputs[2])
@@ -145,7 +153,9 @@ def nails(me, name, side, to_local, zh):
         sec = (t > 0.35) & (t < 0.9) & (owner == fi - 1) & (np.linalg.norm(w, axis=1) < 0.02)
         w = w - w[sec].mean(0); r = np.linalg.norm(w, axis=1) + 1e-9
         ang = np.degrees(np.arccos(np.clip((w @ dors) / r, -1, 1)))
-        m = sm(t, 0.34 + 0.14 * (ang / 56) ** 2, 0.42 + 0.14 * (ang / 56) ** 2) * (1 - sm(t, 1.0, 1.07)) * (1 - sm(ang, 44, 56))   # a rounded cuticle * (r < 0.017) * (owner == fi - 1)
+        # narrower than the fingertip with soft curved sides, a feathered cuticle, the free edge rounded
+        c0 = 0.36 + 0.12 * (ang / 44) ** 2; e0 = 0.99 - 0.06 * (ang / 44) ** 2
+        m = sm(t, c0, c0 + 0.14) * (1 - sm(t, e0, e0 + 0.05)) * (1 - sm(ang, 24, 44)) * (r < 0.017) * (owner == fi - 1)
         better = m > nail; nail[better] = m[better]; nailt[better] = t[better]
     for nm_, vals in (("nail", nail), ("nail_t", nailt)):
         at = me.attributes.new(nm_, "FLOAT", "POINT"); at.data.foreach_set("value", vals.astype(np.float32))

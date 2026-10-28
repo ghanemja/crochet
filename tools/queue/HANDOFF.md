@@ -16,11 +16,9 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
 `tools/queue/publish.sh` writes the files and the manifest entry for you.
 
 ## Where things stand (2026-10-28 15:00 UTC)
-- **Rendering now**: sc Front/Side/Behind (`sc_v1..3`), then sc Guided (`sc_v0`) again from scratch,
-  then ch sl hdc dc tr inc dec mr (Guided, 24 fps). sc_v1 started before the grip/nail fix (item 10)
-  with the old `sc.json` loaded; it stays self-consistent while it runs, but **if it is ever
-  restarted, delete `build/frames/sc_v1` first** (the hook's thumb-rest flat moved). sc_v2/v3/v0 use
-  the new paths. The sc Guided video on main (`e4e04c5`) is an older take; the publisher replaces it.
+- **Rendering now**: sc Side/Behind (`sc_v2..3`), then sc Guided (`sc_v0`) from scratch with the
+  second-pass nails (item 11), then ch sl hdc dc tr inc dec mr (Guided, 24 fps). sc Front (`sc_v1`)
+  is done (rendered with the paths from before item 10: its hook's thumb-rest flat differs slightly). The sc Guided video on main (`e4e04c5`) is an older take; the publisher replaces it.
 - User feedback reaches this session relayed by the session the user follows
   (`session_01Ay6331HA75Zgi2RxDMTWXS`); send it the commit, frame numbers and close-up specs and it
   renders and shows them. Files sent from here don't reach the user.
@@ -80,6 +78,11 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    point sideways on some fingers; the angle is measured round the finger's cross-section, not the
    bone (which runs ~3 mm under the nail and gave a strip); linear colours close to the skin; ring
    and pinky curled less and the pinky spread (their tips sank into the palm and each other).
+11. **Nails, second pass** (user: "the nails look weird" — flat pale stickers): the plate is
+   translucent (the bed is the skin's own texture colour × a pinker, cooler tint), glossy with a
+   smooth plate (no pores), a thin ivory free edge only at the tip, the outline feathered (soft
+   sides, soft cuticle, rounded free edge) and narrower than the fingertip. A comment had swallowed
+   the owner/radius gates of the mask; they apply again.
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.

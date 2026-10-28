@@ -554,7 +554,7 @@ def ANCHOR(E): return E + v(0.3 * P, -0.25, 0.85)
 def BT(x):
     """where the working yarn comes over the top of the work, behind it (low enough for a hook in a
     stitch to reach); a chain has nothing behind it: just behind and above the loop on the hook"""
-    return v(x + 0.6 * P, 1.6, 1.5) if CHAIN else v(x + 0.25 * P, 2.2, (MR_BTZ if RING else -3.0) + 0.1 * max(0.0, ZT))
+    return v(x + 0.6 * P, 1.6, 1.5) if CHAIN else v(x + 0.25 * P, 2.2 if RING else 3.0, (MR_BTZ if RING else -3.0) + 0.1 * max(0.0, ZT))
 NTHR = sum(1 for s in SPEC["steps"] for o in s if o in ("through2",)) + 1
 def lift_for(k): return max(0.0, ZT) * (0.3 + 0.55 * k / max(1, NTHR))
 
@@ -715,6 +715,7 @@ def l_off(ta):
     if L_RELEASE is None: return np.zeros(3)
     a0, a1, off = L_RELEASE; return off * ease((ta - a0) / (a1 - a0))
 
+YO_CATCH_Z = -H + float(os.environ.get("YO_CATCH_DZ", "2.5"))   # how high (above the tops of the row the hook is in) a hook in a stitch catches the yarn
 YO_ROLL = 180.0                     # the throat turned to face straight up while the yarn is laid over the shaft (degrees from facing down)
 ROLL_PULL = 70.0                    # ...and where it faces while it drags the yarn through: toward the pull
 def _rot(axis, a):
@@ -729,12 +730,17 @@ def yo_plan(op):
     last_pulled = bool(S0.loops) and S0.loops[-1].kind == "pulled"
     A = BT(S0.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S0.xw); B = over_top(A)
     d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.6)       # on its way up behind the work
+    if op.name == "yo_catch" and not RING:                       # a hook in a stitch: catch it up clear of the row it is in, in view
+        Q = A + d * np.clip((YO_CATCH_Z - A[2]) / d[2], 0, 0.6)
     plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3),
                 u_yo=nrm(v(h0.u[0], h0.u[1], -0.25 * np.hypot(h0.u[0], h0.u[1]))))    # shaft falling toward the hand: the head higher
     if op.name == "yo_catch":                                    # in the stitch: back out a little, tip up about it
-        hole = HOLE(S0.xw); k = 2.5; cr = c0 + h0.u * k
+        hole = HOLE(S0.xw)
+        # back out only as far as the throat must come in to reach the yarn (the head stays well out the back)
+        k = 2.5 if RING else float(np.clip(np.linalg.norm(c0 - hole) - np.linalg.norm(plan["catch"] - hole), -1.0, 2.5))
+        cr = c0 + h0.u * k
         ax = np.cross(cr - hole, plan["catch"] - hole)
-        phi = min(math.radians(50), math.acos(np.clip(nrm(cr - hole) @ nrm(plan["catch"] - hole), -1, 1)))
+        phi = min(math.radians(50 if RING else 65), math.acos(np.clip(nrm(cr - hole) @ nrm(plan["catch"] - hole), -1, 1)))
         plan.update(hole=hole, k=k, ax=ax, phi=phi)
     op.plan = plan; return plan
 
@@ -1002,6 +1008,7 @@ FRONT, SIDE, BACK = v(0.3, -1.0, 0.8), v(-1.0, -0.3, 0.55), v(0.15, 1.0, 0.65)
 OVER = v(0.1, -0.5, 1.0)
 QUARTER = v(-0.55, -1.0, 0.75)
 TOP = v(0.0, -0.22, 1.0)
+BEHIND_OVER = v(-0.35, 0.45, 1.0)       # over the top from behind-left: the head out the back, the yarn over it
 if RING: OVER, TOP = v(0.1, -0.75, 0.75), v(0.05, -0.55, 0.9)   # the ring stands up: look in less steeply
 def cam(d, tgt=None, zoom=1.0):
     tgt = look if tgt is None else tgt
@@ -1072,16 +1079,22 @@ def build_shots():
                 shot(0.9, act(op, 0), act(op, 0), FRONT, 1.0, ("stitch", si, "Now a single crochet — into the ring again"))
             shot(2.0 * k, act(op, 0), act(op, 1), FRONT, 1.0)
             tip_txt = "The hook pokes out the back" if not RING else "The hook goes through the ring and out the back"
-            shot(1.6 * k, act(op, 1), act(op, 1.01), OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)
+            if RING: shot(1.6 * k, act(op, 1), act(op, 1.01), OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)
+            else:
+                shot(1e-3, act(op, 1), act(op, 1), BEHIND_OVER, 1.0)     # a cut round to behind: swinging over the top flips the picture
+                shot(1.6 * k, act(op, 1), act(op, 1.01), BEHIND_OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)
         elif nm == "yo_catch":
-            shot(2.8 * k, act(op, 0), act(op, 1), TOP, 0.72, ("throat", si, "Wrap the yarn over your hook — back to front") if not quiet else None)
+            shot(2.8 * k, act(op, 0), act(op, 1), TOP if RING else BEHIND_OVER, 0.72, ("throat", si, "Wrap the yarn over your hook — back to front") if not quiet else None)
         elif nm in ("pull_up", "pull_keep"):
             if nm == "pull_keep":
                 shot(2.0, act(op, 0), act(op, 1), QUARTER, 1.0)
             else:
                 m = len(S1.loops)
                 txt = "Pull it back through — %s loops on your hook" % WORDS.get(m, m) if m > 1 else "Pull up a loop — it's the only one on your hook"
-                shot(2.6 * k, act(op, 0), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
+                if OPLIST[i - 1].name == "yo_catch" and not RING:      # coming back round from behind the work
+                    shot(1e-3, act(op, 0), act(op, 0), QUARTER, 1.0)   # cut back to the front
+                    shot(2.6 * k, act(op, 0), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
+                else: shot(2.6 * k, act(op, 0), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
         elif nm == "yo_front":
             again = any(o.name in ("yo_catch", "yo_front", "yo_free") for o in OPLIST[:i])
             txt = "Wrap the yarn over again — back to front" if again else "Wrap the yarn over your hook — back to front"

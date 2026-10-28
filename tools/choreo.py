@@ -57,6 +57,7 @@ def bez(p0, p1, p2, p3, t):
 def over_top(a):
     """the held working yarn's way over the top edge of the work, behind it, from where it leaves the
     work (a) on its way to the left index: it never crosses the front of the stitches"""
+    if RING: return a + v(-1.0, 1.5, 4.5)   # the ring: the middle finger is behind it to the left
     return a + v(-3.5, 1.2, 4.5)      # up and along toward the finger, not straight up over the hook's head
 
 # ---------------------------------------------------------------- hands (as choreo_sc.py)

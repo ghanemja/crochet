@@ -9,6 +9,7 @@
 # Writes <out>/hands.blend (objects HandR, HandL, HandLc; metres) and <out>/hands.json (named points
 # in each hand's frame: wrist at the origin, fingers along +Y, back of the hand +Z).
 import bpy, bmesh, sys, os, json, math, shutil
+import numpy as np
 from mathutils import Vector, Matrix
 from bl_ext.user_default.mpfb.services.humanservice import HumanService
 
@@ -19,10 +20,11 @@ os.makedirs(OUT, exist_ok=True)
 
 # finger1 = thumb ... finger5 = pinky; curls are rotations about each bone's X (toward the palm), or (x, y, z) Euler angles
 POSES = {
-    "R": {  # pencil grip: index along the hook, middle under it, ring and pinky tucked, thumb across
-        # (index and middle chosen so thumb pad, index pad, middle fingertip and web all rest on one straight shaft)
-        "finger2": (22, 30, 20), "finger3": (35, 50, 30), "finger4": (55, 70, 38), "finger5": (60, 72, 38),
-        "finger1": (10, 20, 20)},
+    "R": {  # holding the hook: index extended along it, middle under it, ring and pinky tucked, thumb on the rest
+        # the index lies out along the shaft, the thumb pad on the thumb rest, the middle fingertip under
+        # it (chosen so they and the web all rest on one straight shaft: grip_fit.py)
+        "finger2": (22, 12, 10), "finger3": (32, 62, 48), "finger4": (55, 70, 38), "finger5": (60, 72, 38),
+        "finger1": ((20, 0, 10), 10, 10)},
     "L": {  # holding the work: index raised for the yarn, middle and thumb pinch, the rest relaxed
         # (thumb and middle chosen so their pads face squarely, as far apart as the work is thick)
         "finger2": (-8, 8, 6), "finger3": (30, 60, 35), "finger4": (42, 52, 28), "finger5": ((30, 0, 15), 45, 25),   # pinky spread: room to wrap the yarn round it
@@ -90,7 +92,50 @@ l.new(co.outputs["Object"], fine.inputs["Vector"])
 hsum = n.new("ShaderNodeMath"); hsum.operation = "ADD"
 l.new(pores.outputs["Distance"], hsum.inputs[0]); l.new(fine.outputs["Fac"], hsum.inputs[1])
 bump = n.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.35; bump.inputs["Distance"].default_value = 0.0004
-l.new(hsum.outputs["Value"], bump.inputs["Height"]); l.new(bump.outputs["Normal"], bs.inputs["Normal"])
+# nails (the "nail" / "nail_t" attributes below): a glossy, slightly translucent pink bed, a paler
+# free edge, a hint of the lunula at the base, the plate a touch raised from the skin
+na = n.new("ShaderNodeAttribute"); na.attribute_name = "nail"
+nt = n.new("ShaderNodeAttribute"); nt.attribute_name = "nail_t"
+nm = n.new("ShaderNodeValToRGB"); nm.color_ramp.elements[0].position = 0.42; nm.color_ramp.elements[1].position = 0.6
+l.new(na.outputs["Fac"], nm.inputs["Fac"])
+nc = n.new("ShaderNodeValToRGB"); el = nc.color_ramp.elements
+el[0].position = 0.40; el[0].color = (0.86, 0.72, 0.70, 1)      # lunula
+el[1].position = 0.56; el[1].color = (0.78, 0.47, 0.46, 1)      # nail bed
+e3 = el.new(0.86); e3.color = (0.80, 0.52, 0.50, 1)
+e4 = el.new(0.96); e4.color = (0.96, 0.92, 0.86, 1)             # free edge
+l.new(nt.outputs["Fac"], nc.inputs["Fac"])
+nb = n.new("ShaderNodeBsdfPrincipled")
+l.new(nc.outputs["Color"], nb.inputs["Base Color"])
+nb.inputs["Roughness"].default_value = 0.22; nb.inputs["Coat Weight"].default_value = 0.6; nb.inputs["Coat Roughness"].default_value = 0.06
+nb.inputs["Subsurface Weight"].default_value = 0.45; nb.inputs["Subsurface Radius"].default_value = (1.0, 0.45, 0.35)
+nb.inputs["Subsurface Scale"].default_value = 0.0008; nb.inputs["Specular IOR Level"].default_value = 0.6
+hn = n.new("ShaderNodeMath"); hn.operation = "MULTIPLY_ADD"; hn.inputs[1].default_value = 1.2
+l.new(nm.outputs["Color"], hn.inputs[0]); l.new(hsum.outputs["Value"], hn.inputs[2])
+l.new(hn.outputs["Value"], bump.inputs["Height"]); l.new(bump.outputs["Normal"], bs.inputs["Normal"]); l.new(bump.outputs["Normal"], nb.inputs["Normal"])
+mix = n.new("ShaderNodeMixShader"); l.new(nm.outputs["Color"], mix.inputs["Fac"])
+l.new(bs.outputs["BSDF"], mix.inputs[1]); l.new(nb.outputs["BSDF"], mix.inputs[2])
+l.new(mix.outputs["Shader"], n["Material Output"].inputs["Surface"])
+
+def nails(me, name, side, to_local, zh):
+    """per-vertex 'nail' (0..1, the nail plate) and 'nail_t' (along the last joint, 0 at the knuckle,
+    1 at the fingertip): the plate covers the back of the last joint from just past its middle to a
+    little over the tip, about 80 degrees wide round the finger, its curvature the finger's own"""
+    R3 = to_local.to_3x3(); mw = rig.matrix_world.to_3x3()
+    co = np.array([v.co[:] for v in me.vertices]); nail = np.zeros(len(co)); nailt = np.zeros(len(co))
+    for fi in range(1, 6):
+        a = np.array(to_local @ wpos(f"finger{fi}-3.{side}")); b = np.array(to_local @ wpos(f"finger{fi}-3.{side}", True))
+        L = np.linalg.norm(b - a); ax = (b - a) / L
+        z1 = mw @ pb[f"finger{fi}-1.{side}"].matrix.to_3x3().col[2]
+        z3 = mw @ pb[f"finger{fi}-3.{side}"].matrix.to_3x3().col[2]
+        dors = np.array(R3 @ (-z3 if z1.dot(zh) > 0 else z3)); dors -= ax * (dors @ ax); dors /= np.linalg.norm(dors)   # (the bones' z points to the palm)
+        q = co - a; t = q @ ax / L; w = q - np.outer(t * L, ax); r = np.linalg.norm(w, axis=1) + 1e-9
+        ang = np.degrees(np.arccos(np.clip((w @ dors) / r, -1, 1)))
+        sm = lambda x, e0, e1: np.clip((x - e0) / (e1 - e0), 0, 1) ** 2 * (3 - 2 * np.clip((x - e0) / (e1 - e0), 0, 1))
+        m = sm(t, 0.38, 0.46) * (1 - sm(t, 1.04, 1.12)) * (1 - sm(ang, 38, 50)) * (r < 0.016)
+        better = m > nail; nail[better] = m[better]; nailt[better] = t[better]
+    for nm_, vals in (("nail", nail), ("nail_t", nailt)):
+        at = me.attributes.new(nm_, "FLOAT", "POINT"); at.data.foreach_set("value", vals.astype(np.float32))
+    print(name, "nail verts", int((nail > 0.5).sum()))
 
 points = {}
 objs = []
@@ -124,14 +169,19 @@ for name in POSES:
     me.transform(to_local); me.materials.clear(); me.materials.append(mat)
     for p in me.polygons: p.use_smooth = True
     ob = bpy.data.objects.new("Hand" + name, me); bpy.context.scene.collection.objects.link(ob)
-    sub = ob.modifiers.new("Sub", "SUBSURF"); sub.levels = 1; sub.render_levels = 3
+    sub = ob.modifiers.new("Sub", "SUBSURF"); sub.levels = 2
+    bpy.context.view_layer.update()                                # bake two levels in: fine enough for the nails' outlines
+    dense = bpy.data.meshes.new_from_object(ob.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    ob.modifiers.remove(sub); ob.data = dense; me = dense; dense.name = "Hand" + name
+    sub = ob.modifiers.new("Sub", "SUBSURF"); sub.levels = 0; sub.render_levels = 1
     objs.append(ob)
     L = lambda p: list(to_local @ p)
     points[name] = {"wrist": [0, 0, 0]}
     for fi, fname in enumerate(("thumb", "index", "middle", "ring", "pinky"), 1):   # every joint of every finger
         points[name].update({fname + "_knuckle": L(wpos(f"finger{fi}-1.{side}")), fname + "_pip": L(wpos(f"finger{fi}-2.{side}")),
                              fname + "_dip": L(wpos(f"finger{fi}-3.{side}")), fname + "_tip": L(wpos(f"finger{fi}-3.{side}", True))})
-    sub.levels = 2; bpy.context.view_layer.update()                # the surface as rendered, near enough
+    nails(me, name, side, to_local, zh)
+    bpy.context.view_layer.update()                                # the surface as rendered, near enough
     em = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
     P_ = points[name]; V = [(Vector(x.co), Vector(x.normal)) for x in em.vertices]
     # the skin of the whole hand: choreo.py lays the working yarn on the left one and the hook in the right one
@@ -150,7 +200,7 @@ for name in POSES:
             p, nv = pad(f, other); P_[f + "_pad"] = list(p); P_[f + "_pad_n"] = list(nv)
         g = Vector(P_["thumb_pad"]) - Vector(P_["middle_pad"])
         print(name, "PINCH gap %.1f mm, facing %.2f %.2f" % (g.length * 1000, Vector(P_["middle_pad_n"]).dot(g.normalized()), -Vector(P_["thumb_pad_n"]).dot(g.normalized())))
-    ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh_clear(); sub.levels = 1
+    ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh_clear()
     print("HAND", name, len(me.vertices), "verts")
 
 bpy.data.libraries.write(os.path.join(OUT, "hands.blend"), set(objs), fake_user=True)

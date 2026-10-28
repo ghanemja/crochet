@@ -23,7 +23,7 @@ def to_bl_np(a): a = np.asarray(a, float); return np.stack([a[:, 0], -a[:, 2], a
 
 for o in list(bpy.data.objects): bpy.data.objects.remove(o)
 with bpy.data.libraries.load(HB) as (src, dst): dst.objects = ["Hand" + k for k in PTS]
-for o in dst.objects: bpy.context.scene.collection.objects.link(o); o.modifiers["Sub"].levels = 2
+for o in dst.objects: bpy.context.scene.collection.objects.link(o)     # (the hands are baked at the rendered density)
 C0 = Matrix.Rotation(math.pi / 2, 4, "X")
 HOOK = []
 for part in D["hookMesh"]:

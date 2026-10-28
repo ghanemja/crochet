@@ -1,6 +1,6 @@
-# Where the hook's shaft lies in the right hand (tripod grip): the straight line, in the hand's
-# frame, on which the thumb pad, the index pad, the side of the middle fingertip and the web
-# between thumb and index all rest at the shaft's radius, with no skin inside the shaft.
+# Where the hook's shaft lies in the right hand: the straight line, in the hand's frame, on which
+# the thumb pad, the extended index finger (its last two joints), the middle fingertip under it and
+# the web between thumb and index all rest at the shaft's radius, with no skin inside the shaft.
 # choreo.py calls fit() once per hands bake and caches the answer next to hands.json.
 import numpy as np
 
@@ -30,7 +30,9 @@ def fit(P, SK, r):
     def group(f):
         d = seg_d(SK, P[f + "_dip"], P[f + "_tip"]); return d < 0.9 * d.min() + 3.0 * r / 1.15
     web = (P["thumb_knuckle"] + P["index_knuckle"]) / 2
-    G = {"thumb": group("thumb"), "index": group("index"), "middle": group("middle"),
+    def along(f):                                               # the finger's middle phalanx too: it lies along the shaft
+        d = seg_d(SK, P[f + "_pip"], P[f + "_dip"]); return d < 0.9 * d.min() + 3.0 * r / 1.15
+    G = {"thumb": group("thumb"), "index": group("index"), "index_mid": along("index"), "middle": group("middle"),
          "web": np.linalg.norm(SK - web, axis=1) < 4.0 * r / 1.15}
     grip0 = (P["thumb_tip"] + P["index_dip"] + P["middle_dip"]) / 3
     d0 = nrm(web - grip0); e1 = nrm(np.cross(d0, [0, 0, 1.0])); e2 = np.cross(d0, e1)

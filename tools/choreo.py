@@ -105,10 +105,25 @@ def hook_profile(y):
     return 0.0, r
 THROAT_D = 2.45 * RH
 
+def thumb_rest():
+    """(along the shaft, angle round it in the hook's frame) of the right thumb's pad, with the hook's
+    throat facing down: the hook's flat thumb rest is put under it"""
+    if not HAND_PTS or GRIP is None: return None
+    hk = Hook(v(0, 0, 0), v(1, 0, 0), v(0, 0, -1)); pos, rot = right_hand(hk)
+    J = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS["R"].items() if not k.startswith("_")}
+    th = pos + rot @ (0.4 * J["thumb_dip"] + 0.6 * J["thumb_tip"]); d = th @ hk.u; w = th - hk.u * d
+    return d, math.atan2(w @ hk.z, w @ hk.t)
 def hook_mesh():
     ys = np.concatenate([np.linspace(0, 5.6 * RH, 70), np.linspace(5.8 * RH, 70, 12)])
+    tr = thumb_rest()
+    if tr: ys = np.unique(np.concatenate([ys, np.linspace(tr[0] - 7, tr[0] + 7, 29)]))
     nseg = 28; ang = np.linspace(0, 2 * math.pi, nseg, endpoint=False)
-    rings = [[(cx + r * math.cos(a), y, r * math.sin(a)) for a in ang] for y in ys for cx, r in [hook_profile(y)]]
+    def flat(x, y, z):                                           # the thumb rest: the shaft flattened under the thumb
+        if not tr: return x, z
+        w = ease(1 - (abs(y - tr[0]) - 4.0) / 2.5) if abs(y - tr[0]) > 4.0 else 1.0
+        nx, nz = math.cos(tr[1]), math.sin(tr[1]); pr = x * nx + z * nz; cut = max(0.0, pr - 0.55 * RH) * w
+        return x - nx * cut, z - nz * cut
+    rings = [[(lambda x, z: (x, y, z))(*flat(cx + r * math.cos(a), y, r * math.sin(a))) for a in ang] for y in ys for cx, r in [hook_profile(y)]]
     tris = []
     for i in range(len(rings) - 1):
         for j in range(nseg):
@@ -700,7 +715,7 @@ def l_off(ta):
     if L_RELEASE is None: return np.zeros(3)
     a0, a1, off = L_RELEASE; return off * ease((ta - a0) / (a1 - a0))
 
-YO_ROLL = 200.0                     # how far the throat turns to catch a yarn over (degrees from facing down)
+YO_ROLL = 180.0                     # the throat turned to face straight up while the yarn is laid over the shaft (degrees from facing down)
 ROLL_PULL = 70.0                    # ...and where it faces while it drags the yarn through: toward the pull
 def _rot(axis, a):
     k = nrm(axis); K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
@@ -714,7 +729,8 @@ def yo_plan(op):
     last_pulled = bool(S0.loops) and S0.loops[-1].kind == "pulled"
     A = BT(S0.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S0.xw); B = over_top(A)
     d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.6)       # on its way up behind the work
-    plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3))
+    plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3),
+                u_yo=nrm(v(h0.u[0], h0.u[1], -0.25 * np.hypot(h0.u[0], h0.u[1]))))    # shaft falling toward the hand: the head higher
     if op.name == "yo_catch":                                    # in the stitch: back out a little, tip up about it
         hole = HOLE(S0.xw); k = 2.5; cr = c0 + h0.u * k
         ax = np.cross(cr - hole, plan["catch"] - hole)
@@ -722,6 +738,11 @@ def yo_plan(op):
         plan.update(hole=hole, k=k, ax=ax, phi=phi)
     op.plan = plan; return plan
 
+def yo_roll(r0, p):
+    """the throat during a yarn over: round through the front to face straight up while the yarn is
+    laid over the shaft, then (once it is there) on over the top to face the pull, hooking it in"""
+    if p < 0.6: return r0 + (YO_ROLL - r0) * ease((p - 0.1) / 0.4)
+    return YO_ROLL + (ROLL_PULL - YO_ROLL) * ease((p - 0.6) / 0.35)
 def yo_pose(op, p, theta):
     """the hook doing a yarn over: under the held yarn, up into it so it lies over the shaft, and back a
     little with it caught; the throat turned theta"""
@@ -732,11 +753,12 @@ def yo_pose(op, p, theta):
         u = Rm @ h0.u; tip = pl["hole"] + Rm @ (h0.tip + h0.u * pl["k"] * ease(p / 0.6) - pl["hole"])
         return rolled(tip, u, theta)
     c0, dip, cat = pl["c0"], pl["dip"], pl["catch"]
+    u = slerp_dir(h0.u, pl["u_yo"], ease(p / 0.45))             # the head tilts up, above the yarn
     if p < 0.45: c = bez(c0, c0 + pl["dn"] * 1.5, dip + pl["dn"] * 1.0, dip, ease(p / 0.45))     # under the yarn
     elif p < 0.7: c = lerp(dip, cat, ease((p - 0.45) / 0.25))                                    # up into it
     else: c = lerp(cat, lerp(cat, c0, 0.35), ease((p - 0.7) / 0.3))                              # back, with it caught
-    h = rolled(v(0, 0, 0), h0.u, theta)
-    return rolled(c - h0.u * THROAT_D - h.t * hook_profile(THROAT_D)[0], h0.u, theta)
+    h = rolled(v(0, 0, 0), u, theta)
+    return rolled(c - u * THROAT_D - h.t * hook_profile(THROAT_D)[0], u, theta)
 
 def op_pose(op, p):
     """hook pose (row space) for op at progress p (0..1 of its move), kept out of the left hand"""
@@ -768,9 +790,9 @@ def _op_pose(op, p):
         tip = bez(h0.tip, v(hx + 0.3, -4.0, -H + 1.0), T_IN(hx) + nrm(U_IN) * 7.5, T_IN(hx), e)
         return rolled(tip, slerp_dir(h0.u, U_IN, ease(min(1.0, p / 0.55))), back(0.0))
     if op.name in ("yo_catch", "yo_front"):
-        return yo_pose(op, p, h0.roll + (YO_ROLL - h0.roll) * ease((p - 0.15) / 0.45))
+        return yo_pose(op, p, yo_roll(h0.roll, p))
     if op.name == "yo_free":                                     # caught in the first half, then the wrap slides up the shaft
-        if p < 0.55: return yo_pose(op, p / 0.55, h0.roll + (YO_ROLL - h0.roll) * ease((p / 0.55 - 0.15) / 0.45))
+        if p < 0.55: return yo_pose(op, p / 0.55, yo_roll(h0.roll, p / 0.55))
         h1 = yo_pose(op, 1.0, YO_ROLL); q = ease((p - 0.55) / 0.45)
         return rolled(lerp(h1.tip, h0.tip, q), h0.u, YO_ROLL * (1 - q))
     if op.name in ("pull_up", "pull_keep"):
@@ -1105,6 +1127,7 @@ def guided_target(tv):
 RIGHT_RIG = hand_rig.skeleton(hand_rig.RIGHT_GRIP, "R")
 D_GRIP = 22.0 * R                     # the fingertips hold the shaft this far up from the tip
 WRIST_SHARE = 0.4
+GRIP_ROLL = float(os.environ.get("GRIP_ROLL", "-0.4"))    # the hand turned about the shaft (radians): beside it, the index along its top
 def right_hand(hk):
     """tripod (pencil) grip: the shaft runs between the thumb pad and the index and middle
     fingertips and back through the web between thumb and index; turns with the hook (the wrist)"""
@@ -1120,7 +1143,7 @@ def right_hand(hk):
         return hk.at(D_GRIP) - rot @ grip, rot
     o, d = GRIP                                   # the shaft's own line through the hand (grip_fit.py)
     hw = rolled(hk.tip, hk.u, WRIST_SHARE * hk.roll)   # the wrist turns part of the hook's roll; the fingers roll the shaft the rest
-    rot = _rot_onto(d, v(0, 0, 1), hk.u, -hw.t * math.cos(0.5) + hw.z * math.sin(0.5))
+    rot = _rot_onto(d, v(0, 0, 1), hk.u, -hw.t * math.cos(GRIP_ROLL) + hw.z * math.sin(GRIP_ROLL))
     return hk.at(D_GRIP) - rot @ o, rot
 def load_grip():
     """the shaft's line in the right hand, fitted once per hands bake (cached beside hands.json)"""

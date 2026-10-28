@@ -51,7 +51,11 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    hook under it and lifts it in (`yo_plan`/`yo_pose`; a hook in a stitch backs out 2.5 and tips
    up ≤50° about it), rolling the throat `YO_ROLL` = 200° round through the front; the roll back
    happens in the next op (`back` in `op_pose`), the throat carrying the yarn round. The right wrist
-   takes `WRIST_SHARE` of the roll. Checked with close-ups and `hand_contact.py` (sc clean).
+   takes `WRIST_SHARE` of the roll. `off_left_hook` slides the hook's head out of the left hand
+   (leaving room for the yarn on the fingers); ch's yarn exit sits by the hook (no work behind a
+   chain); the ring's is `MR_BTZ` = -2.4. Checked with close-ups and `hand_contact.py`: every
+   stitch ≤ 0.64 mm (tr's tucked right pinky brushes the post for two frames; mr's thumb at the
+   ring as it forms).
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.

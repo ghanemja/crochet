@@ -54,6 +54,10 @@ def slerp_dir(a, b, t):
     return nrm((math.sin((1 - t) * w) * a + math.sin(t * w) * b) / math.sin(w))
 def bez(p0, p1, p2, p3, t):
     s = 1 - t; return s**3 * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t**3 * p3
+def over_top(a):
+    """the held working yarn's way over the top edge of the work, behind it, from where it leaves the
+    work (a) on its way to the left index: it never crosses the front of the stitches"""
+    return a + v(-3.5, 1.2, 4.5)      # up and along toward the finger, not straight up over the hook's head
 
 # ---------------------------------------------------------------- hands (as choreo_sc.py)
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -496,7 +500,7 @@ def hand_route_local():
     if RING:                                                     # where it sits once the ring is bent round
         WARP["x0"] = MR_XS - 0.5 * P; bt = warp_pts([v(MR_XS - 0.25 * P, 2.2, MR_BTZ)])[0]; WARP["x0"] = None
     bt = L_ROT.T @ (bt - L_POS)
-    c = settle([bt] + pts)
+    c = settle([over_top(bt)] + pts)
     near = np.array([np.sqrt(((SKIN_L - q) ** 2).sum(1).min()) for q in c]) < 1.5 * R
     return c[int(np.argmax(near)):]
 def settle(pts, clear=1.06 * R, its=8):
@@ -592,8 +596,9 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None):
         pts += legs_in(keep, S.keep_s, r[0]) + r + legs_out(keep, S.keep_s, r[-1]) + [BT(keep) + v(-1.2, 0.3, 0)]
     else:
         pts += [A]
-        ang = contact(hk, A, YARN_HAND[0] + L_OFF[0], throat == "caught") if throat else None
+        ang = contact(hk, A, over_top(A), throat == "caught") if throat else None
         if ang: pts += wrap(hk, THROAT_D, *ang)
+        pts += [over_top(A)]
     marks["hand"] = len(pts)
     pts += [q + L_OFF[0] for q in YARN_HAND]
     return Path(pts, marks, split, len(S.prefix) - 1)
@@ -679,6 +684,7 @@ def l_off(ta):
     a0, a1, off = L_RELEASE; return off * ease((ta - a0) / (a1 - a0))
 
 YO_ROLL = 200.0                     # how far the throat turns to catch a yarn over (degrees from facing down)
+ROLL_PULL = 70.0                    # ...and where it faces while it drags the yarn through: toward the pull
 def _rot(axis, a):
     k = nrm(axis); K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
     return np.eye(3) + math.sin(a) * K + (1 - math.cos(a)) * K @ K
@@ -689,8 +695,8 @@ def yo_plan(op):
     if hasattr(op, "plan"): return op.plan
     S0 = op.S; h0 = S0.hk; c0 = h0.axis_centre(THROAT_D); dn, _ = h0.basis()
     last_pulled = bool(S0.loops) and S0.loops[-1].kind == "pulled"
-    A = BT(S0.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S0.xw); B = YARN_HAND[0]
-    d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.3)       # near the work, clear of the left hand
+    A = BT(S0.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S0.xw); B = over_top(A)
+    d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.6)       # on its way up behind the work
     plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3))
     if op.name == "yo_catch":                                    # in the stitch: back out a little, tip up about it
         hole = HOLE(S0.xw); k = 2.5; cr = c0 + h0.u * k
@@ -733,12 +739,17 @@ def off_left_hook(hk):
     h = Hook(hk.tip + push, hk.u, hk.t); h.roll = hk.roll; return h
 def _op_pose(op, p):
     S0 = op.S; h0 = S0.hk; e = ease(p); hx = op.hx
-    back = h0.roll * (1 - ease(min(1.0, p / 0.45)))              # a caught yarn over: the throat comes back down as the op begins
+    def back(hold):
+        """after a yarn over the throat turns back round to face the pull (ROLL_PULL) and drags the
+        yarn so; once the loop is made (from progress hold) it turns on down"""
+        if h0.roll <= 1.0: return 0.0
+        r = ROLL_PULL + (h0.roll - ROLL_PULL) * (1 - ease(min(1.0, p / 0.35)))
+        return r * (1 - ease((p - hold) / 0.25))
     if op.name == "insert":
         # come down in front of the stitch already turned to the insert angle, then slide straight
         # in along the shaft (the tip leads; nothing moves sideways through the fabric)
         tip = bez(h0.tip, v(hx + 0.3, -4.0, -H + 1.0), T_IN(hx) + nrm(U_IN) * 7.5, T_IN(hx), e)
-        return rolled(tip, slerp_dir(h0.u, U_IN, ease(min(1.0, p / 0.55))), back)
+        return rolled(tip, slerp_dir(h0.u, U_IN, ease(min(1.0, p / 0.55))), back(0.0))
     if op.name in ("yo_catch", "yo_front"):
         return yo_pose(op, p, h0.roll + (YO_ROLL - h0.roll) * ease((p - 0.15) / 0.45))
     if op.name == "yo_free":                                     # caught in the first half, then the wrap slides up the shaft
@@ -750,17 +761,17 @@ def _op_pose(op, p):
         # back out the way it went in (along the shaft) before lifting the loop up in front
         dst = T_UP(hx, lift_for(0)) if k == 1 else v(hx + 0.4, -2.8, -H + 2.0)
         tip = bez(h0.tip, h0.tip + h0.u * 7.5, v(hx + 0.3, -3.5, -H), dst, e)
-        return rolled(tip, slerp_dir(h0.u, U_UP, ease(max(0.0, (p - 0.35) / 0.65))), back)
+        return rolled(tip, slerp_dir(h0.u, U_UP, ease(max(0.0, (p - 0.35) / 0.65))), back(0.75))
     if op.name in ("through", "through2"):
         T_OUT = h0.tip + h0.u * 4.2 + v(0, 0, 0.6)
         if p < PULL_SPLIT:
-            return rolled(lerp(h0.tip, T_OUT, ease(p / PULL_SPLIT)), h0.u, back)
+            return rolled(lerp(h0.tip, T_OUT, ease(p / PULL_SPLIT)), h0.u, back(PULL_SPLIT))
         q = ease((p - PULL_SPLIT) / (1 - PULL_SPLIT))
         if op.name == "through2":
             dst, ud = T_UP(S0.xw, lift_for(op.E.nthr)), U_UP
         else:
             dst, ud = REST(op.E.E), U_REST
-        return rolled(bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), dst + v(0.8, -1.0, 1.0), dst, q), slerp_dir(h0.u, ud, q), 0.0)
+        return rolled(bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), dst + v(0.8, -1.0, 1.0), dst, q), slerp_dir(h0.u, ud, q), back(PULL_SPLIT))
     return h0
 PULL_SPLIT = 0.55
 
@@ -784,7 +795,7 @@ def raw_path(op, p):
         q = ease((p - 0.55) / 0.45); S1 = op.E
         ds1 = loop_ds(S1, hk); ds0 = loop_ds(S0, hk)
         ds = [lerp(ds0[i], ds1[i], q) for i in range(n)] + [lerp(THROAT_D, ds1[-1], q)]
-        a0 = contact(hk, bt, YARN_HAND[0] + L_OFF[0], True)
+        a0 = contact(hk, bt, over_top(bt), True)
         ang = (lerp(a0[0], 25, q), lerp(a0[1], -295, q))
         w = wrap(hk, ds[-1], *ang)
         prev_end = wrap(hk, ds[n - 1], 25, -295)[-1] if n else S0.E
@@ -796,7 +807,7 @@ def raw_path(op, p):
             S1 = S0.copy(); S1.keep_s = s; return assemble(S1, hk, keep=op.hx).curve()
         S1 = op.E; ds1 = loop_ds(S1, hk); ds0 = loop_ds(S0, hk); q = ease((p - 0.55) / 0.45)
         ds = [lerp(ds0[i], ds1[i], q) for i in range(n)] + [lerp(THROAT_D, ds1[-1], q)]
-        a0 = contact(hk, BT(op.hx), YARN_HAND[0] + L_OFF[0], True)          # the caught yarn, carried down by the throat
+        a0 = contact(hk, BT(op.hx), over_top(BT(op.hx)), True)          # the caught yarn, carried round by the throat
         f = ease((p - 0.4) / 0.6); ang = (lerp(a0[0], 25, f), lerp(a0[1], -295, f))
         return assemble(S1, hk, ds=ds, form={n: (ang, s)}).curve()
     if op.name in ("through", "through2"):

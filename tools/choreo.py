@@ -384,6 +384,7 @@ ZR = -H + 0.3                                                   # the ring stran
 MR_C = v(-P, 0.0, ZR - MR_R0)                                   # ring centre (world)
 MR_XS = 0.0                                                     # row-space x where the ring crosses itself
 WARP = {"x0": None, "r": MR_R0}                                 # set per frame for the ring
+MR_BTZ = float(os.environ.get("MR_BTZ", "-3.0"))                # where the working yarn leaves the ring (row space)
 def warp_pts(pts):
     if WARP["x0"] is None: return np.asarray(pts, float)
     p = np.asarray(pts, float); x0, rr = WARP["x0"], WARP["r"]
@@ -493,7 +494,7 @@ def hand_route_local():
     # where it meets the index lies on the skin too; it starts where it first touches the hand
     bt = v(X1 + 0.6 * P, 1.6, 1.5) if CHAIN else v(X1 + 0.25 * P, 2.2, -3.0 + 0.1 * max(0.0, SPEC_ZT))       # BT() below
     if RING:                                                     # where it sits once the ring is bent round
-        WARP["x0"] = MR_XS - 0.5 * P; bt = warp_pts([v(MR_XS - 0.25 * P, 2.2, -3.0)])[0]; WARP["x0"] = None
+        WARP["x0"] = MR_XS - 0.5 * P; bt = warp_pts([v(MR_XS - 0.25 * P, 2.2, MR_BTZ)])[0]; WARP["x0"] = None
     bt = L_ROT.T @ (bt - L_POS)
     c = settle([bt] + pts)
     near = np.array([np.sqrt(((SKIN_L - q) ** 2).sum(1).min()) for q in c]) < 1.5 * R
@@ -522,7 +523,7 @@ def ANCHOR(E): return E + v(0.3 * P, -0.25, 0.85)
 def BT(x):
     """where the working yarn comes over the top of the work, behind it (low enough for a hook in a
     stitch to reach); a chain has nothing behind it: just behind and above the loop on the hook"""
-    return v(x + 0.6 * P, 1.6, 1.5) if CHAIN else v(x + 0.25 * P, 2.2, -3.0 + 0.1 * max(0.0, ZT))
+    return v(x + 0.6 * P, 1.6, 1.5) if CHAIN else v(x + 0.25 * P, 2.2, (MR_BTZ if RING else -3.0) + 0.1 * max(0.0, ZT))
 NTHR = sum(1 for s in SPEC["steps"] for o in s if o in ("through2",)) + 1
 def lift_for(k): return max(0.0, ZT) * (0.3 + 0.55 * k / max(1, NTHR))
 

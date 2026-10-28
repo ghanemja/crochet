@@ -302,20 +302,30 @@ def bar_heights(zt, zh, nb):
     lo, hi = zh + 1.8, zt - 1.6
     return [lo + (hi - lo) * (j + 1) / (nb + 1) for j in range(nb)]    # bottom to top
 
+TOP_W = 0.95                                                   # half-width of a stitch's top across the row (was B)
 def stitch_static(x, zt, holes, nb=0, zh=-H, hole_dz=-1.3):
     """way-points of a finished stitch whose top V is centred at (x, ., zt), entered from its right
     neighbour and leaving to the left; legs into the hole(s) under the V of the row below at x = h
     (two holes for a decrease), wrapped by nb bars (the yarn overs of hdc / dc / tr). hole_dz: how far
     below the row under it the legs pass through (under its V; into a chain, through the link)."""
-    pts = [v(x + 0.5 * P, -0.25, zt + 0.15),
-           v(x + 0.22 * P, -B, zt + 0.35), v(x - 0.22 * P, -B, zt + 0.35),
-           v(x - 0.48 * P, 0.0, zt + 0.45),
-           v(x - 0.2 * P, B, zt + 0.3), v(x + 0.12 * P, B * 0.9, zt - 0.2)]
+    # the top: a flat chain link along the row, front and back loops close together and pinched to a
+    # point where they meet the next stitch, so the tops read as a row of V's from above
+    pts = [v(x + 0.5 * P, -0.1, zt + 0.05),
+           v(x + 0.24 * P, -TOP_W, zt + 0.3), v(x - 0.2 * P, -0.85 * TOP_W, zt + 0.32),
+           v(x - 0.5 * P, 0.05, zt + 0.22),
+           v(x - 0.2 * P, TOP_W, zt + 0.2), v(x + 0.24 * P, 0.8 * TOP_W, zt - 0.25)]
     L = zt - zh
     for k, hx in enumerate(holes):
         xa = lambda f: lerp(x, hx, f)
         if L < 3.2:      # a slip stitch: the V sits low, its legs go straight in
             pts += [v(xa(0.6) + 0.15 * P, -0.8, zh + 0.7), v(hx + 0.05 * P, 0.0, zh - 1.3), v(hx - 0.05 * P, 1.25, zh - 0.9), v(xa(0.6) - 0.2 * P, 0.8, zh + 0.8)]
+            continue
+        if nb == 0:      # the pulled-up loop's two legs make the V on the front: down from the top right into
+            # the hole under the row below's V, round behind it, back out of the same hole and up to the top left
+            top = zt - 0.75 if k == len(holes) - 1 else zt - 2.0
+            pts += [v(xa(0.15) + 0.36 * P, -0.9, zt - 0.75), v(xa(0.8) + 0.14 * P, -1.0, zh + 1.5),
+                    v(hx + 0.1 * P, 0.15, zh + hole_dz), v(hx, 1.35, zh + hole_dz + 0.3), v(hx - 0.1 * P, 0.15, zh + hole_dz),
+                    v(xa(0.8) - 0.14 * P, -1.0, zh + 1.5), v(xa(0.15) - 0.36 * P, -0.9, top)]
             continue
         pts += [v(xa(0.1) + 0.18 * P, 0.7, zt - 1.6)]
         for zj in reversed(bar_heights(zt, zh, nb)):
@@ -326,8 +336,9 @@ def stitch_static(x, zt, holes, nb=0, zh=-H, hole_dz=-1.3):
     return pts + [v(x - 0.5 * P, -0.25, zt + 0.15)]
 
 def chain_link(x, z):
-    return [v(x + 0.5 * P, -0.25, z + 0.1), v(x + 0.2 * P, -B, z + 0.3), v(x - 0.25 * P, -B * 0.8, z + 0.35),
-            v(x - 0.45 * P, 0.4, z + 0.2), v(x - 0.15 * P, B * 0.9, z - 0.1), v(x - 0.5 * P, -0.25, z + 0.1)]
+    """a chain: a flat link along the row, its two strands pinched to a V where it meets the next"""
+    return [v(x + 0.5 * P, -0.1, z + 0.05), v(x + 0.22 * P, -TOP_W, z + 0.3), v(x - 0.22 * P, -0.8 * TOP_W, z + 0.32),
+            v(x - 0.45 * P, 0.25, z + 0.2), v(x - 0.15 * P, 0.85 * TOP_W, z - 0.1), v(x - 0.5 * P, -0.1, z + 0.05)]
 
 def chain(xs, z):
     pts = []

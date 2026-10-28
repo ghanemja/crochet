@@ -384,7 +384,7 @@ ZR = -H + 0.3                                                   # the ring stran
 MR_C = v(-P, 0.0, ZR - MR_R0)                                   # ring centre (world)
 MR_XS = 0.0                                                     # row-space x where the ring crosses itself
 WARP = {"x0": None, "r": MR_R0}                                 # set per frame for the ring
-MR_BTZ = float(os.environ.get("MR_BTZ", "-3.0"))                # where the working yarn leaves the ring (row space)
+MR_BTZ = float(os.environ.get("MR_BTZ", "-2.4"))                # where the working yarn leaves the ring (row space)
 def warp_pts(pts):
     if WARP["x0"] is None: return np.asarray(pts, float)
     p = np.asarray(pts, float); x0, rr = WARP["x0"], WARP["r"]
@@ -722,7 +722,7 @@ def off_left_hook(hk):
     """the hook's head slid out of the left hand where a move would take it into the fingers"""
     if not HAND_PTS or RING and WARP["x0"] is None: return hk   # the ring: only once it is bent round for the frame
     ds = np.linspace(0.0, 12.0, 13); axis = hk.tip + ds[:, None] * hk.u
-    need = np.array([hook_profile(d)[1] for d in ds]) + 0.15
+    need = np.array([hook_profile(d)[1] for d in ds]) + 2.1 * R      # room for the yarn lying on the fingers
     sk = L_POS + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
     if RING: axis = warp_pts(axis) if WARP["x0"] is not None else axis
     near = np.all((sk > axis.min(0) - 6) & (sk < axis.max(0) + 6), axis=1)

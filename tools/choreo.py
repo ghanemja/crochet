@@ -116,11 +116,11 @@ def thumb_rest():
 def hook_mesh():
     ys = np.concatenate([np.linspace(0, 5.6 * RH, 70), np.linspace(5.8 * RH, 70, 12)])
     tr = thumb_rest()
-    if tr: ys = np.unique(np.concatenate([ys, np.linspace(tr[0] - 7, tr[0] + 7, 29)]))
+    if tr: ys = np.unique(np.concatenate([ys, np.linspace(tr[0] - 9, tr[0] + 9, 37)]))
     nseg = 28; ang = np.linspace(0, 2 * math.pi, nseg, endpoint=False)
     def flat(x, y, z):                                           # the thumb rest: the shaft flattened under the thumb
         if not tr: return x, z
-        w = ease(1 - (abs(y - tr[0]) - 4.0) / 2.5) if abs(y - tr[0]) > 4.0 else 1.0
+        w = ease(1 - (abs(y - tr[0]) - 5.5) / 2.5) if abs(y - tr[0]) > 5.5 else 1.0   # the length of the thumb's last joint
         nx, nz = math.cos(tr[1]), math.sin(tr[1]); pr = x * nx + z * nz; cut = max(0.0, pr - 0.55 * RH) * w
         return x - nx * cut, z - nz * cut
     rings = [[(lambda x, z: (x, y, z))(*flat(cx + r * math.cos(a), y, r * math.sin(a))) for a in ang] for y in ys for cx, r in [hook_profile(y)]]
@@ -1127,7 +1127,7 @@ def guided_target(tv):
 RIGHT_RIG = hand_rig.skeleton(hand_rig.RIGHT_GRIP, "R")
 D_GRIP = 22.0 * R                     # the fingertips hold the shaft this far up from the tip
 WRIST_SHARE = 0.4
-GRIP_ROLL = float(os.environ.get("GRIP_ROLL", "-0.4"))    # the hand turned about the shaft (radians): beside it, the index along its top
+GRIP_ROLL = float(os.environ.get("GRIP_ROLL", "-1.0"))    # the hand turned about the shaft (radians): the thumb on the rest, facing the viewer
 def right_hand(hk):
     """tripod (pencil) grip: the shaft runs between the thumb pad and the index and middle
     fingertips and back through the web between thumb and index; turns with the hook (the wrist)"""

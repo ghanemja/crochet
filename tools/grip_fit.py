@@ -24,8 +24,9 @@ def nelder(f, x0, s=1.0, it=500):
             else: X = [X[0] + 0.5 * (x - X[0]) for x in X]; F = [f(x) for x in X]
     return X[0], F[0]
 
-def fit(P, SK, r):
-    """P: named joints, SK: skin vertices (hand frame, any unit), r: shaft radius (same unit).
+def fit(P, SK, r, margin=0.12, flat=0.55):
+    """P: named joints, SK: skin vertices (hand frame, any unit), r: shaft radius (same unit). The thumb
+    rests on the hook's thumb rest, the shaft flattened to flat*r under it; every part sits margin clear.
     -> (point on the axis near the fingertips, unit direction toward the web), {part: gap}"""
     def group(f):
         d = seg_d(SK, P[f + "_dip"], P[f + "_tip"]); return d < 0.9 * d.min() + 3.0 * r / 1.15
@@ -41,14 +42,17 @@ def fit(P, SK, r):
     SK = SK[near]; G = {g: m[near] for g, m in G.items()}
     def line(x): return grip0 + x[0] * e1 + x[1] * e2, nrm(d0 + x[2] * e1 + x[3] * e2)
     def gaps(x):
-        o, d = line(x); q = SK - o; t = q @ d; dd = np.linalg.norm(q - t[:, None] * d, axis=1)
-        return dd, t
+        o, d = line(x); q = SK - o; t = q @ d; w = q - t[:, None] * d; dd = np.linalg.norm(w, axis=1)
+        nt = w[G["thumb"]].mean(0); nt /= np.linalg.norm(nt)       # the thumb rest faces the thumb
+        return dd, t, w @ nt
+    def depth(dd, pr):                                              # how far inside the shaft (its thumb rest cut flat), plus the margin
+        return np.minimum(r + margin - dd, flat * r + margin - pr)
     def cost(x):
-        dd, t = gaps(x); seg = (t > -10 * r) & (t < 35 * r)
-        c = 30 * (np.maximum(0, r - dd[seg]) ** 2).sum()
-        return c + sum((dd[m].min() - r) ** 2 for m in G.values())
+        dd, t, pr = gaps(x); seg = (t > -10 * r) & (t < 35 * r)
+        c = 30 * (np.maximum(0, depth(dd[seg], pr[seg])) ** 2).sum()
+        return c + sum(depth(dd[m], pr[m]).max() ** 2 for m in G.values())
     best = min((nelder(cost, x0, s=r) for x0 in ([0, 0, 0, 0], [-r, -2.5 * r, 0.5, 0.6])), key=lambda b: b[1])
-    o, d = line(best[0]); dd, _ = gaps(best[0])
+    o, d = line(best[0]); dd, _, pr = gaps(best[0])
     o = o + d * ((grip0 - o) @ d)
     if (web - o) @ d < 0: d = -d
-    return o, d, {g: round(float(dd[m].min() - r), 3) for g, m in G.items()}
+    return o, d, {g: round(float(margin - depth(dd[m], pr[m]).max()), 3) for g, m in G.items()}

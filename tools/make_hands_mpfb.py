@@ -23,7 +23,7 @@ POSES = {
     "R": {  # holding the hook: index extended along it, middle under it, ring and pinky tucked, thumb on the rest
         # the index lies out along the shaft, the thumb pad on the thumb rest, the middle fingertip under
         # it (chosen so they and the web all rest on one straight shaft: grip_fit.py)
-        "finger2": (22, 12, 10), "finger3": (32, 62, 48), "finger4": (55, 70, 38), "finger5": (60, 72, 38),
+        "finger2": (22, 12, 10), "finger3": (32, 62, 48), "finger4": (44, 54, 24), "finger5": ((48, 0, -16), 54, 24),
         "finger1": ((20, 0, 10), 10, 10)},
     "L": {  # holding the work: index raised for the yarn, middle and thumb pinch, the rest relaxed
         # (thumb and middle chosen so their pads face squarely, as far apart as the work is thick)
@@ -99,17 +99,17 @@ nt = n.new("ShaderNodeAttribute"); nt.attribute_name = "nail_t"
 nm = n.new("ShaderNodeValToRGB"); nm.color_ramp.elements[0].position = 0.42; nm.color_ramp.elements[1].position = 0.6
 l.new(na.outputs["Fac"], nm.inputs["Fac"])
 nc = n.new("ShaderNodeValToRGB"); el = nc.color_ramp.elements
-el[0].position = 0.40; el[0].color = (0.86, 0.72, 0.70, 1)      # lunula
-el[1].position = 0.56; el[1].color = (0.78, 0.47, 0.46, 1)      # nail bed
-e3 = el.new(0.86); e3.color = (0.80, 0.52, 0.50, 1)
-e4 = el.new(0.96); e4.color = (0.96, 0.92, 0.86, 1)             # free edge
+el[0].position = 0.36; el[0].color = (0.62, 0.42, 0.38, 1)      # lunula
+el[1].position = 0.52; el[1].color = (0.50, 0.27, 0.25, 1)      # nail bed
+e3 = el.new(0.90); e3.color = (0.52, 0.30, 0.27, 1)
+e4 = el.new(0.97); e4.color = (0.66, 0.52, 0.45, 1)             # free edge: just paler, not white
 l.new(nt.outputs["Fac"], nc.inputs["Fac"])
 nb = n.new("ShaderNodeBsdfPrincipled")
 l.new(nc.outputs["Color"], nb.inputs["Base Color"])
-nb.inputs["Roughness"].default_value = 0.22; nb.inputs["Coat Weight"].default_value = 0.6; nb.inputs["Coat Roughness"].default_value = 0.06
+nb.inputs["Roughness"].default_value = 0.22; nb.inputs["Coat Weight"].default_value = 0.3; nb.inputs["Coat Roughness"].default_value = 0.06
 nb.inputs["Subsurface Weight"].default_value = 0.45; nb.inputs["Subsurface Radius"].default_value = (1.0, 0.45, 0.35)
-nb.inputs["Subsurface Scale"].default_value = 0.0008; nb.inputs["Specular IOR Level"].default_value = 0.6
-hn = n.new("ShaderNodeMath"); hn.operation = "MULTIPLY_ADD"; hn.inputs[1].default_value = 1.2
+nb.inputs["Subsurface Scale"].default_value = 0.0008; nb.inputs["Specular IOR Level"].default_value = 0.5
+hn = n.new("ShaderNodeMath"); hn.operation = "MULTIPLY_ADD"; hn.inputs[1].default_value = 0.15
 l.new(nm.outputs["Color"], hn.inputs[0]); l.new(hsum.outputs["Value"], hn.inputs[2])
 l.new(hn.outputs["Value"], bump.inputs["Height"]); l.new(bump.outputs["Normal"], bs.inputs["Normal"]); l.new(bump.outputs["Normal"], nb.inputs["Normal"])
 mix = n.new("ShaderNodeMixShader"); l.new(nm.outputs["Color"], mix.inputs["Fac"])
@@ -122,16 +122,30 @@ def nails(me, name, side, to_local, zh):
     little over the tip, about 80 degrees wide round the finger, its curvature the finger's own"""
     R3 = to_local.to_3x3(); mw = rig.matrix_world.to_3x3()
     co = np.array([v.co[:] for v in me.vertices]); nail = np.zeros(len(co)); nailt = np.zeros(len(co))
+    seg = []
+    for fi in range(1, 6):
+        a = np.array(to_local @ wpos(f"finger{fi}-3.{side}")); b = np.array(to_local @ wpos(f"finger{fi}-3.{side}", True))
+        q = co - a; tt = np.clip(q @ (b - a) / ((b - a) @ (b - a)), 0, 1.15)
+        seg.append(np.linalg.norm(q - np.outer(tt, b - a), axis=1))
+    owner = np.argmin(seg, axis=0)                                  # each skin point belongs to the nearest fingertip only
+    sm = lambda x, e0, e1: np.clip((x - e0) / (e1 - e0), 0, 1) ** 2 * (3 - 2 * np.clip((x - e0) / (e1 - e0), 0, 1))
     for fi in range(1, 6):
         a = np.array(to_local @ wpos(f"finger{fi}-3.{side}")); b = np.array(to_local @ wpos(f"finger{fi}-3.{side}", True))
         L = np.linalg.norm(b - a); ax = (b - a) / L
-        z1 = mw @ pb[f"finger{fi}-1.{side}"].matrix.to_3x3().col[2]
-        z3 = mw @ pb[f"finger{fi}-3.{side}"].matrix.to_3x3().col[2]
-        dors = np.array(R3 @ (-z3 if z1.dot(zh) > 0 else z3)); dors -= ax * (dors @ ax); dors /= np.linalg.norm(dors)   # (the bones' z points to the palm)
-        q = co - a; t = q @ ax / L; w = q - np.outer(t * L, ax); r = np.linalg.norm(w, axis=1) + 1e-9
+        perp = lambda d: (lambda e: e / (np.linalg.norm(e) + 1e-12))(d - ax * (d @ ax))
+        # the back of the last joint. Fingers bend about the hand's side-to-side axis (x), so their backs are
+        # x cross the joint's direction, straight or curled. The thumb bends across the palm: its back faces
+        # away from its own base knuckle. (The bones' twist axes point sideways on some fingers: not used.)
+        if fi > 1: dors = perp(np.cross([1.0, 0, 0], ax))
+        else:
+            k = np.array(to_local @ wpos(f"finger1-1.{side}")); dors = perp(a - k)
+        q = co - a; t = q @ ax / L; w = q - np.outer(t * L, ax)
+        # the bone runs just under the back of the fingertip: measure round the middle of the finger's
+        # own cross-section instead, or the plate comes out a narrow strip
+        sec = (t > 0.35) & (t < 0.9) & (owner == fi - 1) & (np.linalg.norm(w, axis=1) < 0.02)
+        w = w - w[sec].mean(0); r = np.linalg.norm(w, axis=1) + 1e-9
         ang = np.degrees(np.arccos(np.clip((w @ dors) / r, -1, 1)))
-        sm = lambda x, e0, e1: np.clip((x - e0) / (e1 - e0), 0, 1) ** 2 * (3 - 2 * np.clip((x - e0) / (e1 - e0), 0, 1))
-        m = sm(t, 0.38, 0.46) * (1 - sm(t, 1.04, 1.12)) * (1 - sm(ang, 38, 50)) * (r < 0.016)
+        m = sm(t, 0.34 + 0.14 * (ang / 56) ** 2, 0.42 + 0.14 * (ang / 56) ** 2) * (1 - sm(t, 1.0, 1.07)) * (1 - sm(ang, 44, 56))   # a rounded cuticle * (r < 0.017) * (owner == fi - 1)
         better = m > nail; nail[better] = m[better]; nailt[better] = t[better]
     for nm_, vals in (("nail", nail), ("nail_t", nailt)):
         at = me.attributes.new(nm_, "FLOAT", "POINT"); at.data.foreach_set("value", vals.astype(np.float32))

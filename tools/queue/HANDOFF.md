@@ -15,16 +15,20 @@ A single-angle video is `"views": ["Guided"], "grid": [1, 1]`. Only list stitche
 committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fps.
 `tools/queue/publish.sh` writes the files and the manifest entry for you.
 
-## Where things stand (2026-10-28 04:00 UTC)
-- **Rendering now**, in queue order: sc again from scratch (Guided, then Front/Side/Behind), after
-  the user's feedback on the yarn overs (below, items 6–7). The sc Guided video on main (`6610110`)
-  is the previous take; the publisher replaces it when the new sc_v0 is done, and replaces that with
-  the 2×2 grid when all four angles are. Then ch sl hdc dc tr inc dec mr, Guided only, 24 fps.
+## Where things stand (2026-10-28 15:00 UTC)
+- **Rendering now**: sc Front/Side/Behind (`sc_v1..3`), then sc Guided (`sc_v0`) again from scratch,
+  then ch sl hdc dc tr inc dec mr (Guided, 24 fps). sc_v1 started before the grip/nail fix (item 10)
+  with the old `sc.json` loaded; it stays self-consistent while it runs, but **if it is ever
+  restarted, delete `build/frames/sc_v1` first** (the hook's thumb-rest flat moved). sc_v2/v3/v0 use
+  the new paths. The sc Guided video on main (`e4e04c5`) is an older take; the publisher replaces it.
+- User feedback reaches this session relayed by the session the user follows
+  (`session_01Ay6331HA75Zgi2RxDMTWXS`); send it the commit, frame numbers and close-up specs and it
+  renders and shows them. Files sent from here don't reach the user.
 - **All paths and cues are final** in `build/paths/<key>.json` + `<key>.cues.json` (git-ignored;
   regenerate with the Setup loop in a fresh container). Don't change choreo/hands without
   restarting the affected renders (see the queue section).
 - Measured speed: ~45–60 s/frame for the Guided view with hands (close-ups), less for the fixed
-  views. Remaining ≈ 5,400 Guided frames + ~1,000 sc fixed-view frames → roughly 60–70 h.
+  views.
 - Settings approved by the user (all in git): opaque cream stage, no shadow-catcher floor, matte
   flyaways, constant-quality encoding, tripod right-hand grip, a hook that turns before the stitch,
   slides in and out along its shaft and goes well out the back, less waxy skin.
@@ -63,6 +67,19 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    into the throat with the head in view from the guided camera; after the catch the throat turns
    back only to face the pull (`ROLL_PULL` = 70°) while it drags, and down once the loop is made.
    A low-res clip of frames 150–440 was sent to the user before the restart.
+8. **Stitches read as V's** (user, relayed): each finished stitch's top is a chain-like V lying on the
+   row (`TOP_W`, the 6-point top in `row_of`), its legs going down into the row below.
+9. **Pull-through** (user: "the yarn spawns"): loops on the hook ride with it (`through_loops`,
+   `RIDE`), then stay put while the hook slides back through them (`slide_back`), each one leaving
+   the head as a ring round the shaft; nothing appears out of nowhere.
+10. **Grip and nails** (user, relayed: thumb not visibly on the thumb rest; nails "white flakes"):
+   `grip_fit.py` now keeps every part `margin` clear and fits the thumb against the flat of the thumb
+   rest (the shaft cut to 0.55·r, ±5.5 along it); `GRIP_ROLL` = −1.0 turns the hand so the thumb on
+   the rest faces the camera. Nails: each fingertip owns only its own skin; the back of the last
+   joint is the hand's side axis × the joint (thumb: away from its base) — the bones' twist axes
+   point sideways on some fingers; the angle is measured round the finger's cross-section, not the
+   bone (which runs ~3 mm under the nail and gave a strip); linear colours close to the skin; ring
+   and pinky curled less and the pinky spread (their tips sank into the palm and each other).
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.

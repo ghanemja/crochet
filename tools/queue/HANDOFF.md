@@ -15,9 +15,9 @@ A single-angle video is `"views": ["Guided"], "grid": [1, 1]`. Only list stitche
 committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fps.
 `tools/queue/publish.sh` writes the files and the manifest entry for you.
 
-## Where things stand (2026-10-27 23:10 UTC)
+## Where things stand (2026-10-28 04:00 UTC)
 - **Rendering now**, in queue order: sc again from scratch (Guided, then Front/Side/Behind), after
-  the user's feedback on the yarn overs (below, item 6). The sc Guided video on main (`6610110`)
+  the user's feedback on the yarn overs (below, items 6–7). The sc Guided video on main (`6610110`)
   is the previous take; the publisher replaces it when the new sc_v0 is done, and replaces that with
   the 2×2 grid when all four angles are. Then ch sl hdc dc tr inc dec mr, Guided only, 24 fps.
 - **All paths and cues are final** in `build/paths/<key>.json` + `<key>.cues.json` (git-ignored;
@@ -56,6 +56,13 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    chain); the ring's is `MR_BTZ` = -2.4. Checked with close-ups and `hand_contact.py`: every
    stitch ≤ 0.64 mm (tr's tucked right pinky brushes the post for two frames; mr's thumb at the
    ring as it forms).
+7. **Yarn over must read as hooked** (user, relayed: "it should clearly go over the yarn … otherwise
+   it looks like magic"; and the held yarn crossed the front of the stitches): the held yarn now
+   runs up behind the work and over the top edge (`over_top`, offset toward the finger so it never
+   passes over the hook's head); the hook catches it on that stretch, so it drapes over the shaft
+   into the throat with the head in view from the guided camera; after the catch the throat turns
+   back only to face the pull (`ROLL_PULL` = 70°) while it drags, and down once the loop is made.
+   A low-res clip of frames 150–440 was sent to the user before the restart.
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.

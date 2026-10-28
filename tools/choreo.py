@@ -766,16 +766,22 @@ def op_pose(op, p):
 def off_left_hook(hk):
     """the hook's head slid out of the left hand where a move would take it into the fingers"""
     if not HAND_PTS or RING and WARP["x0"] is None: return hk   # the ring: only once it is bent round for the frame
-    ds = np.linspace(0.0, 12.0, 13); axis = hk.tip + ds[:, None] * hk.u
+    ds = np.linspace(0.0, 20.0, 21)
     need = np.array([hook_profile(d)[1] for d in ds]) + 2.1 * R      # room for the yarn lying on the fingers
-    sk = L_POS + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
-    if RING: axis = warp_pts(axis) if WARP["x0"] is not None else axis
-    near = np.all((sk > axis.min(0) - 6) & (sk < axis.max(0) + 6), axis=1)
-    if not near.any(): return hk
-    d, j = skin_clearance(axis, sk[near], sn[near]); short = need - d
-    if short.max() <= 0: return hk
-    i = int(np.argmax(short)); push = sn[near][j[i]] * short[i]
-    h = Hook(hk.tip + push, hk.u, hk.t); h.roll = hk.roll; return h
+    sk = L_POS + L_OFF[0] + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
+    for _ in range(4):                                               # a push off one finger can land on the next
+        axis = hk.tip + ds[:, None] * hk.u
+        if RING: axis = warp_pts(axis) if WARP["x0"] is not None else axis
+        near = np.all((sk > axis.min(0) - 6) & (sk < axis.max(0) + 6), axis=1)
+        if not near.any(): return hk
+        d, j = skin_clearance(axis, sk[near], sn[near]); short = need - d
+        if short.max() <= 0: return hk
+        i = int(np.argmax(short)); push = sn[near][j[i]] * (short[i] + 0.05)
+        if RING and WARP["x0"] is not None:                          # the ring bends row space round: push back in row space
+            a = (WARP["x0"] - hk.tip[0]) / MR_R0; c, s_ = math.cos(a), math.sin(a)
+            push = v(c * push[0] + s_ * push[2], push[1], -s_ * push[0] + c * push[2])
+        h = Hook(hk.tip + push, hk.u, hk.t); h.roll = hk.roll; hk = h
+    return hk
 def _op_pose(op, p):
     S0 = op.S; h0 = S0.hk; e = ease(p); hx = op.hx
     def back(hold):

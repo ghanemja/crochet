@@ -83,6 +83,10 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    smooth plate (no pores), a thin ivory free edge only at the tip, the outline feathered (soft
    sides, soft cuticle, rounded free edge) and narrower than the fingertip. A comment had swallowed
    the owner/radius gates of the mask; they apply again.
+12. **Nails, third pass** (user: "it's missing" — the thumb's nail vanished into the skin — and a
+   reference photo of natural manicured nails): wide (covering most of the back of the fingertip),
+   rounded-square just past the tip, a U-shaped cuticle line; a milky pale pink (88% its own colour,
+   the skin only showing through a little), very glossy (full clear coat).
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.

@@ -97,7 +97,7 @@ bump = n.new("ShaderNodeBump"); bump.inputs["Strength"].default_value = 0.35; bu
 # a hint of the lunula at the base; the outline feathered into the skin, the plate barely raised
 na = n.new("ShaderNodeAttribute"); na.attribute_name = "nail"
 nt = n.new("ShaderNodeAttribute"); nt.attribute_name = "nail_t"
-nm = n.new("ShaderNodeValToRGB"); nm.color_ramp.elements[0].position = 0.0; nm.color_ramp.elements[1].position = 0.85
+nm = n.new("ShaderNodeValToRGB"); nm.color_ramp.elements[0].position = 0.15; nm.color_ramp.elements[1].position = 0.75
 l.new(na.outputs["Fac"], nm.inputs["Fac"])
 nc = n.new("ShaderNodeValToRGB"); el = nc.color_ramp.elements
 el[0].position = 0.36; el[0].color = (0.98, 0.86, 0.87, 1)       # lunula: barely paler
@@ -105,16 +105,18 @@ el[1].position = 0.52; el[1].color = (0.90, 0.66, 0.72, 1)       # bed: the skin
 l.new(nt.outputs["Fac"], nc.inputs["Fac"])
 bed = n.new("ShaderNodeMix"); bed.data_type = "RGBA"; bed.blend_type = "MULTIPLY"; bed.inputs["Factor"].default_value = 1.0
 l.new(mul2.outputs[2], bed.inputs[6]); l.new(nc.outputs["Color"], bed.inputs[7])
-fe = n.new("ShaderNodeValToRGB"); fe.color_ramp.elements[0].position = 0.93; fe.color_ramp.elements[1].position = 0.99
+own = n.new("ShaderNodeMix"); own.data_type = "RGBA"; own.inputs["Factor"].default_value = 0.88   # mostly its own pink: the skin texture is pale here
+own.inputs[7].default_value = (0.64, 0.40, 0.38, 1); l.new(bed.outputs[2], own.inputs[6])
+fe = n.new("ShaderNodeValToRGB"); fe.color_ramp.elements[0].position = 0.97; fe.color_ramp.elements[1].position = 1.02
 l.new(nt.outputs["Fac"], fe.inputs["Fac"])
-edge = n.new("ShaderNodeMix"); edge.data_type = "RGBA"; edge.inputs[7].default_value = (0.74, 0.64, 0.57, 1)   # free edge: thin, ivory
-l.new(fe.outputs["Color"], edge.inputs["Factor"]); l.new(bed.outputs[2], edge.inputs[6])
+edge = n.new("ShaderNodeMix"); edge.data_type = "RGBA"; edge.inputs[7].default_value = (0.86, 0.76, 0.70, 1)   # free edge: thin, ivory
+l.new(fe.outputs["Color"], edge.inputs["Factor"]); l.new(own.outputs[2], edge.inputs[6])
 nb = n.new("ShaderNodeBsdfPrincipled")
 l.new(edge.outputs[2], nb.inputs["Base Color"])
-nb.inputs["Roughness"].default_value = 0.14; nb.inputs["Coat Weight"].default_value = 0.6; nb.inputs["Coat Roughness"].default_value = 0.04
-nb.inputs["Subsurface Weight"].default_value = 0.6; nb.inputs["Subsurface Radius"].default_value = (1.0, 0.45, 0.35)
+nb.inputs["Roughness"].default_value = 0.1; nb.inputs["Coat Weight"].default_value = 1.0; nb.inputs["Coat Roughness"].default_value = 0.03
+nb.inputs["Subsurface Weight"].default_value = 0.35; nb.inputs["Subsurface Radius"].default_value = (1.0, 0.45, 0.35)
 nb.inputs["Subsurface Scale"].default_value = 0.0012; nb.inputs["Specular IOR Level"].default_value = 0.5
-hn = n.new("ShaderNodeMath"); hn.operation = "MULTIPLY_ADD"; hn.inputs[1].default_value = 0.12
+hn = n.new("ShaderNodeMath"); hn.operation = "MULTIPLY_ADD"; hn.inputs[1].default_value = 0.3
 smooth = n.new("ShaderNodeMath"); smooth.operation = "MULTIPLY_ADD"; smooth.inputs[1].default_value = -0.9; smooth.inputs[2].default_value = 1.0
 l.new(nm.outputs["Color"], smooth.inputs[0])                    # the plate is smooth: no pores on it
 pl = n.new("ShaderNodeMath"); pl.operation = "MULTIPLY"; l.new(hsum.outputs["Value"], pl.inputs[0]); l.new(smooth.outputs["Value"], pl.inputs[1])
@@ -153,9 +155,9 @@ def nails(me, name, side, to_local, zh):
         sec = (t > 0.35) & (t < 0.9) & (owner == fi - 1) & (np.linalg.norm(w, axis=1) < 0.02)
         w = w - w[sec].mean(0); r = np.linalg.norm(w, axis=1) + 1e-9
         ang = np.degrees(np.arccos(np.clip((w @ dors) / r, -1, 1)))
-        # narrower than the fingertip with soft curved sides, a feathered cuticle, the free edge rounded
-        c0 = 0.36 + 0.12 * (ang / 44) ** 2; e0 = 0.99 - 0.06 * (ang / 44) ** 2
-        m = sm(t, c0, c0 + 0.14) * (1 - sm(t, e0, e0 + 0.05)) * (1 - sm(ang, 24, 44)) * (r < 0.017) * (owner == fi - 1)
+        # covering most of the back of the fingertip, a rounded-square shape just past the tip, a soft cuticle line
+        c0 = 0.30 + 0.18 * (ang / 54) ** 2; e0 = 1.05 - 0.03 * (ang / 54) ** 4
+        m = sm(t, c0, c0 + 0.10) * (1 - sm(t, e0, e0 + 0.04)) * (1 - sm(ang, 44, 58)) * (r < 0.017) * (owner == fi - 1)
         better = m > nail; nail[better] = m[better]; nailt[better] = t[better]
     for nm_, vals in (("nail", nail), ("nail_t", nailt)):
         at = me.attributes.new(nm_, "FLOAT", "POINT"); at.data.foreach_set("value", vals.astype(np.float32))

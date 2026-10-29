@@ -546,7 +546,7 @@ YARN_HAND = YARN_HAND + [YARN_HAND[-1] + v(-6.0, 8.0, -20.0)]
 
 DOWN = v(0, 0, -1)
 U_REST, U_IN, U_UP = v(1.0, -0.55, 0.8), v(0.8, -1.35, 0.45), v(0.95, -0.9, 0.85)   # U_IN flatter: the tip comes up behind the work
-U_PULL = v(1.0, -0.5, 0.6)          # after pulling up a loop: ~40 degrees off the guided view's line, the hand beside the head, not over it
+U_PULL = v(*map(float, os.environ.get("U_PULL", "1.0,-0.5,0.6").split(",")))          # after pulling up a loop: ~40 degrees off the guided view's line, the hand beside the head, not over it
 def HOLE(hx): return v(hx, 0.0, -H - 1.3)
 def T_IN(hx): return v(hx - 0.2, 4.2, -H - 1.6) - nrm(U_IN) * 4.5     # well out the back, along the shaft
 def T_UP(hx, lift): return v(hx + 0.5, -2.6, -H + 4.0 + lift)
@@ -719,7 +719,7 @@ def l_off(ta):
 YO_CATCH_Z = -H + float(os.environ.get("YO_CATCH_DZ", "2.5"))   # how high (above the tops of the row the hook is in) a hook in a stitch catches the yarn
 YO_ROLL = 180.0                     # the throat turned to face straight up while the yarn is laid over the shaft (degrees from facing down)
 PU_LIFT = float(os.environ.get("PU_LIFT", "3.0"))
-ROLL_SHOW = 150.0                   # pulling up a loop: the throat up and toward the viewer, the caught yarn in it in view
+ROLL_SHOW = float(os.environ.get("ROLL_SHOW", "150"))                   # pulling up a loop: the throat up and toward the viewer, the caught yarn in it in view
 ROLL_PULL = 70.0                    # ...and where it faces while it drags the yarn through: toward the pull
 def _rot(axis, a):
     k = nrm(axis); K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
@@ -735,8 +735,9 @@ def yo_plan(op):
     d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.6)       # on its way up behind the work
     if op.name == "yo_catch" and not RING:                       # a hook in a stitch: catch it up clear of the row it is in, in view
         Q = A + v(0, 0.8, 0) + d * np.clip((YO_CATCH_Z - A[2]) / d[2], 0, 0.6)   # drawn back a little: the throat well out the back
+    ub = U_UP if op.name == "yo_front" else h0.u                 # (a loop just pulled up ends turned aside, U_PULL: not this)
     plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3),
-                u_yo=nrm(v(h0.u[0], h0.u[1], -0.25 * np.hypot(h0.u[0], h0.u[1]))))    # shaft falling toward the hand: the head higher
+                u_yo=nrm(v(ub[0], ub[1], -0.25 * np.hypot(ub[0], ub[1]))))    # shaft falling toward the hand: the head higher
     if op.name == "yo_catch":                                    # in the stitch: back out a little, tip up about it
         hole = HOLE(S0.xw)
         # back out only as far as the throat must come in to reach the yarn (the head stays well out the back)

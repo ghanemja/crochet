@@ -546,6 +546,7 @@ YARN_HAND = YARN_HAND + [YARN_HAND[-1] + v(-6.0, 8.0, -20.0)]
 
 DOWN = v(0, 0, -1)
 U_REST, U_IN, U_UP = v(1.0, -0.55, 0.8), v(0.8, -1.35, 0.45), v(0.95, -0.9, 0.85)   # U_IN flatter: the tip comes up behind the work
+U_PULL = v(1.0, -0.5, 0.6)          # after pulling up a loop: ~40 degrees off the guided view's line, the hand beside the head, not over it
 def HOLE(hx): return v(hx, 0.0, -H - 1.3)
 def T_IN(hx): return v(hx - 0.2, 4.2, -H - 1.6) - nrm(U_IN) * 4.5     # well out the back, along the shaft
 def T_UP(hx, lift): return v(hx + 0.5, -2.6, -H + 4.0 + lift)
@@ -717,6 +718,8 @@ def l_off(ta):
 
 YO_CATCH_Z = -H + float(os.environ.get("YO_CATCH_DZ", "2.5"))   # how high (above the tops of the row the hook is in) a hook in a stitch catches the yarn
 YO_ROLL = 180.0                     # the throat turned to face straight up while the yarn is laid over the shaft (degrees from facing down)
+PU_LIFT = float(os.environ.get("PU_LIFT", "3.0"))
+ROLL_SHOW = 150.0                   # pulling up a loop: the throat up and toward the viewer, the caught yarn in it in view
 ROLL_PULL = 70.0                    # ...and where it faces while it drags the yarn through: toward the pull
 def _rot(axis, a):
     k = nrm(axis); K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
@@ -810,8 +813,14 @@ def _op_pose(op, p):
     if op.name in ("pull_up", "pull_keep"):
         k = 0.55 if op.name == "pull_keep" else 1.0
         # back out the way it went in (along the shaft) before lifting the loop up in front
-        dst = T_UP(hx, lift_for(0)) if k == 1 else v(hx + 0.4, -2.8, -H + 2.0)
+        dst = T_UP(hx, lift_for(0)) + v(0, -0.6, PU_LIFT) if k == 1 else v(hx + 0.4, -2.8, -H + 2.0)   # the head up clear of the work, against the backdrop
         tip = bez(h0.tip, h0.tip + h0.u * 7.5, v(hx + 0.3, -3.5, -H), dst, e)
+        if k == 1:
+            # the head comes out to the front with the caught yarn in view: the throat turns up and toward the
+            # viewer (ROLL_SHOW) and stays so, the shaft ends turned aside (U_PULL) so the hand is not in front
+            # of the head
+            r = h0.roll + (ROLL_SHOW - h0.roll) * ease(p / 0.3)
+            return rolled(tip, slerp_dir(h0.u, U_PULL, ease(max(0.0, (p - 0.35) / 0.65))), r)
         return rolled(tip, slerp_dir(h0.u, U_UP, ease(max(0.0, (p - 0.35) / 0.65))), back(0.75))
     if op.name in ("through", "through2"):
         # the loops crowd up to the head, then the hook draws back along its shaft through them, the
@@ -866,10 +875,14 @@ def raw_path(op, p):
         s = ease((1.2 - hk.tip[1]) / 2.0)
         if op.name == "pull_keep":
             S1 = S0.copy(); S1.keep_s = s; return assemble(S1, hk, keep=op.hx).curve()
-        S1 = op.E; ds1 = loop_ds(S1, hk); ds0 = loop_ds(S0, hk); q = ease((p - 0.55) / 0.45)
+        # the caught yarn stays a bight in the throat, its two strands back through the stitch, until the head
+        # is out in front; only then does it open into the new loop and slide up the shaft
+        S1 = op.E; ds1 = loop_ds(S1, hk); ds0 = loop_ds(S0, hk); q = ease((p - 0.8) / 0.2)
+        up = ease(p / 0.25) * (1 - q)                                   # meanwhile the loops already on it stay well up the shaft
+        ds0 = [max(d, lerp(d, 8.5 + (n - 1 - i) * SPACING, up)) for i, d in enumerate(ds0)]
         ds = [lerp(ds0[i], ds1[i], q) for i in range(n)] + [lerp(THROAT_D, ds1[-1], q)]
         a0 = contact(hk, BT(op.hx), over_top(BT(op.hx)), True)          # the caught yarn, carried round by the throat
-        f = ease((p - 0.4) / 0.6); ang = (lerp(a0[0], 25, f), lerp(a0[1], -295, f))
+        f = ease((p - 0.72) / 0.28); ang = (lerp(a0[0], 25, f), lerp(a0[1], -295, f))
         return assemble(S1, hk, ds=ds, form={n: (ang, s)}).curve()
     if op.name in ("through", "through2"):
         if p < PULL_SPLIT: return through_loops(op, hk, p / PULL_SPLIT)
@@ -1009,6 +1022,7 @@ OVER = v(0.1, -0.5, 1.0)
 QUARTER = v(-0.55, -1.0, 0.75)
 TOP = v(0.0, -0.22, 1.0)
 BEHIND_OVER = v(-0.35, 0.45, 1.0)       # over the top from behind-left: the head out the back, the yarn over it
+FRONT_LOW = v(0.3, -1.0, 0.25)          # nearly level: the head pulled up in front shows above the work, against the backdrop
 if RING: OVER, TOP = v(0.1, -0.75, 0.75), v(0.05, -0.55, 0.9)   # the ring stands up: look in less steeply
 def turn_of(d):
     """the guided view never changes its angle: to show another side the whole work (fabric, yarn, hook, hands)
@@ -1104,8 +1118,8 @@ def build_shots():
                 m = len(S1.loops)
                 txt = "Pull it back through — %s loops on your hook" % WORDS.get(m, m) if m > 1 else "Pull up a loop — it's the only one on your hook"
                 if OPLIST[i - 1].name == "yo_catch" and not RING:      # coming back round from behind the work
-                    shot(0.8 * k, act(op, 0), act(op, 0.15), QUARTER, 1.0)  # and turns back (same 2.6 s in all)
-                    shot(1.8 * k, act(op, 0.15), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
+                    shot(0.8 * k, act(op, 0), act(op, 0.15), FRONT_LOW, 1.0)  # and turns back, on round to nearly level for the pull (same 2.6 s in all)
+                    shot(1.8 * k, act(op, 0.15), act(op, 1), FRONT_LOW, 1.0, ("loops", si, txt) if not quiet else None)
                 else: shot(2.6 * k, act(op, 0), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
         elif nm == "yo_front":
             again = any(o.name in ("yo_catch", "yo_front", "yo_free") for o in OPLIST[:i])

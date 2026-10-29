@@ -260,7 +260,7 @@ def free_edges(me, co, nail, owner, fdata):
         for ph, p in row:
             rad = p - a - ax * ((p - a) @ ax) - cen; rad /= np.linalg.norm(rad)
             ext = FREE * (1 - 0.35 * (ph / 38) ** 2)                # rounded
-            base = p + rad * 0.00008                                 # just on the skin
+            base = p - rad * 0.00025                                 # set into the skin: no gap to see through under it
             tip = base + ax * ext - rad * 0.0002 * (ext / FREE)      # carried on along the plate, barely drooping
             for (pt, lst) in ((base, bot), (tip, top)):
                 v0 = bm.verts.new(pt); v1 = bm.verts.new(pt + rad * 0.0003)    # 0.3 mm thick

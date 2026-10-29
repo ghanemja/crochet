@@ -115,6 +115,13 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.
 
+16. **Yarn flicker in motion** (user: "the yarn is moving weird when there is motion"): choreo splits one yarn
+   into colours at a point that moves every frame, and the renderer keyed each strand's twist, fibres and
+   flyaways (and its frame) to its own start, so they crawled along the working yarn. A strand that starts
+   where the previous ended now carries on its length (`s0`), seed and frame; open strands are sampled at
+   fixed places along the yarn; the joins don't taper. The focus distance is the hook's averaged over a second.
+   A blue line on the nails: the free-edge plate stood off the skin (you saw through the gap); now set into it.
+
 ## Checking tools
 - `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts
   drawn over the rendered cue frames (render them first at `round(t * 24)`).

@@ -259,14 +259,14 @@ def set_hands(fr):
 
 # ---------------------------------------------------------------- yarn as hair curves
 PLIES = 3
-def frames_rmf(c, closed):
-    """rotation-minimising frames (n, b) along polyline c (N,3)."""
+def frames_rmf(c, closed, n_start=None):
+    """rotation-minimising frames (n, b) along polyline c (N,3); n_start continues a frame from before."""
     N = len(c)
     if closed: t = np.roll(c, -1, 0) - np.roll(c, 1, 0)
     else:
         t = np.empty_like(c); t[1:-1] = c[2:] - c[:-2]; t[0] = c[1] - c[0]; t[-1] = c[-1] - c[-2]
     t /= np.linalg.norm(t, axis=1, keepdims=True) + 1e-12
-    up = np.array([0.0, 1.0, 0.0]) if abs(t[0][1]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    up = n_start if n_start is not None else (np.array([0.0, 1.0, 0.0]) if abs(t[0][1]) < 0.9 else np.array([1.0, 0.0, 0.0]))
     n = np.empty_like(c); n0 = up - t[0] * up.dot(t[0]); n[0] = n0 / np.linalg.norm(n0)
     for i in range(1, N):
         v = n[i - 1] - t[i] * n[i - 1].dot(t[i]); L = np.linalg.norm(v)
@@ -278,11 +278,17 @@ def frames_rmf(c, closed):
         n, b = n * np.cos(ang) + b * np.sin(ang), -n * np.sin(ang) + b * np.cos(ang)
     return n, b
 
-def resample(pts, closed, step):
+def resample(pts, closed, step, s0=0.0):
     p = np.array(pts, float)
     if closed: p = np.vstack([p, p[:1]])
     seg = np.linalg.norm(np.diff(p, axis=0), axis=1); s = np.concatenate([[0], np.cumsum(seg)]); L = s[-1]
-    m = max(8, int(L / step) + 1); si = np.linspace(0, L, m)
+    if closed:
+        m = max(8, int(L / step) + 1); si = np.linspace(0, L, m)
+    else:   # at fixed places along the yarn itself (s0 + s on a grid), plus the two ends: as a strand grows or
+            # its start moves, the points already on it stay put (spread evenly, every one shifted a little)
+        g0 = (-s0) % step; si = np.unique(np.concatenate([[0.0], np.arange(g0, L, step), [L]]))
+        si = si[np.concatenate([[True], np.diff(si) > step * 0.05])]; si[-1] = L
+        if len(si) < 8: si = np.linspace(0, L, 8)
     q = np.stack([np.interp(si, s, p[:, k]) for k in range(3)], 1)
     if closed: q, si = q[:-1], si[:-1]
     return q, si, L
@@ -292,31 +298,34 @@ def rng_at(seed, j):   # cheap deterministic hash -> [0,1)
     x ^= x >> 31; x = (x * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF; x ^= x >> 29
     return (x & 0xFFFFFF) / float(0xFFFFFF)
 
-def ply_fibres(seed, pc, n, b, s, th, rply, R, closed, L):
+def ply_fibres(seed, pc, n, b, s, th, rply, R, closed, L, s0=0.0):
     """A.fibres staple fibres following one ply: each sits at a random depth in the ply,
     twists with it, wanders a little (frizz) and, at the ends of its staple, frays out
-    and lifts off the surface. Seeded and anchored by arc length -> stable between frames."""
+    and lifts off the surface. Seeded and anchored by the yarn's own length (s0 + s: s0 is how much of the same
+    yarn comes before this strand) -> each fibre stays on the same bit of yarn from frame to frame."""
     NF = A.fibres
     if NF <= 0: return []
     rng = np.random.default_rng(seed)
     rho0 = rng.uniform(0.55, 1.0, NF) ** 0.5 * 0.98          # depth in the ply (0 = core)
     ph0 = rng.uniform(0, 2 * math.pi, NF)
     wob_f = rng.uniform(0.6, 1.6, NF) / R; wob_p = rng.uniform(0, 2 * math.pi, NF)
-    ang = ph0[:, None] + th[None, :] * 1.08 + 0.12 * np.sin(s[None, :] * wob_f[:, None] + wob_p[:, None])
-    rho = rho0[:, None] * (1 + 0.07 * np.sin(s[None, :] * wob_f[:, None] * 1.7 + wob_p[:, None] * 2))
+    sm_ = s + s0
+    ang = ph0[:, None] + th[None, :] * 1.08 + 0.12 * np.sin(sm_[None, :] * wob_f[:, None] + wob_p[:, None])
+    rho = rho0[:, None] * (1 + 0.07 * np.sin(sm_[None, :] * wob_f[:, None] * 1.7 + wob_p[:, None] * 2))
     out = []
     for f in range(NF):
         # staples 4–11 R long; the first starts before the strand so the cuts are spread out
-        x = -rng.uniform(0, 11 * R); cuts = []
+        x = -rng.uniform(0, 11 * R) - s0; cuts = []                 # (in this strand's own s)
         while x < L:
-            ln = rng.uniform(4, 11) * R; cuts.append((x, x + ln, rng.uniform(0.4, 1.6) if rng.uniform() < A.fray else 0.06, rng.uniform(-1, 1))); x += ln
+            ln = rng.uniform(4, 11) * R; c_ = (x, x + ln, rng.uniform(0.4, 1.6) if rng.uniform() < A.fray else 0.06, rng.uniform(-1, 1)); x += ln
+            if c_[1] > 0: cuts.append(c_)
         for (x0, x1, amp, curl) in cuts:
             i0 = int(np.searchsorted(s, max(0.0, x0))); i1 = int(np.searchsorted(s, min(L, x1)))
             if i1 - i0 < 3: continue
             ss = s[i0:i1]
             # fray: within ~1 R of a staple end the fibre leaves the ply and curls outward
             e0 = np.clip(1 - (ss - x0) / (1.2 * R), 0, 1) ** 2 if x0 > 0 else 0 * ss
-            e1 = np.clip(1 - (x1 - ss) / (1.2 * R), 0, 1) ** 2 if x1 < L else 0 * ss
+            e1 = np.clip(1 - (x1 - ss) / (1.2 * R), 0, 1) ** 2 if x1 < L else 0 * ss     # (a cut at the join to the next strand frays nowhere)
             e = np.maximum(e0, e1); fr = e * amp
             r = rply[i0:i1] * (rho[f, i0:i1] + fr)
             a = ang[f, i0:i1] + fr * curl
@@ -324,26 +333,29 @@ def ply_fibres(seed, pc, n, b, s, th, rply, R, closed, L):
             out.append((pts, R * 0.009 * (1 - 0.6 * e)))          # tapers toward the frayed tips
     return out
 
-def strand_curves(si_idx, st):
-    """-> dict(kind -> list of (points (n,3) app units, radii (n,)))"""
+def strand_curves(si_idx, st, s0=0.0, n_start=None, taper_start=True, taper_end=True):
+    """-> (dict(kind -> list of (points (n,3) app units, radii (n,))), length, last normal). s0, n_start: this
+    strand carries on the yarn before it (choreo splits one yarn into colours at a point that moves every
+    frame): its twist, fibres and flyaways stay on the same bits of yarn, its frame turns on from the last"""
     R = st["radius"]; closed = st["closed"]
-    c, s, L = resample(st["pts"], closed, R * 0.09)
-    n, b = frames_rmf(c, closed)
+    c, s, L = resample(st["pts"], closed, R * 0.09, s0)
+    n, b = frames_rmf(c, closed, n_start)
     twist = 2 * math.pi / (R * 4.2)                       # one ply turn per ~4 yarn radii
     if closed: twist = 2 * math.pi * max(1, round(L * twist / (2 * math.pi))) / L
     rp, rply = R * 0.52, R * 0.52
     out = {"ply": [], "fibre": [], "fuzz": []}
     # taper the free ends a touch so cut ends read as yarn, not pipes
-    taper = np.ones(len(s)) if closed else np.clip(np.minimum(s, L - s) / (R * 0.8), 0.55, 1)
+    taper = np.ones(len(s)) if closed else np.clip(np.minimum(s if taper_start else np.inf, L - s if taper_end else np.inf) / (R * 0.8), 0.55, 1)
     for k in range(PLIES):
-        th = 2 * math.pi * k / PLIES + s * twist
+        th = 2 * math.pi * k / PLIES + (s + s0) * twist
         pc = c + rp * (np.cos(th)[:, None] * n + np.sin(th)[:, None] * b) * taper[:, None]
         out["ply"].append((pc, rply * 0.72 * taper))           # solid core under the fibres
-        out["fibre"] += ply_fibres(si_idx * 7 + k, pc, n, b, s, th, rply * taper, R, closed, L)
+        out["fibre"] += ply_fibres(si_idx * 7 + k, pc, n, b, s, th, rply * taper, R, closed, L, s0)
     # flyaways: thin curly wisps, anchored by absolute arc length so they don't swim between frames
     spacing = R * 0.12; seed = 1009 * (si_idx + 1); q = np.linspace(0, 1, 14)[:, None]
-    for j in range(int(L / spacing)):
-        u = (j + rng_at(seed, j)) * spacing
+    for j in range(int(s0 / spacing), int((s0 + L) / spacing) + 1):
+        u = (j + rng_at(seed, j)) * spacing - s0
+        if u < 0: continue
         if u >= L: break
         r1, r2, r3, r4 = (rng_at(seed + m, j) for m in (1, 2, 3, 4))
         i = min(len(s) - 1, int(np.searchsorted(s, u)))
@@ -355,7 +367,7 @@ def strand_curves(si_idx, st):
         out_ = d * (0.25 + 0.5 * r4) + t * (r3 - 0.5) * 1.2    # leaves the surface at a shallow angle
         pts = c[i] + d * R * 0.9 + (out_ * q + (np.cos(k * q) - 1) * d * 0.18 + np.sin(k * q) * w * 0.25) * ln
         out["fuzz"].append((pts, (R * 0.011 * (1 - 0.7 * q)).ravel()))
-    return out
+    return out, L, n[-1]
 
 def build_curves(name, items, mat):
     cv = bpy.data.hair_curves.new(name)
@@ -386,10 +398,18 @@ def mats_for(acc, shade):
 YOBJ, YOBJ_KEYS = {}, set()
 def set_yarn(fr):
     groups = {}
+    prev = None                                                   # (last point, root index, length so far, last normal)
     for i, st in enumerate(fr["strands"]):
-        if not st.get("visible") or len(st.get("pts", [])) < 3: continue
+        if not st.get("visible") or len(st.get("pts", [])) < 3: prev = None; continue
         acc = bool(st.get("accent")); shade = round(float(st.get("shade", 1.0)), 2)
-        for kind, items in strand_curves(i, st).items():
+        cont = (prev is not None and not st["closed"] and np.linalg.norm(np.array(st["pts"][0]) - prev[0]) < 1e-6)
+        root, s0, n0 = (prev[1], prev[2], prev[3]) if cont else (i, 0.0, None)
+        nx = fr["strands"][i + 1] if i + 1 < len(fr["strands"]) else None
+        goes_on = (not st["closed"] and nx is not None and nx.get("visible") and len(nx.get("pts", [])) >= 3
+                   and np.linalg.norm(np.array(nx["pts"][0]) - np.array(st["pts"][-1])) < 1e-6)
+        curves, L_, n_last = strand_curves(root, st, s0, n0, taper_start=not cont, taper_end=not goes_on)
+        prev = None if st["closed"] else (np.array(st["pts"][-1]), root, s0 + L_, n_last)
+        for kind, items in curves.items():
             groups.setdefault((acc, shade, kind), []).extend(items)
     keys = sorted({(a, sh) for a, sh, _ in groups} | {(False, 1.0), (True, 1.0)} | {(a, sh) for a, sh in YOBJ_KEYS})
     for acc, shade in keys:
@@ -412,7 +432,7 @@ if A.lookdev:   # a single lazy S of yarn across the frame, camera square on, fo
     cam.location = to_bl((1.5, 2.0, 11.0)); tgt = to_bl((1.5, 0.3, 0)); cd.lens = 100
     cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler(); cam_fwd = (tgt - cam.location).normalized()
     cd.dof.aperture_fstop = 32; hook.hide_render = True; A.zoom = 2
-nF = len(D["frames"])
+nF = len(D["frames"]); FPS_ = int(D.get("fps", 24))
 a, b_, st_ = (A.frames.split(":") + ["", "", ""])[:3]
 f0 = int(a or 0); f1 = int(b_ or -1); f1 = nF if f1 < 0 else min(nF, f1 + 1); step = int(st_ or 1)
 import time, shutil
@@ -443,7 +463,11 @@ for fi in range(f0, f1, step):
     hook.rotation_quaternion = CQ @ Quaternion((qw, qx, qy, qz)) @ CQ.inverted()
     set_yarn(fr); set_hands(fr); t1 = time.time()
     # focus on the hook head (the tip sits at the hook's origin)
-    cd.dof.focus_distance = max(0.05, ((hook.location if A.zoom == 1 else tgt) - cam.location).dot(cam_fwd))
+    # focus: on the hook head, but averaged over a second around this frame. Following it frame by frame moved
+    # the focus plane every frame, and the whole work's fibres sharpened and softened with it (a shimmer)
+    hw = [to_bl(D["frames"][j]["hook"]["pos"]) for j in range(max(0, fi - FPS_ // 2), min(nF, fi + FPS_ // 2 + 1))]
+    hk_avg = sum(hw, Vector()) / len(hw)
+    cd.dof.focus_distance = max(0.05, ((hk_avg if A.zoom == 1 else tgt) - cam.location).dot(cam_fwd))
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
     prev = (akey, path)

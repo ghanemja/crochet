@@ -35,7 +35,8 @@ def check(fr):
         ob = bpy.data.objects[h.get("obj", "Hand" + h["side"])]; r = h["rot"]; p = h["pos"]
         M = Matrix(((r[0], r[1], r[2], p[0]), (r[3], r[4], r[5], p[1]), (r[6], r[7], r[8], p[2]), (0, 0, 0, 1))) @ Matrix.Scale(h["scale"], 4)
         me = ob.evaluated_get(dg).to_mesh()
-        vs = [M @ v.co for v in me.vertices]; fs = [tuple(pl.vertices) for pl in me.polygons]
+        n_skin = ob.data.get("n_skin", len(me.vertices))         # the skin only: the nails' free edges are open plates
+        vs = [M @ v.co for v in me.vertices]; fs = [tuple(pl.vertices) for pl in me.polygons if max(pl.vertices) < n_skin]
         joints = {k: M @ Vector(x) for k, x in PTS[h.get("obj", "Hand" + h["side"])[4:]].items() if not k.startswith("_") and not k.endswith("_n")}
         hands[h["side"]] = (BVHTree.FromPolygons(vs, fs), joints)
 

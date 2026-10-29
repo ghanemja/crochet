@@ -814,9 +814,9 @@ def _op_pose(op, p):
     if op.name in ("pull_up", "pull_keep"):
         k = 0.55 if op.name == "pull_keep" else 1.0
         # back out the way it went in (along the shaft) before lifting the loop up in front
-        dst = T_UP(hx, lift_for(0)) + v(0, -0.6, PU_LIFT) if k == 1 else v(hx + 0.4, -2.8, -H + 2.0)   # the head up clear of the work, against the backdrop
+        dst = T_UP(hx, lift_for(0)) + (v(0, -0.6, PU_LIFT) if not RING else 0) if k == 1 else v(hx + 0.4, -2.8, -H + 2.0)   # the head up clear of the work, against the backdrop
         tip = bez(h0.tip, h0.tip + h0.u * 7.5, v(hx + 0.3, -3.5, -H), dst, e)
-        if k == 1:
+        if k == 1 and not RING:                                      # (the ring's brisk stitches keep the plain pull)
             # the head comes out to the front with the caught yarn in view: the throat turns up and toward the
             # viewer (ROLL_SHOW) and stays so, the shaft ends turned aside (U_PULL) so the hand is not in front
             # of the head

@@ -104,8 +104,11 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
 14. **First yarn over in view** (user: "5–9 seconds still doesn't hook right"; only the tip's ball showed
    over the top edge): a hook in a stitch no longer backs out; it tips its head up about the stitch to
    catch the held yarn `YO_CATCH_Z` above the row it is in, drawn back 0.8 (the throat ~4 out the back).
-   The guided camera cuts (`shot(1e-3, …)`) to `BEHIND_OVER` for "pokes out the back" and the yarn over,
-   and cuts back for the pull — a swing over the top flips the picture (the renderer's up is world Z).
+15. **One camera angle** (user: "keep the camera angle the same, and only rotate the hands/piece if trying
+   to show a different angle"): every guided shot looks from FRONT; to show the back for "pokes out the
+   back" and the yarn over, the whole work turns in front of it (eased, 1 s each way). Done as the camera
+   swung by `turn_of(d)` (the least rotation FRONT→d) *with its roll, lights, HDRI and floor* — the same
+   picture; choreo writes it per frame as `cam.turn` and `project()` uses it for the cues.
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.

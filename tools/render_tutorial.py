@@ -106,6 +106,7 @@ rim = bpy.data.objects.new("Rim", bpy.data.lights.new("Rim", "AREA")); sc.collec
 rim.data.size = 0.25; rim.data.energy = 9; rim.data.color = (1.0, 0.9, 0.8)
 rim.location = to_bl((6, 10, -16)); rim.rotation_euler = (to_bl((0, 0, 0)) - rim.location).to_track_quat("-Z", "Y").to_euler()
 
+RIG = []          # set below: what turns with the guided camera (choreo.py turn_of)
 # floor: shadow catcher. The app's ground (y=-3.4) only draws shadows, so the working
 # yarn runs on below it to the ball; a catcher there would cut that strand off.
 fm = bpy.data.meshes.new("Floor"); g = -10.0 * S; e = 3.0
@@ -117,6 +118,8 @@ if not A.floor:   # its shadow showed through the stitches' holes as grey, speck
     fmat.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.85, 0.80, 0.74, 1)
     fm.materials.append(fmat)
 
+RIG = [(o_, o_.location.copy(), o_.rotation_euler.to_quaternion()) for o_ in (key, rim, floor)]
+ENV_MAP = mp if os.path.exists(A.hdri) else None
 # camera: the app's framing, pulled back along the view line for a long lens
 cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam")); sc.collection.objects.link(cam); sc.camera = cam
 cd = cam.data; cd.sensor_fit = "VERTICAL"; cd.sensor_height = 24; cd.sensor_width = 24 * W / H; cd.lens = A.lens
@@ -427,6 +430,14 @@ for fi in range(f0, f1, step):
         P = Vector(fr["cam"]["pos"]); T = Vector(fr["cam"]["target"])
         cam.location = to_bl(T + (P - T) * k); tgt = to_bl(T)
         cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler(); cam_fwd = (tgt - cam.location).normalized()
+        if "turn" in fr["cam"]:
+            # the guided view keeps its angle and the work turns in front of it (choreo.py turn_of): the same
+            # picture as the camera, its roll, its lights, environment and floor all swung by that turn
+            tx, ty, tz, tw = fr["cam"]["turn"]; Qb = CQ @ Quaternion((tw, tx, ty, tz)) @ CQ.inverted()
+            d0 = Qb.inverted() @ (cam.location - tgt)
+            cam.rotation_euler = (Qb @ (-d0).to_track_quat("-Z", "Y")).to_euler()
+            for ob_, p0, q0 in RIG: ob_.location = Qb @ p0; ob_.rotation_euler = (Qb @ q0).to_euler()
+            if ENV_MAP: ENV_MAP.inputs["Rotation"].default_value = (Matrix.Rotation(math.radians(110), 3, "Z") @ Qb.inverted().to_matrix()).to_euler("XYZ")
     hook.location = to_bl(fr["hook"]["pos"])
     qx, qy, qz, qw = fr["hook"]["quat"]
     hook.rotation_quaternion = CQ @ Quaternion((qw, qx, qy, qz)) @ CQ.inverted()

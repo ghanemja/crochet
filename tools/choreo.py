@@ -1010,9 +1010,18 @@ QUARTER = v(-0.55, -1.0, 0.75)
 TOP = v(0.0, -0.22, 1.0)
 BEHIND_OVER = v(-0.35, 0.45, 1.0)       # over the top from behind-left: the head out the back, the yarn over it
 if RING: OVER, TOP = v(0.1, -0.75, 0.75), v(0.05, -0.55, 0.9)   # the ring stands up: look in less steeply
-def cam(d, tgt=None, zoom=1.0):
+def turn_of(d):
+    """the guided view never changes its angle: to show another side the whole work (fabric, yarn, hook, hands)
+    turns in front of it. That is the same picture as the camera, with its lights and backdrop, swung by the
+    least rotation taking FRONT to d — this one — with its roll swung too (so nothing flips over the top)"""
+    a, b = nrm(FRONT), nrm(d); ax = np.cross(a, b); s_, c_ = np.linalg.norm(ax), float(a @ b)
+    if s_ < 1e-9: return np.eye(3)
+    return _rot(ax, math.atan2(s_, c_))
+def cam(d, tgt=None, zoom=1.0, turn=False):
     tgt = look if tgt is None else tgt
-    return {"pos": app([tgt + nrm(d) * DIST * zoom])[0], "target": app([tgt])[0], "fov": FOV, "aspect": 1.6}
+    c = {"pos": app([tgt + nrm(d) * DIST * zoom])[0], "target": app([tgt])[0], "fov": FOV, "aspect": 1.6}
+    if turn: c["turn"] = [round(float(x), 6) for x in mat_to_quat(TO_APP @ turn_of(d) @ TO_APP.T)]
+    return c
 
 # ---------------------------------------------------------------- the guided take
 # Shots per op: (seconds, op progress from, to, camera to, zoom to, callout or None). Callouts
@@ -1036,6 +1045,9 @@ END_TEXT = {
     "ch": "A new chain — the loop on your hook starts the next one",
     "mr": "Pull the tail — the ring closes into a tight circle",
 }
+# the guided view keeps one angle (the user: "keep the camera angle the same, and only rotate the hands/
+# piece if trying to show a different angle"): every shot looks from FRONT but the turn to show the back
+QUARTER = OVER = TOP = FRONT
 def build_shots():
     first = OPLIST[0]; t_start = 0.0
     shot(1.6, t_start, t_start, FRONT, 2.6)
@@ -1081,8 +1093,8 @@ def build_shots():
             tip_txt = "The hook pokes out the back" if not RING else "The hook goes through the ring and out the back"
             if RING: shot(1.6 * k, act(op, 1), act(op, 1.01), OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)
             else:
-                shot(1e-3, act(op, 1), act(op, 1), BEHIND_OVER, 1.0)     # a cut round to behind: swinging over the top flips the picture
-                shot(1.6 * k, act(op, 1), act(op, 1.01), BEHIND_OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)
+                shot(1.0 * k, act(op, 1), act(op, 1), BEHIND_OVER, 1.0)  # the work turns to show its back (turn_of)
+                shot(1.4 * k, act(op, 1), act(op, 1.01), BEHIND_OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)
         elif nm == "yo_catch":
             shot(2.8 * k, act(op, 0), act(op, 1), TOP if RING else BEHIND_OVER, 0.72, ("throat", si, "Wrap the yarn over your hook — back to front") if not quiet else None)
         elif nm in ("pull_up", "pull_keep"):
@@ -1092,8 +1104,8 @@ def build_shots():
                 m = len(S1.loops)
                 txt = "Pull it back through — %s loops on your hook" % WORDS.get(m, m) if m > 1 else "Pull up a loop — it's the only one on your hook"
                 if OPLIST[i - 1].name == "yo_catch" and not RING:      # coming back round from behind the work
-                    shot(1e-3, act(op, 0), act(op, 0), QUARTER, 1.0)   # cut back to the front
-                    shot(2.6 * k, act(op, 0), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
+                    shot(0.9 * k, act(op, 0), act(op, 0.15), QUARTER, 1.0)  # and turns back
+                    shot(2.3 * k, act(op, 0.15), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
                 else: shot(2.6 * k, act(op, 0), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
         elif nm == "yo_front":
             again = any(o.name in ("yo_catch", "yo_front", "yo_free") for o in OPLIST[:i])
@@ -1189,12 +1201,14 @@ for i in range(min(n, A.max_frames) if A.max_frames else n):
     rpos, rrot = right_hand(hk)
     hands = [{"side": "R", "pose": "RIGHT_GRIP", "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in rpos], "rot": [round(float(x), 5) for x in rrot.ravel()]},
              {"side": "L", "pose": "LEFT_HOLD", "obj": "Hand" + L_VARIANT, "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in L_POS + l_off(ta)], "rot": [round(float(x), 5) for x in L_ROT.ravel()]}]
-    frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir, guided_target(tv), zoom), "hands": hands if A.hands else None,
+    frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir, guided_target(tv), zoom, turn=True), "hands": hands if A.hands else None,
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 
 # ---------------------------------------------------------------- callouts
-def project(d, tgt, pts, zoom=1.0):
+def project(d, tgt, pts, zoom=1.0, turn=False):
     eye = tgt + nrm(d) * DIST * zoom; f = nrm(tgt - eye); r = nrm(np.cross(f, v(0, 0, 1))); u = np.cross(r, f)
+    if turn:                                                      # the guided view: FRONT's frame, turned (turn_of)
+        Rt = turn_of(d); f0 = -nrm(FRONT); r0 = nrm(np.cross(f0, v(0, 0, 1))); r, u = Rt @ r0, Rt @ np.cross(r0, f0)
     th = math.tan(math.radians(FOV) / 2); out = []
     for p in pts:
         q = p - eye; z = q @ f
@@ -1244,11 +1258,11 @@ for dur, a0, a1, c1, zz, cue, c0 in SHOTS:
     if not cue: continue
     tc = t0 - 0.5 / A.fps; ta, cdir, zoom = at_video(tc); c, rad, trace, arrow = cue_target(cue[0], ta)
     views = []
-    for d, tgt, z in [(cdir, guided_target(tc), zoom)] + [(d, look, 1.0) for _, d in FIXED]:
-        (xy,), half = project(d, tgt, [c], z)
+    for d, tgt, z, tu in [(cdir, guided_target(tc), zoom, True)] + [(d, look, 1.0, False) for _, d in FIXED]:
+        (xy,), half = project(d, tgt, [c], z, tu)
         views.append({"x": xy[0], "y": xy[1], "r": round(rad / half / 2, 4),
-                      "trace": project(d, tgt, trace, z)[0] if trace is not None else None,
-                      "arrow": project(d, tgt, arrow, z)[0] if arrow else None,
+                      "trace": project(d, tgt, trace, z, tu)[0] if trace is not None else None,
+                      "arrow": project(d, tgt, arrow, z, tu)[0] if arrow else None,
                       "link": None})
     cues.append({"t": round(tc, 3), "step": cue[1], "text": cue[2], "views": views})
 
@@ -1263,7 +1277,7 @@ if not CHAIN and not RING:
     track = []
     for tv in np.arange(0.0, label_until + 0.1, 0.1):
         ta, cdir, zoom = at_video(tv)
-        track.append([round(float(tv), 2)] + [c for xy in project(cdir, guided_target(tv), LPTS, zoom)[0] for c in xy])
+        track.append([round(float(tv), 2)] + [c for xy in project(cdir, guided_target(tv), LPTS, zoom, True)[0] for c in xy])
     keep = [i for i, t in enumerate(LTXT) if t]
     labels = {"until": round(label_until, 2), "target": keep.index(LT),
               "stitches": [{"text": LTXT[i]} for i in keep],

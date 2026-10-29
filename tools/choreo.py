@@ -1093,8 +1093,8 @@ def build_shots():
             tip_txt = "The hook pokes out the back" if not RING else "The hook goes through the ring and out the back"
             if RING: shot(1.6 * k, act(op, 1), act(op, 1.01), OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)
             else:
-                shot(1.0 * k, act(op, 1), act(op, 1), BEHIND_OVER, 1.0)  # the work turns to show its back (turn_of)
-                shot(1.4 * k, act(op, 1), act(op, 1.01), BEHIND_OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)
+                shot(0.8 * k, act(op, 1), act(op, 1), BEHIND_OVER, 1.0)  # the work turns to show its back (turn_of);
+                shot(0.8 * k, act(op, 1), act(op, 1.01), BEHIND_OVER, 1.0, ("tip", si, tip_txt) if not quiet else None)   # same 1.6 s: the cues keep their times
         elif nm == "yo_catch":
             shot(2.8 * k, act(op, 0), act(op, 1), TOP if RING else BEHIND_OVER, 0.72, ("throat", si, "Wrap the yarn over your hook — back to front") if not quiet else None)
         elif nm in ("pull_up", "pull_keep"):
@@ -1104,8 +1104,8 @@ def build_shots():
                 m = len(S1.loops)
                 txt = "Pull it back through — %s loops on your hook" % WORDS.get(m, m) if m > 1 else "Pull up a loop — it's the only one on your hook"
                 if OPLIST[i - 1].name == "yo_catch" and not RING:      # coming back round from behind the work
-                    shot(0.9 * k, act(op, 0), act(op, 0.15), QUARTER, 1.0)  # and turns back
-                    shot(2.3 * k, act(op, 0.15), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
+                    shot(0.8 * k, act(op, 0), act(op, 0.15), QUARTER, 1.0)  # and turns back (same 2.6 s in all)
+                    shot(1.8 * k, act(op, 0.15), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
                 else: shot(2.6 * k, act(op, 0), act(op, 1), QUARTER, 1.0, ("loops", si, txt) if not quiet else None)
         elif nm == "yo_front":
             again = any(o.name in ("yo_catch", "yo_front", "yo_free") for o in OPLIST[:i])

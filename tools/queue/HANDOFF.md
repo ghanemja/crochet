@@ -108,12 +108,16 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    to show a different angle"): every guided shot looks from FRONT; to show the back for "pokes out the
    back" and the yarn over, the whole work turns in front of it (eased, 1 s each way). Done as the camera
    swung by `turn_of(d)` (the least rotation FRONT→d) *with its roll, lights, HDRI and floor* — the same
-   picture; choreo writes it per frame as `cam.turn` and `project()` uses it for the cues.
+   picture; choreo writes it per frame as `cam.turn` and `project()` uses it for the cues. The turns fit
+   inside the old shot lengths, so every cue keeps its time (sc: 20.2 s, cues at the published times).
+   `tools/queue/cue_overlay.py` draws the cues' rings/traces/arrows over renders of the cue frames.
 5. Verified with `tools/hand_contact.py` (BVH; prints only frames where something is >0.5 mm inside
    a hand): sc every 3rd frame, the others every 12th–30th frame — all clean. Full-quality
    close-ups of both fixes were sent to the user before the long run.
 
 ## Checking tools
+- `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts
+  drawn over the rendered cue frames (render them first at `round(t * 24)`).
 - `blender -b -P tools/hand_contact.py -- build/paths/<key>.json a:b:step` — yarn/fabric/hook vs hands.
 - `tools/queue/closeup.sh <paths> <frame> <name> q|full "dx,dy,dz@tx,ty,tz@dist" ...` — close-ups
   from any camera (design space: Z up, -Y toward the camera), tiled into `build/closeup/<name>.jpg`.

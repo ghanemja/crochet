@@ -9,7 +9,10 @@
 # Writes <out>/hands.blend (objects HandR, HandL, HandLc; metres) and <out>/hands.json (named points
 # in each hand's frame: wrist at the origin, fingers along +Y, back of the hand +Z).
 import bpy, bmesh, sys, os, json, math, shutil
+from mathutils import kdtree
 import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import grip_fit
 from mathutils import Vector, Matrix
 from bl_ext.user_default.mpfb.services.humanservice import HumanService
 
@@ -85,6 +88,16 @@ l.new(co.outputs["Object"], mot.inputs["Vector"]); l.new(mot.outputs["Fac"], mr.
 mul2 = n.new("ShaderNodeMix"); mul2.data_type = "RGBA"; mul2.blend_type = "MULTIPLY"; mul2.inputs["Factor"].default_value = 1.0
 l.new(mul.outputs[2], mul2.inputs[6]); l.new(mr.outputs["Color"], mul2.inputs[7])
 l.new(mul2.outputs[2], bs.inputs["Base Color"])
+# the thumbs' tips: the skin texture paints (and the mesh models) their nails where this pose turns them to the
+# side; there the skin takes the colour of the other side of the fingertip instead ("skincol"/"skinfix", set
+# in nails(); a colour per vertex, so no texture seams) and the modelled nail fold doesn't darken as a crease
+sf = n.new("ShaderNodeAttribute"); sf.attribute_name = "skinfix"
+sc_ = n.new("ShaderNodeAttribute"); sc_.attribute_name = "skincol"
+scm = n.new("ShaderNodeMix"); scm.data_type = "RGBA"
+l.new(sf.outputs["Fac"], scm.inputs["Factor"]); l.new(tex.outputs["Color"], scm.inputs[6]); l.new(sc_.outputs["Color"], scm.inputs[7])
+l.new(scm.outputs[2], hsv.inputs["Color"])
+crf = n.new("ShaderNodeMath"); crf.operation = "MULTIPLY_ADD"; crf.inputs[1].default_value = -0.8; crf.inputs[2].default_value = 0.8
+l.new(sf.outputs["Fac"], crf.inputs[0]); l.new(crf.outputs["Value"], mul.inputs["Factor"])
 pores = n.new("ShaderNodeTexVoronoi"); pores.inputs["Scale"].default_value = 2200
 l.new(co.outputs["Object"], pores.inputs["Vector"])
 fine = n.new("ShaderNodeTexNoise"); fine.inputs["Scale"].default_value = 700; fine.inputs["Detail"].default_value = 8
@@ -126,12 +139,19 @@ mix = n.new("ShaderNodeMixShader"); l.new(nm.outputs["Color"], mix.inputs["Fac"]
 l.new(bs.outputs["BSDF"], mix.inputs[1]); l.new(nb.outputs["BSDF"], mix.inputs[2])
 l.new(mix.outputs["Shader"], n["Material Output"].inputs["Surface"])
 
+TW, TH = tex.image.size; TPX = np.array(tex.image.pixels[:], np.float32).reshape(TH, TW, 4)   # the skin texture, for sampling
+TPX[..., :3] = np.where(TPX[..., :3] <= 0.04045, TPX[..., :3] / 12.92, ((TPX[..., :3] + 0.055) / 1.055) ** 2.4)   # stored sRGB; the shader works linear
+SHAFT_R = 1.15 * 0.0036 / 0.62          # the hook's shaft radius in the hand's own metres (choreo.py: RH * UNIT / HAND_SCALE)
 def nails(me, name, side, to_local, zh):
     """per-vertex 'nail' (0..1, the nail plate) and 'nail_t' (along the last joint, 0 at the knuckle,
     1 at the fingertip): the plate covers the back of the last joint from just past its middle to a
     little over the tip, about 80 degrees wide round the finger, its curvature the finger's own"""
     R3 = to_local.to_3x3(); mw = rig.matrix_world.to_3x3()
     co = np.array([v.co[:] for v in me.vertices]); nail = np.zeros(len(co)); nailt = np.zeros(len(co))
+    lv = np.zeros(len(me.loops), int); me.loops.foreach_get("vertex_index", lv)
+    luv = np.zeros(len(me.loops) * 2); me.uv_layers[0].data.foreach_get("uv", luv)
+    uv = np.zeros((len(co), 2)); uv[lv] = luv.reshape(-1, 2)
+    skinfix = np.zeros(len(co)); skincol = np.ones((len(co), 4))
     seg = []
     for fi in range(1, 6):
         a = np.array(to_local @ wpos(f"finger{fi}-3.{side}")); b = np.array(to_local @ wpos(f"finger{fi}-3.{side}", True))
@@ -156,6 +176,18 @@ def nails(me, name, side, to_local, zh):
         dors = perp(evec[:, 1])                                       # eigenvalues ascending: [~0 along the axis, short, long]
         if (r0[sec] * (w[sec] @ dors > 0)).sum() / max(1, (w[sec] @ dors > 0).sum()) > (r0[sec] * (w[sec] @ dors < 0)).sum() / max(1, (w[sec] @ dors < 0).sum()):
             dors = -dors                                              # the bone nearer the skin on the back
+        if fi == 1:
+            # the thumb: its pad is what holds, so its back faces straight away from what the pad presses —
+            # the hook's shaft (right hand: the same line grip_fit gives choreo.py), the middle fingertip
+            # (left hand's pinch). The cross-section's axes put its nail round the end.
+            J = {k: np.array(v_) for k, v_ in points[name].items() if not k.startswith("_")}
+            pad = 0.4 * J["thumb_dip"] + 0.6 * J["thumb_tip"]
+            if side == "R":
+                o, d, _ = grip_fit.fit(J, co, SHAFT_R)
+                g_ = perp(pad - (o + d * ((pad - o) @ d)))
+                dors = g_
+            else:
+                dors = perp(pad - (0.4 * J["middle_dip"] + 0.6 * J["middle_tip"]))
         ang = np.degrees(np.arccos(np.clip((w @ dors) / r, -1, 1)))
         # where the fingertip ends on the back: the free edge sits right there, the cuticle halfway down the joint
         own = (owner == fi - 1) & (ang < 30) & (r < 0.017)
@@ -163,8 +195,18 @@ def nails(me, name, side, to_local, zh):
         t = t / tt
         # 70-80% of the finger's width, centred; a rounded-square plate, a soft U-shaped cuticle
         c0 = 0.45 + 0.16 * (ang / 50) ** 2; e0 = 0.97 - 0.04 * (ang / 50) ** 4
-        m = sm(t, c0, c0 + 0.08) * (1 - sm(t, e0, e0 + 0.035)) * (1 - sm(ang, 42, 54)) * (r < 0.017) * (owner == fi - 1)
+        m = sm(t, c0, c0 + 0.08) * (1 - sm(t, e0, e0 + 0.035)) * (1 - sm(ang, 42, 54)) * (r < 0.017) * (owner == fi - 1) * (t < 1.0)   # never round the end
         better = m > nail; nail[better] = m[better]; nailt[better] = t[better]
+        if fi == 1:                                                   # the thumb's tip: skin read from below it (see the material)
+            zone = (owner == 0) & (r < 0.02)
+            fixw = sm(t * tt, 0.06, 0.22) * zone
+            src = co - 2 * w0                                          # the opposite side of the same fingertip (plain fingertip skin)
+            kd = kdtree.KDTree(len(co))
+            for i_, c_ in enumerate(co): kd.insert(c_, i_)
+            kd.balance()
+            for i_ in np.nonzero(fixw > 0)[0]:
+                j_ = kd.find(src[i_])[1]; skinfix[i_] = fixw[i_]
+                x_, y_ = int(uv[j_, 0] * TW) % TW, int(uv[j_, 1] * TH) % TH; skincol[i_] = TPX[y_, x_]
     # smooth the outline: the mesh's vertices don't fall on the nail's curves, so a raw mask comes out jagged
     ed = np.zeros(len(me.edges) * 2, int); me.edges.foreach_get("vertices", ed); ed = ed.reshape(-1, 2)
     deg = np.bincount(ed.ravel(), minlength=len(co)).astype(float) + 1
@@ -175,7 +217,16 @@ def nails(me, name, side, to_local, zh):
         nail, nt_w = avg(nail), avg(nt_w)
     nailt = np.where(nail > 1e-4, nt_w / np.maximum(nail, 1e-4), nailt)   # the edge keeps its place along the nail
     nail = np.clip((nail - 0.5) * 1.6 + 0.5, 0, 1)                  # keep the edge soft but defined
-    for nm_, vals in (("nail", nail), ("nail_t", nailt)):
+    # and the nail groove the mesh models there is smoothed away (it shaded as a crease across the side)
+    sw = skinfix * (1 - 0.6 * nail)
+    if sw.any():
+        P_ = co.copy()
+        for _ in range(30):
+            acc = P_.copy(); np.add.at(acc, ed[:, 0], P_[ed[:, 1]]); np.add.at(acc, ed[:, 1], P_[ed[:, 0]])
+            P_ = P_ + (acc / deg[:, None] - P_) * (0.6 * sw)[:, None]
+        me.vertices.foreach_set("co", P_.astype(np.float32).ravel())
+    at = me.attributes.new("skincol", "FLOAT_COLOR", "POINT"); at.data.foreach_set("color", skincol.astype(np.float32).ravel())
+    for nm_, vals in (("nail", nail), ("nail_t", nailt), ("skinfix", skinfix)):
         at = me.attributes.new(nm_, "FLOAT", "POINT"); at.data.foreach_set("value", vals.astype(np.float32))
     print(name, "nail verts", int((nail > 0.5).sum()))
 

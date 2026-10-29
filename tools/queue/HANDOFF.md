@@ -91,6 +91,13 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    is the short axis of the fingertip's cross-section, on the side where the bone lies nearer the
    skin — from the mesh, so the thumb is right too; the free edge at the measured tip, the cuticle
    halfway down the joint, ~75% of the width; the mask smoothed over the mesh (jagged outlines).
+   The thumb (user: "the thumb is the problem" — a pale cap round its end, a red fold down its side):
+   the model's thumb is turned ~100 degrees about its axis from a real grip (its modelled/painted nail faces
+   the side). Untwisting it broke the approved grip, so instead: the thumb's back faces straight away from
+   the shaft (`grip_fit` in `nails()`; left hand: away from the middle fingertip), the plate is capped at the
+   fingertip, and the thumb tip's own painted nail is covered — the skin there takes the colour of the other
+   side of the fingertip (`skincol`/`skinfix`, per vertex: copying UVs left seams; the texture's pixels are
+   sRGB) and the modelled nail groove is smoothed out of the mesh.
 14. **First yarn over in view** (user: "5–9 seconds still doesn't hook right"; only the tip's ball showed
    over the top edge): a hook in a stitch no longer backs out; it tips its head up about the stitch to
    catch the held yarn `YO_CATCH_Z` above the row it is in, drawn back 0.8 (the throat ~4 out the back).

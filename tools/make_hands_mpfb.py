@@ -152,7 +152,7 @@ def nails(me, name, side, to_local, zh):
     luv = np.zeros(len(me.loops) * 2); me.uv_layers[0].data.foreach_get("uv", luv)
     uv = np.zeros((len(co), 2)); uv[lv] = luv.reshape(-1, 2)
     skinfix = np.zeros(len(co)); skincol = np.ones((len(co), 4))
-    seg = []
+    seg = []; fdata = []
     for fi in range(1, 6):
         a = np.array(to_local @ wpos(f"finger{fi}-3.{side}")); b = np.array(to_local @ wpos(f"finger{fi}-3.{side}", True))
         q = co - a; tt = np.clip(q @ (b - a) / ((b - a) @ (b - a)), 0, 1.15)
@@ -194,9 +194,10 @@ def nails(me, name, side, to_local, zh):
         tt = np.percentile(t[own], 99.5) if own.sum() > 20 else 1.05
         t = t / tt
         # 70-80% of the finger's width, centred; a rounded-square plate, a soft U-shaped cuticle
-        c0 = 0.45 + 0.16 * (ang / 50) ** 2; e0 = 0.97 - 0.04 * (ang / 50) ** 4
+        c0 = (0.40 if fi == 1 else 0.45) + 0.16 * (ang / 50) ** 2; e0 = 0.97 - 0.04 * (ang / 50) ** 4
         m = sm(t, c0, c0 + 0.08) * (1 - sm(t, e0, e0 + 0.035)) * (1 - sm(ang, 42, 54)) * (r < 0.017) * (owner == fi - 1) * (t < 1.0)   # never round the end
         better = m > nail; nail[better] = m[better]; nailt[better] = t[better]
+        fdata.append((fi, a, ax, dors, w0[sec].mean(0), tt * L))
         if fi == 1:                                                   # the thumb's tip: skin read from below it (see the material)
             zone = (owner == 0) & (r < 0.02)
             fixw = sm(t * tt, 0.06, 0.22) * zone
@@ -229,6 +230,53 @@ def nails(me, name, side, to_local, zh):
     for nm_, vals in (("nail", nail), ("nail_t", nailt), ("skinfix", skinfix)):
         at = me.attributes.new(nm_, "FLOAT", "POINT"); at.data.foreach_set("value", vals.astype(np.float32))
     print(name, "nail verts", int((nail > 0.5).sum()))
+    free_edges(me, co, nail, owner, fdata)
+
+FREE = float(os.environ.get("NAIL_FREE", "0.002"))     # how far the nails' free edges reach past the fingertip (m)
+def free_edges(me, co, nail, owner, fdata):
+    """a slim free edge on the nails (not the index, which is liked as it is): the plate carried on past the
+    fingertip by FREE, rounded, thin, the pale free-edge colour; built into the hand mesh so it moves with it"""
+    bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table(); me["n_skin"] = len(bm.verts)   # the skin's own vertices come first
+    L_nail, L_t, L_fix = (bm.verts.layers.float.get(k) for k in ("nail", "nail_t", "skinfix"))
+    L_col = bm.verts.layers.float_color.get("skincol")
+    for fi, a, ax, dors, cen, tip in fdata:
+        if fi == 2: continue
+        side_ = np.cross(ax, dors)
+        own = np.nonzero(owner == fi - 1)[0]
+        q = co[own] - a; t = q @ ax; w = q - np.outer(t, ax) - cen
+        phi = np.degrees(np.arctan2(w @ side_, w @ dors)); rr = np.linalg.norm(w, axis=1)
+        # the front edge, on smooth curves: where the plate ends (its own shape), at the skin's radius there
+        phs = np.linspace(-38, 38, 13); tf = (0.97 - 0.04 * (np.abs(phs) / 50) ** 4) * tip
+        Rs = []
+        for ph, t_ in zip(phs, tf):
+            k = (np.abs(phi - ph) < 7) & (np.abs(t - t_) < 0.002)
+            Rs.append(np.median(rr[k]) if k.sum() >= 2 else np.nan)
+        Rs = np.array(Rs); ok = ~np.isnan(Rs)
+        if ok.sum() < 5: print("  no free edge for finger", fi); continue
+        Rs = np.polyval(np.polyfit(phs[ok], Rs[ok], 2), phs)
+        row = [(ph, a + ax * t_ + cen + (math.cos(math.radians(ph)) * dors + math.sin(math.radians(ph)) * side_) * R_)
+               for ph, t_, R_ in zip(phs, tf, Rs)]
+        top, bot = [], []
+        for ph, p in row:
+            rad = p - a - ax * ((p - a) @ ax) - cen; rad /= np.linalg.norm(rad)
+            ext = FREE * (1 - 0.35 * (ph / 38) ** 2)                # rounded
+            base = p + rad * 0.00008                                 # just on the skin
+            tip = base + ax * ext - rad * 0.0002 * (ext / FREE)      # carried on along the plate, barely drooping
+            for (pt, lst) in ((base, bot), (tip, top)):
+                v0 = bm.verts.new(pt); v1 = bm.verts.new(pt + rad * 0.0003)    # 0.3 mm thick
+                lst.append((v0, v1))
+        for i in range(len(row) - 1):
+            (b0, b1), (b2, b3) = bot[i], bot[i + 1]; (t0, t1), (t2, t3) = top[i], top[i + 1]
+            for f in ((b1, t1, t3, b3), (t0, b0, b2, t2), (t1, t0, t2, t3)):   # upper face, under face, front edge
+                bm.faces.new(f)
+        for (b0, b1), (t0, t1) in ((bot[0], top[0]), (bot[-1], top[-1])):
+            bm.faces.new((b0, b1, t1, t0))
+        for lst in (top, bot):
+            for v0, v1 in lst:
+                for v_ in (v0, v1):
+                    v_[L_nail] = 1.0; v_[L_t] = 0.995 if lst is top else 0.96; v_[L_fix] = 0.0; v_[L_col] = (1, 1, 1, 1)
+    bm.normal_update(); bm.to_mesh(me); bm.free()
+    for p_ in me.polygons: p_.use_smooth = True
 
 points = {}
 objs = []
@@ -276,7 +324,7 @@ for name in POSES:
     nails(me, name, side, to_local, zh)
     bpy.context.view_layer.update()                                # the surface as rendered, near enough
     em = ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
-    P_ = points[name]; V = [(Vector(x.co), Vector(x.normal)) for x in em.vertices]
+    P_ = points[name]; V = [(Vector(x.co), Vector(x.normal)) for x in em.vertices][:me.get("n_skin", len(em.vertices))]   # skin only (not the nails' free edges)
     # the skin of the whole hand: choreo.py lays the working yarn on the left one and the hook in the right one
     P_["_verts"] = [[round(c, 5) for c in p] for p, _ in V]
     P_["_normals"] = [[round(c, 4) for c in nv] for _, nv in V]

@@ -98,6 +98,9 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    fingertip, and the thumb tip's own painted nail is covered — the skin there takes the colour of the other
    side of the fingertip (`skincol`/`skinfix`, per vertex: copying UVs left seams; the texture's pixels are
    sRGB) and the modelled nail groove is smoothed out of the mesh.
+   Free edges (user: "a stubby thumb"): `free_edges()` builds a slim plate (`NAIL_FREE` = 2 mm past the
+   fingertip, 0.3 mm thick, rounded) on each nail's front edge but the index's, into the hand mesh; they
+   are left out of `hands.json`'s `_verts` (`n_skin`), or choreo's skin tests push the hook and hands about.
 14. **First yarn over in view** (user: "5–9 seconds still doesn't hook right"; only the tip's ball showed
    over the top edge): a hook in a stitch no longer backs out; it tips its head up about the stitch to
    catch the held yarn `YO_CATCH_Z` above the row it is in, drawn back 0.8 (the throat ~4 out the back).

@@ -6,9 +6,12 @@
 - `sc-pink-vs-now-wide.mp4`: 1600×500, side by side
 - `hookpath-demo.mp4`: Hookpath, the keyframe tool, playing the single crochet plan with its planned camera shots
 
-Both halves show the same five steps. The Oct 25 video (`assets/tutorials/sc.mp4`, commit
-`2bc5181`, captured from the live three.js scene) is retimed to the Oct 29 render's step
-clock (`assets/tutorials/sc.cues.json` → `timeline`), so each step lines up on screen.
+Both halves show the same five steps. The Oct 29 half is recorded from the app's Learn
+modal, so it has the guided annotations the app draws over the video: the step caption, the
+ring and arrow, the stitch numbers, and a 2.4 s freeze on each callout. The Oct 25 video
+(`assets/tutorials/sc.mp4`, commit `2bc5181`, captured from the live three.js scene) is
+retimed to the same step clock (`assets/tutorials/sc.cues.json` → `timeline`) and holds still
+during each freeze, so each step lines up on screen.
 
 ---
 

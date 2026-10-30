@@ -231,7 +231,7 @@ hook = bpy.data.objects.new("Hook", hm); sc.collection.objects.link(hook); hook.
 # Frames carry {"side", "pose", "pos", "rot"} placements; the hand is a tools/hand_rig.py skeleton
 # skinned with the Skin + Subdivision modifiers (metres, Blender axes).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import hand_rig
+import hand_rig, hand_mix
 skin = bpy.data.materials.new("Skin"); skin.use_nodes = True
 kb = skin.node_tree.nodes["Principled BSDF"]
 kb.inputs["Base Color"].default_value = (0.50, 0.25, 0.16, 1); kb.inputs["Roughness"].default_value = 0.5
@@ -245,6 +245,7 @@ def hand_object(side, pose, obj=None):
     if key not in HAND_OBJ and os.path.exists(HANDS_BLEND):   # realistic MakeHuman hands (tools/make_hands_mpfb.py)
         with bpy.data.libraries.load(HANDS_BLEND) as (src, dst): dst.objects = [obj or "Hand" + side]
         ob = dst.objects[0]; sc.collection.objects.link(ob); HAND_OBJ[key] = ob
+        hand_mix.add_pose_keys(bpy, ob, HANDS_BLEND)                 # the left hand's working poses, as shape keys
     if key not in HAND_OBJ:
         V, E, Rd, Ro, _ = hand_rig.skeleton(getattr(hand_rig, pose), side)
         me = bpy.data.meshes.new("Hand" + side); me.from_pydata(V, E, [])
@@ -259,7 +260,7 @@ def hand_object(side, pose, obj=None):
 def set_hands(fr):
     if not HANDS_ON or not fr.get("hands"): return
     for h in fr["hands"]:
-        ob = hand_object(h["side"], h["pose"], h.get("obj")); r = h["rot"]
+        ob = hand_object(h["side"], h["pose"], h.get("obj")); r = h["rot"]; hand_mix.set_mix(ob, h.get("mix"))
         ob.matrix_world = Matrix(((r[0], r[1], r[2], h["pos"][0]), (r[3], r[4], r[5], h["pos"][1]),
                                   (r[6], r[7], r[8], h["pos"][2]), (0, 0, 0, 1))) @ Matrix.Scale(h.get("scale", 1.0), 4)
 

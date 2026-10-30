@@ -216,3 +216,20 @@ puffs the fabric out the left middle fingertip sits ~2 mm inside it (hand_contac
 on every frame of hdc/dc/dec). On dec the working yarn also runs ~2 mm into the left middle finger in the
 last third (frames 480–720). Mostly behind the work in the Guided view. Fix: place the hand against
 `static_relaxed()` (move `import yarn_relax`/`static_relaxed` above the placement) and re-run hand_contact.
+
+## ch, sl, inc, mr (session_01RFXApCsFfy8t6C1NjXPFtF, 2026-10-30)
+Base renders: Guided, 24 fps, 800×500, `--samples 8 --fibres 100` (+ OIDN, tfilter): ~20 s/frame, looks the same
+as 16/220 at the site's size (`run.sh` takes renderer flags after the frames field of a jobs line).
+- **ch** (`9c0f3f4`, re-encoded `333c219`) and **sl** (`8094f73`, re-encoded `f3d22bb`) are on the site from the
+  a3a9830 paths. **sl has the V-top fault** (the current row's tops read as separate curls: a3a9830 relaxed the
+  fabric against itself); sl regenerated on 23f305f has connected V tops again (stills on branch `previews`,
+  `vtops/`). ch has no row and is fine. **inc**'s render on a3a9830 paths was stopped and not published.
+- Plan: when the left-hand choreo lands, regenerate sl and inc on it, check the V tops on the last frame against
+  old sc `9bc0185`'s last frame, render, publish (replacing sl).
+- **mr is unpublished.** Its finished round reads as a rosette of loose loops, not a compact disc with a rim of
+  V's. Branch `mr-vtops`: `daece6d` turns the work for the close and the end so the rim is seen from above
+  (`RIM`, via `turn_of`; cue times unchanged; yarn_gate 0.73R at 636/840, hand_contact clean). Still needed (being
+  remodelled on that branch): the ring's stitches are the row sc bent round (7 of them, the ch 1 a full post);
+  they need their own shape (`ring_piece`): compact wedge posts that share sides, top links flat on the rim, a small
+  ch 1, so the closed round is a firm flat disc. Single frames build in ~10 s by running choreo.py up to its frame
+  loop and only the wanted frames (keep paths in `build/`; see the session's scratchpad `oneframe.py` idea).

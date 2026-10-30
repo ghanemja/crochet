@@ -555,6 +555,82 @@ _route = hand_route_local()
 YARN_HAND = [L_POS + L_ROT @ p for p in _route]
 YARN_HAND = YARN_HAND + [YARN_HAND[-1] + v(-6.0, 8.0, -20.0)]
 
+# ---------------------------------------------------------------- the left hand at work
+# It isn't a fixed clamp: the index presents the yarn for each yarn over (Ly: lifted, turned toward the head,
+# dipping as the hook catches), goes forward and down to give yarn as a loop is pulled up or through (Lf),
+# the pinch eases and moves along to the new stitch once one is made (Le, and the hand slides along the row),
+# and the hand turns a little toward the hook as it goes in and pulls up (about the line through thumb and
+# middle pads, so they stay where they hold the work). The poses are baked on L's mesh (make_hands_mpfb.py)
+# and blended by weight; the renderer does the same with shape keys (hand_mix.py), so the yarn round the
+# fingers moves with them. Sources: Lion Brand (the index wraps the yarn), Vogue Knitting (the thumb and
+# middle hold the work just below the hook and move up every few stitches; the index feeds the yarn).
+WORK_POSES = ("Ly", "Lf", "Le")
+HAND_ACTIVE = os.environ.get("HAND_ACTIVE", "1") == "1" and bool(HAND_PTS) and all(k in HAND_PTS for k in WORK_POSES)
+LY_W, LF_W, LE_W = 0.75, 0.7, 0.9                               # how far into each pose (1 = the baked pose)
+WRIST_DEG = float(os.environ.get("WRIST_DEG", "-6"))             # the hand's turn toward the hook (sign checked below)
+CREEP = float(os.environ.get("CREEP", "0.5")) * P               # how far the pinch moves along the row per stitch made
+HAND_NOW = {"mix": {}, "Rw": np.eye(3), "t": np.zeros(3)}
+_PIVOT = L_POS + L_ROT @ ((_J["thumb_pad"] + _J["middle_pad"]) / 2) if HAND_PTS else L_PINCH
+_D_SKIN, _D_ROUTE = {}, {}
+if HAND_ACTIVE:
+    _hl0 = np.array(HAND_PTS["L"]["_verts"]) * HAND_SCALE / UNIT
+    _keep = (SKIN_L, SKIN_LN, dict(_J))
+    for _k in WORK_POSES:
+        _D_SKIN[_k] = np.array(HAND_PTS[_k]["_verts"]) * HAND_SCALE / UNIT - _hl0      # the pose's change from L
+        _jk = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS[_k].items() if not k.startswith("_")}
+        _j0 = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS["L"].items() if not k.startswith("_")}
+        SKIN_L = _keep[0] + _D_SKIN[_k]; SKIN_LN = np.array(HAND_PTS[_k]["_normals"])
+        _J = {k: _keep[2][k] + (_jk[k] - _j0[k]) if k in _jk else x for k, x in _keep[2].items()}
+        _rk = hand_route_local()
+        _D_ROUTE[_k] = resample(np.asarray(_rk), n=len(_route)) - resample(np.asarray(_route), n=len(_route))
+    SKIN_L, SKIN_LN, _J = _keep
+    _route = resample(np.asarray(_route), n=len(_route))
+
+def hand_samples(n=24):
+    """the left hand's states over the take (with its offset), for what must clear it wherever it goes"""
+    if not HAND_ACTIVE: return []
+    out = []
+    for ta in np.linspace(0.0, TOTAL_ACT, n):
+        out.append(hand_state(ta))
+    return out
+def _bell(p, a, b):
+    x = min(1.0, max(0.0, (p - a) / (b - a))); return math.sin(math.pi * x) ** 2
+def hand_state(ta):
+    """the left hand at action time ta: its pose mix, its turn (about the pads' line) and its slide along the row"""
+    if not HAND_ACTIVE: return {"mix": {}, "Rw": np.eye(3), "t": np.zeros(3)}
+    op, p = op_at(ta); n = op.name; mix = {}
+    if n in ("yo_catch", "yo_front", "yo_free"):
+        q = p / 0.55 if n == "yo_free" else p                    # (yo_free: the yarn over is its first part)
+        mix["Ly"] = LY_W * (_bell(q, 0.0, 1.0) - 0.3 * _bell(q, 0.5, 0.85))   # lifted toward the head; dips as it catches
+        mix["Lf"] = 0.25 * _bell(q, 0.5, 0.85)
+    elif n in ("pull_up", "pull_keep", "through2"):
+        mix["Lf"] = LF_W * _bell(p, 0.1, 0.95)                   # forward and down: giving yarn as the loop comes up
+    elif n == "through":
+        mix["Lf"] = LF_W * _bell(p, 0.05, 0.7)
+        mix["Le"] = LE_W * _bell(p, 0.65, 1.0)                   # the stitch made: the pinch eases, moves along, holds again
+    w = {"insert": lambda q: ease(q), "yo_catch": lambda q: 1.0, "pull_up": lambda q: 1.0 - ease(q),
+         "pull_keep": lambda q: 1.0 - ease(q)}.get(n, lambda q: 0.0)(p)
+    Rw = _rot(L_AXIS, math.radians(WRIST_DEG) * w) if WRIST_DEG else np.eye(3)
+    made = sum(1 for o in OPLIST if o.name == "through" and o.t0 + o.dur * MOVE_SHARE <= ta)
+    cur = ease((p - 0.7) / 0.3) if n == "through" and p < 1.0 else 0.0
+    t = v(-CREEP, 0, 0) * (made + cur) if not (RING or CHAIN) else np.zeros(3)
+    return {"mix": {k: round(float(x), 4) for k, x in mix.items() if x > 1e-4}, "Rw": Rw, "t": t}
+def hand_xform(hs=None):
+    """(rotation, position) of the left hand's frame now"""
+    hs = hs or HAND_NOW; Rw = hs["Rw"]
+    return Rw @ L_ROT, _PIVOT + Rw @ (L_POS - _PIVOT) + hs["t"] + L_OFF[0]
+def skin_now(hs=None):
+    """the left hand's skin (row space) and its normals, as it is now"""
+    hs = hs or HAND_NOW; Rh, ph = hand_xform(hs); loc = SKIN_L
+    for k, w in hs["mix"].items(): loc = loc + w * _D_SKIN[k]
+    return ph + loc @ Rh.T, SKIN_LN @ Rh.T
+def route_now(hs=None):
+    """the working yarn's way round the left fingers (row space), moving with them"""
+    if not HAND_ACTIVE: return [q + L_OFF[0] for q in YARN_HAND]
+    hs = hs or HAND_NOW; Rh, ph = hand_xform(hs); loc = _route
+    for k, w in hs["mix"].items(): loc = loc + w * _D_ROUTE[k]
+    pts = list(ph + loc @ Rh.T); return pts + [pts[-1] + Rh @ (L_ROT.T @ v(-6.0, 8.0, -20.0))]
+
 DOWN = v(0, 0, -1)
 U_REST, U_IN, U_UP = v(1.0, -0.55, 0.8), v(0.8, -1.35, 0.45), v(0.95, -0.9, 0.85)   # U_IN flatter: the tip comes up behind the work
 U_PULL = v(*map(float, os.environ.get("U_PULL", "1.0,-0.5,0.6").split(",")))          # after pulling up a loop: ~40 degrees off the guided view's line, the hand beside the head, not over it
@@ -681,7 +757,7 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings
         if ang: pts += wrap(hk, THROAT_D, *ang)
         pts += tout + [over_top(A)]
     marks["hand"] = len(pts)
-    pts += [q + L_OFF[0] for q in YARN_HAND]
+    pts += route_now()
     return Path(pts, marks, split, len(S.prefix) - 1)
 
 # ---------------------------------------------------------------- ops
@@ -832,7 +908,7 @@ def off_left_hook(hk):
     if not HAND_PTS or RING and WARP["x0"] is None: return hk   # the ring: only once it is bent round for the frame
     ds = np.linspace(0.0, 20.0, 21)
     need = np.array([hook_profile(d)[1] for d in ds]) + 2.1 * R      # room for the yarn lying on the fingers
-    sk = L_POS + L_OFF[0] + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
+    sk, sn = skin_now()
     for _ in range(4):                                               # a push off one finger can land on the next
         axis = hk.tip + ds[:, None] * hk.u
         if RING: axis = warp_pts(axis) if WARP["x0"] is not None else axis
@@ -1033,13 +1109,14 @@ def app(c):
 def left_skin(off=None):
     """the left hand's skin points (row space), for keeping yarn off it"""
     if not HAND_PTS: return np.zeros((0, 3))
-    return L_POS + (L_OFF[0] if off is None else off) + SKIN_L @ L_ROT.T
+    if off is None: return skin_now()[0]
+    return L_POS + off + SKIN_L @ L_ROT.T
 
 def off_left_hand(c):
     """the working yarn kept on the left hand's skin, never in it (its way up from the hook to the
     index changes every frame)"""
     if not HAND_PTS: return c
-    sk = L_POS + L_OFF[0] + SKIN_L @ L_ROT.T; sn = SKIN_LN @ L_ROT.T
+    sk, sn = skin_now()
     m = np.all((c > sk.min(0) - 2) & (c < sk.max(0) + 2), axis=1)
     if not m.any(): return c
     c = c.copy(); q = c[m]
@@ -1066,6 +1143,8 @@ def static_relaxed():
         # on its way round the left hand, which passes behind the work's left edge; the rows' cut ends there
         # stop short of it
         hy = spline(YARN_HAND); hy = np.vstack([hy] + ([hy + L_RELEASE[2]] if L_RELEASE is not None else []))
+        HSAMP = hand_samples()                                   # the hand at work: wherever it and its yarn go
+        if HSAMP: hy = np.vstack([hy] + [spline(route_now(h_)) for h_ in HSAMP[::3]])
         # the stitches below spread round the legs pulled through them (the pulled-up loop's, then the new
         # stitch's), as they do: there isn't room between their posts for two strands of yarn otherwise
         legs = [spline(stitch_static(XS[min(i_, len(XS) - 1)], ZT, hs, NB)) for i_, hs in enumerate(HOLES)]
@@ -1078,7 +1157,8 @@ def static_relaxed():
                 if near_.any(): legs.append(q[near_])
         obst = np.vstack([hy] + legs) if not CHAIN else hy
         # and off the left hand's pads, which hold it (the hand was placed against the work as designed)
-        sk_ = np.vstack([left_skin(np.zeros(3))] + ([left_skin(L_RELEASE[2])] if L_RELEASE is not None else []))
+        sk_ = np.vstack([left_skin(np.zeros(3))] + ([left_skin(L_RELEASE[2])] if L_RELEASE is not None else [])
+                        + [skin_now(h_)[0] for h_ in HSAMP[::4]])
         fb = np.vstack([spline(s) for s, _ in STATIC]); sk_ = sk_[np.all((sk_ > fb.min(0) - 3) & (sk_ < fb.max(0) + 3), axis=1)]
         rx = yarn_relax.relax([spline(s) for s, _ in STATIC], fixed=(np.vstack([obst, sk_]), np.concatenate([np.full(len(obst), 2.0 * R), np.full(len(sk_), 1.06 * R)])),
                               R=R, iters=120, anchor=RELAX_ANCHOR, self_pairs=FABRIC_SELF)
@@ -1127,7 +1207,7 @@ def yarn_clear(c, e, h, hk):
     return c
 
 def frame_strands(ta):
-    op, p = op_at(ta); L_OFF[0] = l_off(ta)
+    op, p = op_at(ta); L_OFF[0] = l_off(ta); HAND_NOW.update(hand_state(ta))
     if RING: ring_setup(op, p)
     hk_row = op_pose(op, p)
     cv = op_curve(op, p)
@@ -1368,8 +1448,9 @@ for i in range(min(n, A.max_frames) if A.max_frames else n):
     if key not in cache: cache[key] = frame_strands(ta)
     hk, strands = cache[key]
     rpos, rrot = right_hand(hk)
+    L_OFF[0] = l_off(ta); lhs = hand_state(ta); lrot, lpos = hand_xform(lhs)
     hands = [{"side": "R", "pose": "RIGHT_GRIP", "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in rpos], "rot": [round(float(x), 5) for x in rrot.ravel()]},
-             {"side": "L", "pose": "LEFT_HOLD", "obj": "Hand" + L_VARIANT, "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in L_POS + l_off(ta)], "rot": [round(float(x), 5) for x in L_ROT.ravel()]}]
+             {"side": "L", "pose": "LEFT_HOLD", "obj": "Hand" + L_VARIANT, "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in lpos], "rot": [round(float(x), 5) for x in lrot.ravel()], "mix": lhs["mix"]}]
     frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir, guided_target(tv), zoom, turn=True), "hands": hands if A.hands else None,
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
 

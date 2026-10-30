@@ -35,6 +35,14 @@ POSES = {
 }
 # the same left hand pinching a single strand (the chain, the magic ring): the thumb closed further
 POSES["Lc"] = dict(POSES["L"], finger1=((25, 0, 10), 10, 30))
+# the left hand at work (choreo.py blends these with L each frame; the renderer applies them to L or Lc as shape
+# keys, so they keep L's mesh exactly): Ly the index lifted and turned toward the hook's head, presenting the
+# yarn for a yarn over; Lf the index forward and down, giving yarn as a loop is pulled up or through; Le the
+# pinch eased (thumb and middle a little open) between stitches, before it moves along to the new one
+LY_SWING = float(os.environ.get("LY_SWING", "10"))
+POSES["Ly"] = dict(POSES["L"], finger2=((-22, 0, LY_SWING), 6, 4))
+POSES["Lf"] = dict(POSES["L"], finger2=(10, 16, 10))
+POSES["Le"] = dict(POSES["L"], finger1=((10, 0, 10), 8, 22), finger3=(22, 52, 28))
 for name in POSES:          # tests: HAND_POSE_L='{"finger1": [10, 20, 20]}'
     if os.environ.get("HAND_POSE_" + name): POSES[name].update(json.loads(os.environ["HAND_POSE_" + name]))
 

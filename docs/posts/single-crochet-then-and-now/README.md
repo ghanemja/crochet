@@ -1,29 +1,26 @@
-# Single crochet, then and now
+# Single crochet, last week and this week
 
-![June vs October](sc-then-vs-now.jpg)
+![Oct 25 vs Oct 29](sc-pink-vs-now.jpg)
 
-- `sc-then-vs-now-4x5.mp4`: 1080×1350, for Instagram/Threads
-- `sc-then-vs-now-wide.mp4`: 1600×500, side by side
-- `sc-three-stages.jpg`: June 2D canvas, Oct 25 live WebGL, Oct 29 Blender Cycles, all at the same moment of the stitch
+- `sc-pink-vs-now-4x5.mp4`: 1080×1350, for Instagram/Threads
+- `sc-pink-vs-now-wide.mp4`: 1600×500, side by side
 - `hookpath-demo.mp4`: Hookpath, the keyframe tool, playing the single crochet plan with its planned camera shots
 
-Both halves of the video show the same five steps. The June animation is retimed to the
-October render's step clock (`assets/tutorials/sc.cues.json` → `timeline`), so each step
-lines up on screen. The June half is the real code from commit `30cbc40`, re-captured frame
-by frame.
+Both halves show the same five steps. The Oct 25 video (`assets/tutorials/sc.mp4`, commit
+`2bc5181`, captured from the live three.js scene) is retimed to the Oct 29 render's step
+clock (`assets/tutorials/sc.cues.json` → `timeline`), so each step lines up on screen.
 
 ---
 
-On June 16, the **Learn this stitch** button opened a drawing: a pink zigzag on a black
-canvas, a hook that slid up and down, and a caption that changed once a second. The "loops on
-hook" count was hard-coded. It was a placeholder that looked like a tutorial.
+On October 25, the **Learn this stitch** button played a capture of the live three.js scene:
+pink twisted yarn, a bare grey hook, a green working strand, and a fixed camera.
 
-Today the same button plays a Blender Cycles render. The yarn has three plies wrapped in
-hundreds of tapered fibres. Real hands hold the hook and the work. The camera films the
-stitch the way a person teaching it would, and freeze-frames point at where the hook goes.
+Four days and 60 commits later, the same button plays a Blender Cycles render. The yarn has
+three plies wrapped in hundreds of tapered fibres. Real hands hold the hook and the work. The
+camera films the stitch the way a person teaching it would, and freeze-frames point at where
+the hook goes.
 
-Four and a half months, 126 commits. Here is what changed and what we learned about
-splitting the work between a person and an AI.
+Here is what changed and what we learned about splitting the work between a person and an AI.
 
 ## How it got here
 

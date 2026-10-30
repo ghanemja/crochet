@@ -16,7 +16,9 @@ SIZE=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -o
 # frames each side where still, kept 4 px off anything moving (TF_WIN, TF_DIL: still shimmer -25%, no ghosting)
 TF=${TFILTER:-14}; TFW=${TF_WIN:-2}; TFD=${TF_DIL:-4}; DIRS=""
 for d in "$@"; do
-  if [ "$TF" != 0 ]; then t=build/frames_tf/$(basename "$d"); rm -rf "$t"; python3 tools/queue/tfilter.py "$d" "$t" "$TF" "$TFW" "$TFD"; DIRS="$DIRS $t"; else DIRS="$DIRS $d"; fi
+  if [ -n "$MCFILTER" ]; then        # MCFILTER=<tau>:<window> (e.g. 12:1): motion-compensated instead (tools/queue/mcfilter.py; softer moving yarn)
+    t=build/frames_tf/$(basename "$d"); rm -rf "$t"; python3 tools/queue/mcfilter.py "$d" "$t" "${MCFILTER%%:*}" "${MCFILTER##*:}" 2>/dev/null; DIRS="$DIRS $t"
+  elif [ "$TF" != 0 ]; then t=build/frames_tf/$(basename "$d"); rm -rf "$t"; python3 tools/queue/tfilter.py "$d" "$t" "$TF" "$TFW" "$TFD"; DIRS="$DIRS $t"; else DIRS="$DIRS $d"; fi
 done
 set -f   # keep the f_*.png patterns for ffmpeg, not the shell
 IN=""; for d in $DIRS; do IN="$IN -framerate $FPS -pattern_type glob -i $d/f_*.png"; done

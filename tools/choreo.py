@@ -734,8 +734,15 @@ def loop_ds(S, hk):
             lo = d; d = max(lo, min(max(14.0, lo), (ANCHOR(S.E) - hk.tip) @ hk.u))
             if not (CHAIN or RING) and hk.tip[1] > 0 and hk.u[1] < -0.05:   # a hook through the work: the loop sits where it clears it
                 d = live_clear_d(S, hk, d, lo)
+        elif L.kind == "pulled" and PULLED_FRONT and not (CHAIN or RING) and hk.tip[1] > 0 and hk.u[1] < -0.05:
+            # a loop already pulled up, the hook in the next stitch: it stays on the shaft in front of the work
+            # (near the tip it was behind it, its legs through the fabric between the two stitches)
+            d = max(d, (hk.tip[1] + PULLED_FRONT) / -hk.u[1])
         ds.append(d)
+    for i in range(n - 2, -1, -1):                               # the older ones further up the shaft
+        ds[i] = max(ds[i], ds[i + 1] + SPACING) if S.loops[i + 1].kind == "pulled" and PULLED_FRONT else ds[i]
     return ds
+PULLED_FRONT = float(os.environ.get("PULLED_FRONT", "0"))       # (study, dec) a pulled-up loop this far in front of the work while the hook is in the next stitch (0: as before)
 
 def yarn_leaves(S):
     """where the held yarn leaves the work on its way to the left index: low behind it while the hook is in a

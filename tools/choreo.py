@@ -1019,7 +1019,7 @@ def static_relaxed():
         holes_ = np.array([HOLE(hx) for hs in HOLES for hx in hs])
         for op_ in OPLIST:                                       # wherever the working yarn passes them over the take
             if op_.name not in ("pull_up", "pull_keep", "yo_front", "through", "through2"): continue
-            for p_ in (0.0, 0.25, 0.5, 0.75, 1.0):
+            for p_ in np.linspace(0.0, 1.0, 13):
                 cv_ = raw_path(op_, p_); q = cv_.c[cv_.own_e + 1:cv_.idx["hand"]]
                 near_ = np.linalg.norm(q[:, None] - holes_[None], axis=2).min(1) < 3.5
                 if near_.any(): legs.append(q[near_])
@@ -1041,7 +1041,7 @@ def working_passes():
     stretch out of the fabric, which is the same yarn going on): the finished stitches give way round it"""
     if not _PASSES and not RING:
         for op_ in OPLIST:
-            for p_ in (0.0, 0.25, 0.5, 0.75, 1.0):
+            for p_ in np.linspace(0.0, 1.0, 13):
                 cv_ = raw_path(op_, p_); q = cv_.c[cv_.own_e + 25:cv_.idx["hand"]]
                 near_ = np.linalg.norm(q - op_.S.E, axis=1) < 4.0
                 if near_.any(): _PASSES.append(q[near_])

@@ -982,13 +982,45 @@ def off_left_hand(c):
         d, j = skin_clearance(q, sk, sn); q = q + sn[j] * np.maximum(0.0, 1.06 * R - d)[:, None]
     c[m] = q; return c
 
+# ---------------------------------------------------------------- yarn out of yarn (tools/yarn_relax.py)
+# The stitch shapes are drawn tighter than the yarn is thick (a V's loops ~1.9 R apart, the legs through the hole
+# under it ~0.9 R apart), and the working yarn's loops pass through the fabric's. The fabric is relaxed once so
+# no two stretches of yarn that aren't neighbours along it come closer than 2 R; the finished part of the row
+# being worked once per shape against it; and every frame the working yarn against both and itself.
+import yarn_relax
+_STATIC_RX = []
+def static_relaxed():
+    if not _STATIC_RX and STATIC:
+        _STATIC_RX.extend(yarn_relax.relax([spline(s) for s, _ in STATIC], R=R, iters=120))
+    return _STATIC_RX if STATIC else []
+_PREFIX_RX = {}
+def yarn_clear(c, e, h, hk):
+    """c (the yarn of the row being worked, then the working yarn) cleared of the fabric and itself: c[:e] is the
+    finished fabric (relaxed once, cached), c[e:h] the working yarn up to the hand (relaxed every frame)"""
+    c = c.copy(); fab = static_relaxed(); F = np.vstack(fab) if fab else np.zeros((0, 3))
+    if e > 2:
+        key = (e, round(float(c[:e + 1].sum()), 3))
+        if key not in _PREFIX_RX:
+            _PREFIX_RX[key] = yarn_relax.relax([c[:e + 1]], fixed=F, R=R, iters=120)[0]
+        moved = _PREFIX_RX[key][-1] - c[e]
+        c[:e + 1] = _PREFIX_RX[key]
+        k = min(len(c) - e - 1, 24)                                # carry the join along, fading
+        if k > 0: c[e + 1:e + 1 + k] += moved * np.linspace(1, 0, k + 1)[1:, None]
+    if h - e > 2:
+        lo, hi = c[e:h].min(0) - 3 * R, c[e:h].max(0) + 3 * R
+        Fn = F[np.all((F > lo) & (F < hi), axis=1)] if len(F) else F
+        mask = np.zeros(h, bool); mask[e + 1:h - 1] = True
+        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=Fn, R=R, iters=30)[0]
+        c = push_out(c, hk)                                       # and still off the hook
+    return c
+
 def frame_strands(ta):
     op, p = op_at(ta); L_OFF[0] = l_off(ta)
     if RING: ring_setup(op, p)
     hk_row = op_pose(op, p)
     cv = op_curve(op, p)
     c = cv.c; hk = warp_hook(hk_row)
-    out = [{"visible": True, "closed": False, "radius": APP_R, "accent": False, "shade": sh, "pts": app(spline(s))} for s, sh in STATIC]
+    out = [{"visible": True, "closed": False, "radius": APP_R, "accent": False, "shade": sh, "pts": app(q)} for q, (_, sh) in zip(static_relaxed(), STATIC)]
     sp = cv.split
     if RING:
         tail = ring_tail()
@@ -999,8 +1031,9 @@ def frame_strands(ta):
     c = push_out(c, hk)
     h = min(len(c), cv.idx["hand"] + (len(ts) - 1 if RING else 0) + 1)    # the route round the fingers is settled already
     if h > sp: c[sp:h] = off_left_hand(c[sp:h])
-    segs = [(c[:sp + 1], False), (c[sp:], True)]
     off = (len(ts) - 1) if RING else 0
+    c = yarn_clear(c, cv.own_e + off if not RING else 0, h, hk)
+    segs = [(c[:sp + 1], False), (c[sp:], True)]
     for s, acc in segs:
         if len(s) < 2: continue
         st = {"visible": True, "closed": False, "radius": APP_R, "accent": acc, "shade": 1.0 if acc else (SHADE_CURRENT if not RING else 1.0), "pts": app(s)}

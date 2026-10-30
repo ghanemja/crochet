@@ -445,20 +445,25 @@ def warp_hook(hk):
     rot = lambda d: v(c * d[0] - s * d[2], d[1], s * d[0] + c * d[2])
     return Hook(tip, rot(hk.u), rot(hk.t))
 MR_LEG = [float(x) for x in os.environ.get("MR_LEG", "0.4,0.4").split(",")]    # the post's legs: half-spread at the top, at the ring (x P)
-MR_TOPZ = float(os.environ.get("MR_TOPZ", "0.0"))                                  # how much the top link bulges up off the rim
+MR_TOPZ = float(os.environ.get("MR_TOPZ", "-0.5"))                                  # how much the top link bulges up off the rim
 def ring_piece(x, holes, zt=ZT):
     """a finished stitch on the ring, drawn compact: the top link lies flat along the rim and the post's legs keep
     to the sides of its wedge, so they meet the neighbours' and the round closes into a firm disc (the row's sc
     narrows to a point under its V, which round the ring left a gap between stitches: a rosette of loose loops)"""
-    hx = holes[0]; zh = ZR - 0.3; wt, wb = MR_LEG; b = MR_TOPZ
-    return [v(x + 0.5 * P, -0.1, zt + 0.05 * b),
-            v(x + 0.24 * P, -TOP_W, zt + 0.3 * b), v(x - 0.2 * P, -0.85 * TOP_W, zt + 0.32 * b),
-            v(x - 0.5 * P, 0.05, zt + 0.22 * b),
-            v(x - 0.2 * P, TOP_W, zt + 0.2 * b), v(x + 0.24 * P, 0.8 * TOP_W, zt - 0.25),
-            v(x + wt * P, -0.95, zt - 0.9), v(lerp(x, hx, 0.8) + wb * P, -1.0, zh + 1.2),        # down the front at the wedge's side
-            v(hx + 0.12 * P, 0.15, zh - 1.3), v(hx, 1.35, zh - 1.0), v(hx - 0.12 * P, 0.15, zh - 1.3),   # round the ring strand
-            v(lerp(x, hx, 0.8) - wb * P, -1.0, zh + 1.2), v(x - wt * P, -0.95, zt - 0.9),
-            v(x - 0.5 * P, -0.25, zt + 0.15)]
+    hx = holes[0]; zh = ZR - 0.3; wt, wb = MR_LEG; b = MR_TOPZ; q = MR_SQ; k = MR_SLACK
+    top = [v(x + 0.5 * P, -0.1, zt + 0.05 * b),
+           v(x + 0.24 * P, -TOP_W, zt + 0.3 * b), v(x - 0.2 * P, -0.85 * TOP_W, zt + 0.32 * b),
+           v(x - 0.5 * P, 0.05, zt + 0.22 * b),
+           v(x - 0.2 * P, TOP_W, zt + 0.2 * b), v(x + 0.24 * P, 0.8 * TOP_W, zt - 0.25 * b)]
+    c, s = math.cos(MR_TILT), math.sin(MR_TILT)                  # the top link laid toward the round's plane: a V on the rim
+    top = [v(p_[0], p_[1] * c, zt + p_[1] * s + (p_[2] - zt) * c) for p_ in top]
+    legs = [v(x + wt * P, -0.95 * q, zt - 0.9), v(lerp(x, hx, 0.8) + wb * P, -1.0 * q, zh + 1.2),       # down the front at the wedge's side
+            v(hx + 0.12 * P, 0.15 * q, zh - 1.3 * k), v(hx, 1.35 * q, zh - 1.0 * k), v(hx - 0.12 * P, 0.15 * q, zh - 1.3 * k),   # round the ring strand
+            v(lerp(x, hx, 0.8) - wb * P, -1.0 * q, zh + 1.2), v(x - wt * P, -0.95 * q, zt - 0.9)]
+    return top + legs + [v(x - 0.5 * P, -0.25 * q, zt + 0.15)]
+MR_SQ = float(os.environ.get("MR_SQ", "0.5"))          # the posts' front/back depth (1: as a row's)
+MR_SLACK = float(os.environ.get("MR_SLACK", "0.7"))    # how far round the ring strand the post's loop reaches (1: as a row's)
+MR_TILT = math.radians(float(os.environ.get("MR_TILT", "0")))
 
 # ---------------------------------------------------------------- the chain: older links hang down
 DROOP_X, DROOP_R = 0.5 * P, 3.0                                # where the chain bends down, and how tightly

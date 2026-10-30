@@ -3,8 +3,9 @@
 cd /home/user/crochet
 KEY=$1; FPS=$2; shift 2; NV=$#
 # yarn through yarn: the working yarn kept off everything else (build/queue/gate_except_<key>: "a:b" frames not gated)
+# (SKIP_YARN_GATE=1: a stitch rendered from paths made before the gate existed, published as a base version)
 EXC=$(cat build/queue/gate_except_$KEY 2>/dev/null); G=$(python3 tools/queue/yarn_gate.py build/paths/$KEY.json 6 0.65 ${EXC:+--except $EXC})
-GS=$?; echo "$(date) $KEY $G" | tr '\n' ' ' >> build/queue/log.txt; echo >> build/queue/log.txt
+GS=$?; [ "$SKIP_YARN_GATE" = 1 ] && GS=0 && G="$G (gate skipped: base version)"; echo "$(date) $KEY $G" | tr '\n' ' ' >> build/queue/log.txt; echo >> build/queue/log.txt
 [ $GS -eq 0 ] || { echo "$(date) GATEFAIL $KEY" >> build/queue/log.txt; exit 1; }
 tools/encode_views.sh $KEY $FPS "$@" || exit 1
 cp build/paths/$KEY.cues.json assets/tutorials/$KEY.cues.json

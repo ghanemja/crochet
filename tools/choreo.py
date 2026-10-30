@@ -733,9 +733,11 @@ def yo_plan(op):
     last_pulled = bool(S0.loops) and S0.loops[-1].kind == "pulled"
     A = BT(S0.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S0.xw); B = over_top(A)
     d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.6)       # on its way up behind the work
+    if op.name == "yo_front" and ZT > 0 and not RING:            # a taller stitch: catch it above the row's top, not behind its neighbour
+        Q = A + d * np.clip((ZT + 1.5 - A[2]) / d[2], 0, 0.9)
     if op.name == "yo_catch" and not RING:                       # a hook in a stitch: catch it up clear of the row it is in, in view
         Q = A + v(0, 0.8, 0) + d * np.clip((YO_CATCH_Z - A[2]) / d[2], 0, 0.6)   # drawn back a little: the throat well out the back
-    ub = U_UP if op.name == "yo_front" else h0.u                 # (a loop just pulled up ends turned aside, U_PULL: not this)
+    ub = U_UP if op.name == "yo_front" and not (CHAIN or RING) else h0.u     # (a loop just pulled up ends turned aside, U_PULL: not this)
     plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3),
                 u_yo=nrm(v(ub[0], ub[1], -0.25 * np.hypot(ub[0], ub[1]))))    # shaft falling toward the hand: the head higher
     if op.name == "yo_catch":                                    # in the stitch: back out a little, tip up about it
@@ -822,7 +824,8 @@ def _op_pose(op, p):
             # of the head
             r = h0.roll + (ROLL_SHOW - h0.roll) * ease(p / 0.3)
             return rolled(tip, slerp_dir(h0.u, U_PULL, ease(max(0.0, (p - 0.35) / 0.65))), r)
-        return rolled(tip, slerp_dir(h0.u, U_UP, ease(max(0.0, (p - 0.35) / 0.65))), back(0.75))
+        # the slip stitch's pull through the stitch: the shaft ends turned aside too, the hand beside the head
+        return rolled(tip, slerp_dir(h0.u, U_PULL if not RING else U_UP, ease(max(0.0, (p - 0.35) / 0.65))), back(0.75))
     if op.name in ("through", "through2"):
         # the loops crowd up to the head, then the hook draws back along its shaft through them, the
         # caught yarn in the throat: each loop passes off over the head (raw_path: through_loops)

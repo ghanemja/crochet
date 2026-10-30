@@ -440,7 +440,7 @@ def warp_hook(hk):
     c, s = math.cos(a), math.sin(a)
     rot = lambda d: v(c * d[0] - s * d[2], d[1], s * d[0] + c * d[2])
     return Hook(tip, rot(hk.u), rot(hk.t))
-MR_LEG = [float(x) for x in os.environ.get("MR_LEG", "0.42,0.32").split(",")]    # the post's legs: half-spread at the top, at the ring (x P)
+MR_LEG = [float(x) for x in os.environ.get("MR_LEG", "0.4,0.4").split(",")]    # the post's legs: half-spread at the top, at the ring (x P)
 MR_TOPZ = float(os.environ.get("MR_TOPZ", "0.0"))                                  # how much the top link bulges up off the rim
 def ring_piece(x, holes, zt=ZT):
     """a finished stitch on the ring, drawn compact: the top link lies flat along the rim and the post's legs keep
@@ -1041,7 +1041,14 @@ def _op_pose(op, p):
         else:
             dst, ud = REST(op.E.E), U_REST
         return rolled(bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), dst + v(0.8, -1.0, 1.0), dst, q), slerp_dir(h0.u, ud, q), back(PULL_SPLIT))
+    if op.name == "mr_close":
+        # presenting the finished round: the hook draws its loop out past the rim and lifts aside (the shaft
+        # pointing away from the centre), so it no longer lies across the middle of the ring
+        tip = lerp(h0.tip, h0.tip + MR_LIFT, ease(p))
+        return rolled(tip, slerp_dir(h0.u, MR_LIFT_U, ease(p)), h0.roll * (1 - ease(p)))
     return h0
+MR_LIFT = _env_vec("MR_LIFT", v(0.3, -0.6, 4.5))            # row space: z is out from the ring's centre
+MR_LIFT_U = nrm(_env_vec("MR_LIFT_U", v(0.35, -0.5, 1.0)))
 PULL_SPLIT = 0.55
 RIDE = 0.4                                   # share of the pull-through spent crowding the loops up to the head
 def n_through(op): return 2 if op.name == "through2" else len(op.S.loops)
@@ -1373,7 +1380,7 @@ QUARTER = OVER = TOP = FRONT
 # the magic ring stands facing the camera, so its stitches' tops (lying across the ring's thickness) were seen
 # edge-on round the rim: a rosette. For the close and the finished round the work turns to show the rim from
 # above, the way a row is seen, so the tops read as V's
-RIM = v(0.25, -0.6, 1.15)
+RIM = v(0.28, -0.8, 0.98)                       # about halfway from FRONT to straight over the rim: the round still reads as a disc
 def build_shots():
     first = OPLIST[0]; t_start = 0.0
     shot(1.6, t_start, t_start, FRONT, 2.6)

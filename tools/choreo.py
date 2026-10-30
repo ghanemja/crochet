@@ -747,7 +747,14 @@ def yarn_leaves(S):
         pre = np.asarray(S.prefix); near_ = pre[np.abs(pre[:, 0] - A[0]) < P]
         top = near_[:, 2].max() if len(near_) else ZT
         A = v(A[0], 1.3, max(A[2], top + 1.6 * R))
+    elif PRE_TOP and NB > 0 and S.inserted is None and S.hole_i == 0 and not (CHAIN or RING):
+        # a taller stitch's yarn overs before the hook goes in: the hook is in front of the work, so the yarn from
+        # its loops goes back over the top edge (low behind it, it ran through the work to them)
+        pre = np.asarray(S.prefix); near_ = pre[np.abs(pre[:, 0] - A[0]) < P]
+        top = near_[:, 2].max() if len(near_) else ZT
+        A = v(A[0], 1.3, max(A[2], top + 1.6 * R))
     return A
+PRE_TOP = os.environ.get("PRE_TOP", "0") == "1"            # (study, hdc/dc/tr) see yarn_leaves; 0: as before
 CLOSE_LAG = float(os.environ.get("CLOSE_LAG", "0.35"))
 CLOSE_OWN = os.environ.get("CLOSE_OWN", "1") == "1"           # (0: the new stitch counts as fabric from the start of the close, as before)
 SL_THRU = os.environ.get("SL_THRU", "1") == "1"               # after a slip stitch the yarn goes on down through it, the way the yarn over came (0: over the top)

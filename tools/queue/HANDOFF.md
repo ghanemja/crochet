@@ -246,3 +246,8 @@ as 16/220 at the site's size (`run.sh` takes renderer flags after the frames fie
   they need their own shape (`ring_piece`): compact wedge posts that share sides, top links flat on the rim, a small
   ch 1, so the closed round is a firm flat disc. Single frames build in ~10 s by running choreo.py up to its frame
   loop and only the wanted frames (keep paths in `build/`; see the session's scratchpad `oneframe.py` idea).
+- **Paths in chunks** (`tools/queue/chunks.sh <key> ...`): choreo.py's own frame loop run by `chunkgen.py` over
+  24-frame ranges, each written to `build/chunks/` as it completes, 4 workers. A full choreo run (1.5–2 h with the
+  left hand) kept dying in container restarts; this resumes (rerun the script) and uses all cores (sl ~20 min).
+  Output is identical to choreo.py's (checked frame by frame). Rerun it once the workers are done to merge each key
+  into `build/paths/<key>.json` + `.cues.json`; delete `build/chunks/<key>_*` before regenerating a key.

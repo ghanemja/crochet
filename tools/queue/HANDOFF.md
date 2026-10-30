@@ -182,3 +182,14 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
 4 CPU cores, CPU-only Cycles at 800×500, 16 samples + OIDN: ~45–60 s/frame Guided with hands. sc
 486 frames × 4 angles, the others ~5,400 frames → ~60–70 h in total. Commit each stitch as soon as it's encoded. Finish with a
 short summary of which stitches/angles were rendered and anything cut.
+
+## Base versions of hdc, dc, dec, tr (session_01RFXAp9cSMRVMFfJmhJ5amD, 2026-10-30)
+Guided only, 24 fps, 800×500, rendered with `--samples 6 --fibres 70` (+ OIDN, tfilter in the encode):
+~4× faster than 16 samples / 220 fibres and close to it at the site's size. Paths from main at `a3a9830`
+(yarn relax). Full-quality renders from the main queue should overwrite them.
+Known issue (not fixed here, it's shared choreo): **the left hand is placed against the un-relaxed fabric**
+(`_fab` in the left-hand placement uses `spline(s)` of STATIC, not `static_relaxed()`), so after the yarn relax
+puffs the fabric out the left middle fingertip sits ~2 mm inside it (hand_contact: `fabric1/L middle_pad -2.0`
+on every frame of hdc/dc/dec). On dec the working yarn also runs ~2 mm into the left middle finger in the
+last third (frames 480–720). Mostly behind the work in the Guided view. Fix: place the hand against
+`static_relaxed()` (move `import yarn_relax`/`static_relaxed` above the placement) and re-run hand_contact.

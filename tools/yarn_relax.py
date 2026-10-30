@@ -17,12 +17,13 @@ def _pairs(P, ids, arc, R, reach, A=None):
         out.append(np.stack([i + c0, j], 1))
     return np.concatenate(out) if out else np.zeros((0, 2), int)
 
-def relax(polys, movable=None, fixed=None, R=1.0, iters=30, smooth=0.25, anchor=0.0):
+def relax(polys, movable=None, fixed=None, R=1.0, iters=30, smooth=0.25, anchor=0.0, self_pairs=True):
     """polys: list of (N_k, 3) centrelines (separate yarns, or the pieces of one marked with the same id:
     give (points, id) tuples); movable: per poly a bool mask (default all); fixed: (M, 3) points the movable
     yarn keeps 2R from (they don't move), or (points, clearances) to give each its own (e.g. the hook's axis,
     kept its radius + R off); anchor: each step, the share of the way back to where it started (keeps a
-    designed shape, giving way only where yarn meets yarn). -> the relaxed polylines"""
+    designed shape, giving way only where yarn meets yarn); self_pairs=False: give way only to the fixed points
+    (a designed fabric that touches itself on purpose keeps its shape). -> the relaxed polylines"""
     pts, ids, arc, mov = [], [], [], []
     for k, item in enumerate(polys):
         p, yid = item if isinstance(item, tuple) else (item, k)
@@ -48,7 +49,7 @@ def relax(polys, movable=None, fixed=None, R=1.0, iters=30, smooth=0.25, anchor=
     need = 2.0 * R; touched = np.zeros(len(P), bool)
     for it in range(iters):
         if it % 6 == 0:
-            pr = _pairs(P, I, S, R, need * 1.6)
+            pr = _pairs(P, I, S, R, need * 1.6) if self_pairs else np.zeros((0, 2), int)
             fp = _pairs(F, None, None, R, max(need, Fneed.max()) * 1.4, A=P[M]) if F is not None else None
             midx = np.nonzero(M)[0]
         moved = np.zeros_like(P); cnt = np.zeros(len(P))

@@ -586,8 +586,24 @@ def loop_ds(S, hk):
         rank = n - 1 - i; d = D_B + rank * SPACING
         if L.kind == "live":
             lo = d; d = max(lo, min(max(14.0, lo), (ANCHOR(S.E) - hk.tip) @ hk.u))
+            if not (CHAIN or RING) and hk.tip[1] > 0 and hk.u[1] < -0.05:   # a hook through the work: the loop stays in front of it
+                d = max(d, hk.tip[1] / -hk.u[1] + LIVE_CLEAR)
         ds.append(d)
     return ds
+
+def yarn_leaves(S):
+    """where the held yarn leaves the work on its way to the left index: low behind it while the hook is in a
+    stitch (so the hook can reach it there); once a loop is pulled up and the hook is out, over the top edge
+    behind the loops (the yarn over is taken there, above the work, not through it)"""
+    last_pulled = bool(S.loops) and S.loops[-1].kind == "pulled"
+    A = BT(S.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S.xw)
+    if last_pulled and S.inserted is None and not (CHAIN or RING) and YARN_TOP:
+        pre = np.asarray(S.prefix); near_ = pre[np.abs(pre[:, 0] - A[0]) < P]
+        top = near_[:, 2].max() if len(near_) else ZT
+        A = v(A[0], 1.3, max(A[2], top + 1.6 * R))
+    return A
+CLOSE_LAG = float(os.environ.get("CLOSE_LAG", "0.35"))
+YARN_TOP = os.environ.get("YARN_TOP", "1") == "1"
 
 def legs_in(hx, s, w0):
     h1 = HOLE(hx) + v(0.55, 0, 0)
@@ -629,7 +645,7 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings
     marks["new"] = len(pts)
     last_pulled = bool(S.loops) and S.loops[-1].kind == "pulled"
     xw = S.xw
-    A = BT(xw) + v(-1.2, 0.3, 0) if last_pulled else BT(xw)       # the yarn leaves the work here, straight up to the hand
+    A = yarn_leaves(S)                                           # the yarn leaves the work here, straight up to the hand
     if tail is not None:
         pts += tail
     elif keep is not None:                                       # slip stitch: the caught yarn, still in the throat, through the stitch
@@ -732,6 +748,8 @@ def l_off(ta):
     if L_RELEASE is None: return np.zeros(3)
     a0, a1, off = L_RELEASE; return off * ease((ta - a0) / (a1 - a0))
 
+LIVE_CLEAR = float(os.environ.get("LIVE_CLEAR", "2.6"))   # the live loop on a hook through the work: this far in front of where the shaft goes in
+YO_FRONT_DZ = float(os.environ.get("YO_FRONT_DZ", "1.5"))  # a yarn over with the hook out of the stitch: caught this high over the row's top
 YO_CATCH_Z = -H + float(os.environ.get("YO_CATCH_DZ", "2.5"))   # how high (above the tops of the row the hook is in) a hook in a stitch catches the yarn
 YO_ROLL = 180.0                     # the throat turned to face straight up while the yarn is laid over the shaft (degrees from facing down)
 PU_LIFT = float(os.environ.get("PU_LIFT", "3.0"))
@@ -747,10 +765,10 @@ def yo_plan(op):
     if hasattr(op, "plan"): return op.plan
     S0 = op.S; h0 = S0.hk; c0 = h0.axis_centre(THROAT_D); dn, _ = h0.basis()
     last_pulled = bool(S0.loops) and S0.loops[-1].kind == "pulled"
-    A = BT(S0.xw) + v(-1.2, 0.3, 0) if last_pulled else BT(S0.xw); B = over_top(A)
+    A = yarn_leaves(S0); B = over_top(A)
     d = B - A; Q = A + d * np.clip((c0 - A) @ d / (d @ d), 0, 0.6)       # on its way up behind the work
     if op.name == "yo_front" and ZT >= 0 and not (RING or CHAIN):   # catch it above the row's top (where it runs over to the finger), not behind the work: the hook would go through the stitches
-        Q = A + d * np.clip((ZT + 1.5 - A[2]) / d[2], 0, 0.9)
+        Q = A + d * np.clip((ZT + YO_FRONT_DZ - A[2]) / d[2], 0, 0.9)
     if op.name == "yo_catch" and not RING:                       # a hook in a stitch: catch it up clear of the row it is in, in view
         Q = A + v(0, 0.8, 0) + d * np.clip((YO_CATCH_Z - A[2]) / d[2], 0, 0.6)   # drawn back a little: the throat well out the back
     ub = U_UP if op.name == "yo_front" and not (CHAIN or RING) else h0.u     # (a loop just pulled up ends turned aside, U_PULL: not this)
@@ -908,7 +926,7 @@ def raw_path(op, p):
     if op.name in ("through", "through2"):
         if p < PULL_SPLIT: return through_loops(op, hk, p / PULL_SPLIT)
         hk0 = op_pose(op, PULL_SPLIT)
-        return morph(through_loops(op, hk0, 1.0), post_path(op, hk).curve(), ease((p - PULL_SPLIT) / (1 - PULL_SPLIT)))
+        return morph(through_loops(op, hk0, 1.0), post_path(op, hk).curve(), ease((p - PULL_SPLIT) / (1 - PULL_SPLIT)), lag=CLOSE_LAG)
     if op.name == "mr_loop":
         return assemble(op.E, hk).curve()
     raise ValueError(op.name)
@@ -1012,6 +1030,7 @@ import yarn_relax
 _STATIC_RX = []
 RING_OFF = float(os.environ.get("RING_OFF", "1.6")); SIDE_OFF = float(os.environ.get("SIDE_OFF", "0.9"))   # loops off the head close round the caught yarn's two strands
 WORK_ITERS = int(os.environ.get("WORK_ITERS", "40"))           # the working yarn's relax, every frame
+FABRIC_SELF = os.environ.get("FABRIC_SELF", "0") == "1"   # the fabric gives way to the working yarn and hand, not to itself (its V's touch on purpose)
 RELAX_ANCHOR = float(os.environ.get("RELAX_ANCHOR", "0.1"))    # the finished fabric keeps its designed shape (0: relaxed freely, which bent the V's out of shape)
 def static_relaxed():
     if not _STATIC_RX and STATIC:
@@ -1034,7 +1053,7 @@ def static_relaxed():
         sk_ = np.vstack([left_skin(np.zeros(3))] + ([left_skin(L_RELEASE[2])] if L_RELEASE is not None else []))
         fb = np.vstack([spline(s) for s, _ in STATIC]); sk_ = sk_[np.all((sk_ > fb.min(0) - 3) & (sk_ < fb.max(0) + 3), axis=1)]
         rx = yarn_relax.relax([spline(s) for s, _ in STATIC], fixed=(np.vstack([obst, sk_]), np.concatenate([np.full(len(obst), 2.0 * R), np.full(len(sk_), 1.06 * R)])),
-                              R=R, iters=120, anchor=RELAX_ANCHOR)
+                              R=R, iters=120, anchor=RELAX_ANCHOR, self_pairs=FABRIC_SELF)
         for q in rx:
             n = len(q)
             while n > 10 and np.linalg.norm(hy - q[n - 1], axis=1).min() < 2.1 * R: n -= 1
@@ -1061,7 +1080,7 @@ def yarn_clear(c, e, h, hk):
         key = (e, round(float(c[:e + 1].sum()), 3))
         if key not in _PREFIX_RX:
             W = working_passes(); Fx = np.vstack([F, W]) if len(W) else F
-            _PREFIX_RX[key] = yarn_relax.relax([c[:e + 1]], fixed=Fx, R=R, iters=120, anchor=RELAX_ANCHOR)[0]
+            _PREFIX_RX[key] = yarn_relax.relax([c[:e + 1]], fixed=Fx, R=R, iters=120, anchor=RELAX_ANCHOR, self_pairs=FABRIC_SELF)[0]
         moved = _PREFIX_RX[key][-1] - c[e]
         c[:e + 1] = _PREFIX_RX[key]
         k = min(len(c) - e - 1, 24)                                # carry the join along, fading

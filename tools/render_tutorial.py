@@ -66,6 +66,11 @@ sc.cycles.denoiser = "OPENIMAGEDENOISE"
 sc.cycles.max_bounces = A.bounces; sc.cycles.transparent_max_bounces = 8
 if A.fuzz_fix:                                             # no fireflies off the fibres' highlights
     sc.cycles.blur_glossy = 1.0; sc.cycles.sample_clamp_indirect = 3.0
+# flicker experiments (defaults = the settings in use): denoiser prefilter / quality, indirect clamp, min samples
+if os.environ.get("DN_PREFILTER"): sc.cycles.denoising_prefilter = os.environ["DN_PREFILTER"]
+if os.environ.get("DN_QUALITY"): sc.cycles.denoising_quality = os.environ["DN_QUALITY"]
+if os.environ.get("CLAMP_IND"): sc.cycles.sample_clamp_indirect = float(os.environ["CLAMP_IND"])
+if os.environ.get("ADAPT_MIN"): sc.cycles.adaptive_min_samples = int(os.environ["ADAPT_MIN"])
 sc.render.use_persistent_data = True
 sc.render.resolution_x, sc.render.resolution_y, sc.render.resolution_percentage = W, H, 100
 sc.render.film_transparent = True

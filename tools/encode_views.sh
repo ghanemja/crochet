@@ -11,8 +11,14 @@ KEY=$1; FPS=$2; shift 2; OUT=${OUT:-assets/tutorials}; mkdir -p "$OUT"
 NV=$#; [ $NV -eq 1 ] || [ $NV -eq 4 ] || { echo "need 1 or 4 frame dirs" >&2; exit 1; }
 N=$(ls "$1"/f_*.png | wc -l)
 SIZE=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$(ls "$1"/f_*.png | head -1)")
+# motion-masked temporal smoothing first (tools/queue/tfilter.py: the still yarn's frame-to-frame shimmer,
+# not the moving hook or loops); TFILTER=0 to skip, TFILTER=<tau> to set its threshold (default 14)
+TF=${TFILTER:-14}; DIRS=""
+for d in "$@"; do
+  if [ "$TF" != 0 ]; then t=build/frames_tf/$(basename "$d"); python3 tools/queue/tfilter.py "$d" "$t" "$TF"; DIRS="$DIRS $t"; else DIRS="$DIRS $d"; fi
+done
 set -f   # keep the f_*.png patterns for ffmpeg, not the shell
-IN=""; for d in "$@"; do IN="$IN -framerate $FPS -pattern_type glob -i $d/f_*.png"; done
+IN=""; for d in $DIRS; do IN="$IN -framerate $FPS -pattern_type glob -i $d/f_*.png"; done
 BG="-f lavfi -i color=c=0xf3ece3:s=$SIZE:r=$FPS"
 if [ $NV -eq 4 ]; then
   # each tile is placed over its own copy of the background: split it four ways

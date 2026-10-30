@@ -1126,6 +1126,31 @@ def yarn_clear(c, e, h, hk):
         c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax, sk]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed, np.full(len(sk), 1.06 * R)])), R=R, iters=WORK_ITERS)[0]
     return c
 
+FREEZE = tuple(float(x) for x in os.environ.get("FABRIC_FREEZE", "4:8").split(":"))   # yarn radii: "0:0" turns it off
+_FAB_REST = {}
+def fabric_rest(f, work, hk):
+    """the row being worked (f), still where nothing touches it. Its relax runs every frame and settles a little
+    differently each time (~0.01-0.03 R per frame even 8-16 R from the hook: sub-pixel creep the renderer's fibres
+    turn into shimmer). Within FREEZE[0] of the working yarn, the hook or the left hand the row takes this frame's
+    shape; beyond FREEZE[1] it keeps the shape it had last frame, bit for bit (blended between). The row starts
+    in the old fabric, so the arc length the renderer seeds fibres by is unchanged up to the first moved point."""
+    r0, r1 = FREEZE[0] * R, FREEZE[1] * R
+    prev = _FAB_REST.get("f")
+    if r1 <= 0 or prev is None or len(prev) != len(f):
+        _FAB_REST["f"] = f.copy(); return f                       # a new row (or its point count changed): start over
+    lo, hi = f.min(0) - r1, f.max(0) + r1
+    ds = np.arange(0.0, 40.0, 0.5)
+    near = np.vstack([work, np.array([hk.tip + hk.u * d_ for d_ in ds]), left_skin()])
+    near = near[np.all((near > lo) & (near < hi), axis=1)]
+    if len(near) == 0: return prev.copy()
+    d = np.full(len(f), np.inf)
+    for i in range(0, len(near), 512):                            # nearest of them, chunked to bound memory
+        d = np.minimum(d, np.min(np.linalg.norm(f[:, None] - near[None, i:i + 512], axis=2), axis=1))
+    w = np.clip((r1 - d) / max(r1 - r0, 1e-9), 0, 1)[:, None]      # 1: moves with this frame, 0: rests
+    out = np.where(w > 0, prev + w * (f - prev), prev)
+    _FAB_REST["f"] = out
+    return out.copy()
+
 def frame_strands(ta):
     op, p = op_at(ta); L_OFF[0] = l_off(ta)
     if RING: ring_setup(op, p)
@@ -1145,6 +1170,7 @@ def frame_strands(ta):
     if h > sp: c[sp:h] = off_left_hand(c[sp:h])
     off = (len(ts) - 1) if RING else 0
     c = yarn_clear(c, cv.own_e + off if not RING else 0, h, hk)
+    if not RING: c[:sp + 1] = fabric_rest(c[:sp + 1], c[sp:h], hk)
     segs = [(c[:sp + 1], False), (c[sp:], True)]
     for s, acc in segs:
         if len(s) < 2: continue

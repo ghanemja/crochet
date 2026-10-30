@@ -126,6 +126,11 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    crf 24 (grid 27) instead of 30/32: the encoder's error changed frame to frame on the fibres. Tried and
    rejected: thicker fibres/fewer flyaways (`FIBRE_K`, `FUZZ_K`: more flicker), 32 samples (barely helps).
    A blue line on the nails: the free-edge plate stood off the skin (you saw through the gap); now set into it.
+   Later (relayed: "keep improving that flicker"): idea 7 is the default in `encode_views.sh` — the temporal filter
+   averages ±2 frames where still and stays 4 px off motion (still shimmer 0.32 -> 0.24). Idea 6 (1.5x supersample)
+   rejected: no gain at 2.25x cost. Idea 5, motion-compensated (`tools/queue/mcfilter.py`, needs
+   `pip install opencv-python-headless`): shimmer on moving yarn -20% but the moving plies soften (the user's first
+   complaint was "blurry in motion"), so it is off; `MCFILTER=12:1` switches it on if the user picks it.
 17. **Yarn through yarn** (user: "the two yarns wouldn't mix like that, they're going through" — the orange
    working yarn through the blue): detector `tools/yarn_contact.py`; the publish gate is `tools/queue/yarn_gate.py`
    (working yarn vs everything else ≤ 0.65R on every 6th frame; fabric vs fabric only logged — the designed V

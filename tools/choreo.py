@@ -319,6 +319,7 @@ def bar_heights(zt, zh, nb):
     return [lo + (hi - lo) * (j + 1) / (nb + 1) for j in range(nb)]    # bottom to top
 
 TOP_W = 0.95                                                   # half-width of a stitch's top across the row (was B)
+LEGS_REAL = os.environ.get("LEGS", "") == "real"               # (prototype) the finished stitch threaded the way it was made
 def stitch_static(x, zt, holes, nb=0, zh=-H, hole_dz=-1.3):
     """way-points of a finished stitch whose top V is centred at (x, ., zt), entered from its right
     neighbour and leaving to the left; legs into the hole(s) under the V of the row below at x = h
@@ -335,6 +336,16 @@ def stitch_static(x, zt, holes, nb=0, zh=-H, hole_dz=-1.3):
         xa = lambda f: lerp(x, hx, f)
         if L < 3.2:      # a slip stitch: the V sits low, its legs go straight in
             pts += [v(xa(0.6) + 0.15 * P, -0.8, zh + 0.7), v(hx + 0.05 * P, 0.0, zh - 1.3), v(hx - 0.05 * P, 1.25, zh - 0.9), v(xa(0.6) - 0.2 * P, 0.8, zh + 0.8)]
+            continue
+        if nb == 0 and LEGS_REAL:
+            # threaded as it was made: from the top down behind the work, the pulled-up loop out through the
+            # hole to the front, up (its top closes round the yarn over, the next stitch's start), down the front,
+            # back in through the hole and up behind to where the next stitch starts
+            top = zt - 0.75 if k == len(holes) - 1 else zt - 2.0
+            pts += [v(xa(0.3) + 0.3 * P, 1.25, zt - 1.2), v(hx + 0.12 * P, 1.35, zh + hole_dz + 0.3), v(hx + 0.1 * P, 0.15, zh + hole_dz),
+                    v(xa(0.8) + 0.14 * P, -1.0, zh + 1.5), v(xa(0.15) + 0.2 * P, -1.05, top + 0.2),
+                    v(xa(0.15) - 0.2 * P, -1.05, top + 0.2), v(xa(0.8) - 0.14 * P, -1.0, zh + 1.5),
+                    v(hx - 0.1 * P, 0.15, zh + hole_dz), v(hx - 0.12 * P, 1.35, zh + hole_dz + 0.3), v(xa(0.3) - 0.35 * P, 1.2, zt - 1.0)]
             continue
         if nb == 0:      # the pulled-up loop's two legs make the V on the front: down from the top right into
             # the hole under the row below's V, round behind it, back out of the same hole and up to the top left
@@ -631,7 +642,7 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings
             pre = np.asarray(S.prefix); near_ = pre[np.abs(pre[:, 0] - A[0]) < P]
             if len(near_): pts += [v(A[0], A[1], max(A[2], near_[:, 2].max() + 1.6 * R))]
         pts += [A]
-        side = hk.z * 1.1 * R                                    # the caught yarn's two strands, side by side (a yarn's width apart, not through each other)
+        side = hk.z * SIDE_OFF * R                                    # the caught yarn's two strands, side by side (a yarn's width apart, not through each other)
         tin = [c + side for c in thread] if thread else []; tout = [c - side for c in reversed(thread)] if thread else []
         ang = contact(hk, tin[-1] if tin else A, tout[0] if tout else over_top(A), throat == "caught") if throat else None
         pts += tin
@@ -918,16 +929,9 @@ def through_loops(op, hk_, qq):
         c = hb.axis_centre(d); dd = (c - hk_.tip) @ hk_.u
         if dd > 0.25: ds[i] = dd; continue                       # still on the shaft
         cen = hk_.tip + hk_.u * dd                               # off the head: round the caught yarn
-        # the loop turns as it leaves the head, from round the shaft to square across the caught yarn's two
-        # strands, which run from the throat back through it to the work (else they lie in its plane and cut it)
-        f = ease(-dd / 5.0); A = BT(S0.xw) + (v(-1.2, 0.3, 0) if S0.loops and S0.loops[-1].kind == "pulled" else 0)
-        w = A - (hk_.tip + hk_.u * THROAT_D); w = w / np.linalg.norm(w)
-        nrm = hk_.u if w @ hk_.u < 0 else -hk_.u; nrm = nrm * (1 - f) - w * f; nrm = nrm / np.linalg.norm(nrm)
-        dn, fr = hk_.basis(); dn = dn - (dn @ nrm) * nrm; dn = dn / np.linalg.norm(dn); fr = np.cross(nrm, dn)
-        if fr @ hk_.basis()[1] < 0: fr = -fr
-        a = np.radians(np.linspace(25, -295, 26)); lift = np.linspace(-0.4, 0.4, 26)[:, None] * R
-        ro = lerp(hook_profile(D_B)[1] + 0.92 * R, 3.2 * R, ease(-dd / 5.0))       # open as it leaves the head, closing round the two strands (they are 2.2 R apart: 3.2 R keeps the ring a yarn's width off both)
-        rings[i] = list(cen + ro * (np.cos(a)[:, None] * dn + np.sin(a)[:, None] * fr) + lift * nrm)
+        dn, fr = hk_.basis(); a = np.radians(np.linspace(25, -295, 26)); lift = np.linspace(-0.4, 0.4, 26)[:, None] * R
+        ro = lerp(hook_profile(D_B)[1] + 0.92 * R, RING_OFF * R, ease(-dd / 5.0))       # open as it leaves the head, closing round the strands
+        rings[i] = list(cen + ro * (np.cos(a)[:, None] * dn + np.sin(a)[:, None] * fr) + lift * hk_.u)
         thread.append(cen)
     return assemble(S0, hk_, ds=ds, throat="caught", rings=rings, thread=thread or None).curve()
 
@@ -1006,6 +1010,8 @@ def off_left_hand(c):
 # being worked once per shape against it; and every frame the working yarn against both and itself.
 import yarn_relax
 _STATIC_RX = []
+RING_OFF = float(os.environ.get("RING_OFF", "1.6")); SIDE_OFF = float(os.environ.get("SIDE_OFF", "0.9"))   # loops off the head close round the caught yarn's two strands
+WORK_ITERS = int(os.environ.get("WORK_ITERS", "40"))           # the working yarn's relax, every frame
 RELAX_ANCHOR = float(os.environ.get("RELAX_ANCHOR", "0.1"))    # the finished fabric keeps its designed shape (0: relaxed freely, which bent the V's out of shape)
 def static_relaxed():
     if not _STATIC_RX and STATIC:
@@ -1070,7 +1076,7 @@ def yarn_clear(c, e, h, hk):
         hneed = np.array([r_ + 0.9 * R for _, r_ in prof])
         mask = np.zeros(h, bool); mask[e + 1:h - 1] = True
         sk = left_skin(); sk = sk[np.all((sk > lo) & (sk < hi), axis=1)]          # and the left hand
-        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax, sk]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed, np.full(len(sk), 1.06 * R)])), R=R, iters=40)[0]
+        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax, sk]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed, np.full(len(sk), 1.06 * R)])), R=R, iters=WORK_ITERS)[0]
     return c
 
 def frame_strands(ta):

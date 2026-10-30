@@ -444,6 +444,19 @@ def warp_hook(hk):
     c, s = math.cos(a), math.sin(a)
     rot = lambda d: v(c * d[0] - s * d[2], d[1], s * d[0] + c * d[2])
     return Hook(tip, rot(hk.u), rot(hk.t))
+MR_TILT = math.radians(float(os.environ.get("MR_TILT", "80")))   # the ring's stitch tops turned toward the viewer
+MR_TOP_K = float(os.environ.get("MR_TOP_K", "0.55"))              # ...and drawn snug (their loops' spread across)
+def ring_piece(x, holes):
+    """a finished stitch on the ring: as in a row, but its top link (front and back loops) turned about the
+    row so the back loop lies further out than the front one, and snug: the ring faces the camera, so the tops
+    read as a tight chain of V's round the edge (a round cups that way) instead of each top, seen edge-on, as a
+    loose curl"""
+    pts = [np.array(q, float) for q in stitch_static(x, ZT, holes, 0)]
+    c, s = math.cos(MR_TILT), math.sin(MR_TILT)
+    for i in list(range(6)) + [len(pts) - 1]:
+        y, dz = MR_TOP_K * pts[i][1], pts[i][2] - ZT
+        pts[i][1], pts[i][2] = y * c - dz * s, ZT + y * s + dz * c
+    return pts
 
 # ---------------------------------------------------------------- the chain: older links hang down
 DROOP_X, DROOP_R = 0.5 * P, 3.0                                # where the chain bends down, and how tightly
@@ -900,8 +913,8 @@ def make_ops():
             else:
                 x = XS[st.stitch]; holes = HOLES[st.stitch]
                 if CHAIN: piece = chain_link(x, 0.0)
-                elif RING and st.stitch == 0:     # pull up + ch 1: the turning chain standing on the ring
-                    piece = stitch_static(x, ZT, holes, 0)
+                elif RING:                        # (the first: pull up + ch 1, the turning chain standing on the ring)
+                    piece = ring_piece(x, holes)
                 else: piece = stitch_static(x, ZT, holes, NB)
                 e.prefix = st.prefix + piece[1:]; e.E = piece[-1]
                 e.loops = [Loop("live")]; e.post = None; e.nthr = 0

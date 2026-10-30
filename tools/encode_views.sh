@@ -12,10 +12,11 @@ NV=$#; [ $NV -eq 1 ] || [ $NV -eq 4 ] || { echo "need 1 or 4 frame dirs" >&2; ex
 N=$(ls "$1"/f_*.png | wc -l)
 SIZE=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$(ls "$1"/f_*.png | head -1)")
 # motion-masked temporal smoothing first (tools/queue/tfilter.py: the still yarn's frame-to-frame shimmer,
-# not the moving hook or loops); TFILTER=0 to skip, TFILTER=<tau> to set its threshold (default 14)
-TF=${TFILTER:-14}; DIRS=""
+# not the moving hook or loops); TFILTER=0 to skip, TFILTER=<tau> to set its threshold (default 14); over two
+# frames each side where still, kept 4 px off anything moving (TF_WIN, TF_DIL: still shimmer -25%, no ghosting)
+TF=${TFILTER:-14}; TFW=${TF_WIN:-2}; TFD=${TF_DIL:-4}; DIRS=""
 for d in "$@"; do
-  if [ "$TF" != 0 ]; then t=build/frames_tf/$(basename "$d"); python3 tools/queue/tfilter.py "$d" "$t" "$TF"; DIRS="$DIRS $t"; else DIRS="$DIRS $d"; fi
+  if [ "$TF" != 0 ]; then t=build/frames_tf/$(basename "$d"); rm -rf "$t"; python3 tools/queue/tfilter.py "$d" "$t" "$TF" "$TFW" "$TFD"; DIRS="$DIRS $t"; else DIRS="$DIRS $d"; fi
 done
 set -f   # keep the f_*.png patterns for ffmpeg, not the shell
 IN=""; for d in $DIRS; do IN="$IN -framerate $FPS -pattern_type glob -i $d/f_*.png"; done

@@ -1355,6 +1355,10 @@ END_TEXT = {
 # the guided view keeps one angle (the user: "keep the camera angle the same, and only rotate the hands/
 # piece if trying to show a different angle"): every shot looks from FRONT but the turn to show the back
 QUARTER = OVER = TOP = FRONT
+# the magic ring stands facing the camera, so its stitches' tops (lying across the ring's thickness) were seen
+# edge-on round the rim: a rosette. For the close and the finished round the work turns to show the rim from
+# above, the way a row is seen, so the tops read as V's
+RIM = v(0.25, -0.6, 1.15)
 def build_shots():
     first = OPLIST[0]; t_start = 0.0
     shot(1.6, t_start, t_start, FRONT, 2.6)
@@ -1436,10 +1440,10 @@ def build_shots():
         elif nm == "hold":
             pass
         elif nm == "mr_close":
-            shot(3.4, act(op, 0), act(op, 1), FRONT, 1.0)
+            shot(3.4, act(op, 0), act(op, 1), RIM, 1.0)               # turns while the tail closes the ring (same 3.4 s)
     end = TOTAL_ACT
-    shot(1.8, end, end, FRONT, 1.0 if not RING else 1.0, ("new", None, END_TEXT[KEY]))
-    shot(0.6, end, end, FRONT, 1.0)
+    shot(1.8, end, end, RIM if RING else FRONT, 1.0, ("new", None, END_TEXT[KEY]))
+    shot(0.6, end, end, RIM if RING else FRONT, 1.0)
 build_shots()
 
 def at_video(tv):

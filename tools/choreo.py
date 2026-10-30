@@ -981,6 +981,11 @@ def app(c):
     c = np.asarray(c) @ TO_APP.T * (APP_R / R)
     return [[round(float(x), 4) for x in p] for p in c]
 
+def left_skin(off=None):
+    """the left hand's skin points (row space), for keeping yarn off it"""
+    if not HAND_PTS: return np.zeros((0, 3))
+    return L_POS + (L_OFF[0] if off is None else off) + SKIN_L @ L_ROT.T
+
 def off_left_hand(c):
     """the working yarn kept on the left hand's skin, never in it (its way up from the hook to the
     index changes every frame)"""
@@ -1019,7 +1024,11 @@ def static_relaxed():
                 near_ = np.linalg.norm(q[:, None] - holes_[None], axis=2).min(1) < 3.5
                 if near_.any(): legs.append(q[near_])
         obst = np.vstack([hy] + legs) if not CHAIN else hy
-        rx = yarn_relax.relax([spline(s) for s, _ in STATIC], fixed=obst, R=R, iters=120, anchor=RELAX_ANCHOR)
+        # and off the left hand's pads, which hold it (the hand was placed against the work as designed)
+        sk_ = np.vstack([left_skin(np.zeros(3))] + ([left_skin(L_RELEASE[2])] if L_RELEASE is not None else []))
+        fb = np.vstack([spline(s) for s, _ in STATIC]); sk_ = sk_[np.all((sk_ > fb.min(0) - 3) & (sk_ < fb.max(0) + 3), axis=1)]
+        rx = yarn_relax.relax([spline(s) for s, _ in STATIC], fixed=(np.vstack([obst, sk_]), np.concatenate([np.full(len(obst), 2.0 * R), np.full(len(sk_), 1.06 * R)])),
+                              R=R, iters=120, anchor=RELAX_ANCHOR)
         for q in rx:
             n = len(q)
             while n > 10 and np.linalg.norm(hy - q[n - 1], axis=1).min() < 2.1 * R: n -= 1
@@ -1060,7 +1069,8 @@ def yarn_clear(c, e, h, hk):
         hax = np.array([hk.tip + hk.u * d_ + hk.t * cx for d_, (cx, _) in zip(ds, prof)])
         hneed = np.array([r_ + 0.9 * R for _, r_ in prof])
         mask = np.zeros(h, bool); mask[e + 1:h - 1] = True
-        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed])), R=R, iters=40)[0]
+        sk = left_skin(); sk = sk[np.all((sk > lo) & (sk < hi), axis=1)]          # and the left hand
+        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax, sk]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed, np.full(len(sk), 1.06 * R)])), R=R, iters=40)[0]
     return c
 
 def frame_strands(ta):

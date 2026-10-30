@@ -2,6 +2,10 @@
 # publish one stitch: tools/queue/publish.sh <key> <fps> <dir0> [dir1 dir2 dir3]
 cd /home/user/crochet
 KEY=$1; FPS=$2; shift 2; NV=$#
+# yarn through yarn: the working yarn kept off everything else (build/queue/gate_except_<key>: "a:b" frames not gated)
+EXC=$(cat build/queue/gate_except_$KEY 2>/dev/null); G=$(python3 tools/queue/yarn_gate.py build/paths/$KEY.json 6 0.65 ${EXC:+--except $EXC})
+GS=$?; echo "$(date) $KEY $G" | tr '\n' ' ' >> build/queue/log.txt; echo >> build/queue/log.txt
+[ $GS -eq 0 ] || { echo "$(date) GATEFAIL $KEY" >> build/queue/log.txt; exit 1; }
 tools/encode_views.sh $KEY $FPS "$@" || exit 1
 cp build/paths/$KEY.cues.json assets/tutorials/$KEY.cues.json
 python3 - "$KEY" "$NV" <<'PY'

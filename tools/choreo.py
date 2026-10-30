@@ -996,9 +996,14 @@ def frame_strands(ta):
     h = min(len(c), cv.idx["hand"] + (len(ts) - 1 if RING else 0) + 1)    # the route round the fingers is settled already
     if h > sp: c[sp:h] = off_left_hand(c[sp:h])
     segs = [(c[:sp + 1], False), (c[sp:], True)]
+    off = (len(ts) - 1) if RING else 0
     for s, acc in segs:
         if len(s) < 2: continue
-        out.append({"visible": True, "closed": False, "radius": APP_R, "accent": acc, "shade": 1.0 if acc else (SHADE_CURRENT if not RING else 1.0), "pts": app(s)})
+        st = {"visible": True, "closed": False, "radius": APP_R, "accent": acc, "shade": 1.0 if acc else (SHADE_CURRENT if not RING else 1.0), "pts": app(s)}
+        if acc:   # for the renderer: the yarn from "hold" on (leaving the work, to the hand and the ball) is held and
+                  # fed from the ball; it slides through the loops on the hook ("slide" to "hold")
+            st["slide"] = int(max(0, cv.idx["a0"] + off - sp)); st["hold"] = int(max(st["slide"], cv.idx["new"] + off - sp))
+        out.append(st)
     WARP["x0"] = None
     return hk, out
 

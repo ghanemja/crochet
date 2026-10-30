@@ -278,67 +278,71 @@ def frames_rmf(c, closed, n_start=None):
         n, b = n * np.cos(ang) + b * np.sin(ang), -n * np.sin(ang) + b * np.cos(ang)
     return n, b
 
-def resample(pts, closed, step, s0=0.0):
+def resample(pts, closed, step, mat=None):
+    """-> (points, s, L, m): points along the polyline every ~step; m = mat(s), the yarn's own (material)
+    coordinate there. Open strands are sampled where m is on a fixed grid (plus their two ends), so the
+    points stay on the same bits of yarn from frame to frame however the strand grows or slides."""
     p = np.array(pts, float)
     if closed: p = np.vstack([p, p[:1]])
     seg = np.linalg.norm(np.diff(p, axis=0), axis=1); s = np.concatenate([[0], np.cumsum(seg)]); L = s[-1]
-    if closed:
+    if closed or mat is None:
         m = max(8, int(L / step) + 1); si = np.linspace(0, L, m)
-    else:   # at fixed places along the yarn itself (s0 + s on a grid), plus the two ends: as a strand grows or
-            # its start moves, the points already on it stay put (spread evenly, every one shifted a little)
-        g0 = (-s0) % step; si = np.unique(np.concatenate([[0.0], np.arange(g0, L, step), [L]]))
+    else:
+        sd = np.linspace(0, L, max(16, int(L / step * 4) + 1)); md = mat(sd)
+        grid = np.arange(math.ceil(md[0] / step) * step, md[-1], step)
+        si = np.unique(np.concatenate([[0.0], np.interp(grid, md, sd), [L]]))
         si = si[np.concatenate([[True], np.diff(si) > step * 0.05])]; si[-1] = L
         if len(si) < 8: si = np.linspace(0, L, 8)
     q = np.stack([np.interp(si, s, p[:, k]) for k in range(3)], 1)
     if closed: q, si = q[:-1], si[:-1]
-    return q, si, L
+    return q, si, L, (mat(si) if mat is not None and not closed else si)
 
 def rng_at(seed, j):   # cheap deterministic hash -> [0,1)
     x = (seed * 0x9E3779B97F4A7C15 + j * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
     x ^= x >> 31; x = (x * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF; x ^= x >> 29
     return (x & 0xFFFFFF) / float(0xFFFFFF)
 
-def ply_fibres(seed, pc, n, b, s, th, rply, R, closed, L, s0=0.0):
-    """A.fibres staple fibres following one ply: each sits at a random depth in the ply,
-    twists with it, wanders a little (frizz) and, at the ends of its staple, frays out
-    and lifts off the surface. Seeded and anchored by the yarn's own length (s0 + s: s0 is how much of the same
-    yarn comes before this strand) -> each fibre stays on the same bit of yarn from frame to frame."""
+def ply_fibres(seed, pc, n, b, m, th, rply, R):
+    """A.fibres staple fibres following one ply: each sits at a random depth in the ply, twists with it,
+    wanders a little (frizz) and, at the ends of its staple, frays out and lifts off the surface. Seeded
+    and laid out along m, the yarn's own coordinate -> each fibre stays on the same bit of yarn."""
     NF = A.fibres
     if NF <= 0: return []
     rng = np.random.default_rng(seed)
     rho0 = rng.uniform(0.55, 1.0, NF) ** 0.5 * 0.98          # depth in the ply (0 = core)
     ph0 = rng.uniform(0, 2 * math.pi, NF)
     wob_f = rng.uniform(0.6, 1.6, NF) / R; wob_p = rng.uniform(0, 2 * math.pi, NF)
-    sm_ = s + s0
-    ang = ph0[:, None] + th[None, :] * 1.08 + 0.12 * np.sin(sm_[None, :] * wob_f[:, None] + wob_p[:, None])
-    rho = rho0[:, None] * (1 + 0.07 * np.sin(sm_[None, :] * wob_f[:, None] * 1.7 + wob_p[:, None] * 2))
-    out = []
+    ang = ph0[:, None] + th[None, :] * 1.08 + 0.12 * np.sin(m[None, :] * wob_f[:, None] + wob_p[:, None])
+    rho = rho0[:, None] * (1 + 0.07 * np.sin(m[None, :] * wob_f[:, None] * 1.7 + wob_p[:, None] * 2))
+    m0, m1 = m[0], m[-1]; out = []
     for f in range(NF):
-        # staples 4–11 R long; the first starts before the strand so the cuts are spread out
-        x = -rng.uniform(0, 11 * R) - s0; cuts = []                 # (in this strand's own s)
-        while x < L:
+        # staples 4–11 R long, laid end to end along the yarn from its start (m = 0)
+        x = -rng.uniform(0, 11 * R); cuts = []
+        while x < m1:
             ln = rng.uniform(4, 11) * R; c_ = (x, x + ln, rng.uniform(0.4, 1.6) if rng.uniform() < A.fray else 0.06, rng.uniform(-1, 1)); x += ln
-            if c_[1] > 0: cuts.append(c_)
+            if c_[1] > m0: cuts.append(c_)
         for (x0, x1, amp, curl) in cuts:
-            i0 = int(np.searchsorted(s, max(0.0, x0))); i1 = int(np.searchsorted(s, min(L, x1)))
+            i0 = int(np.searchsorted(m, max(m0, x0))); i1 = int(np.searchsorted(m, min(m1, x1)))
             if i1 - i0 < 3: continue
-            ss = s[i0:i1]
-            # fray: within ~1 R of a staple end the fibre leaves the ply and curls outward
-            e0 = np.clip(1 - (ss - x0) / (1.2 * R), 0, 1) ** 2 if x0 > 0 else 0 * ss
-            e1 = np.clip(1 - (x1 - ss) / (1.2 * R), 0, 1) ** 2 if x1 < L else 0 * ss     # (a cut at the join to the next strand frays nowhere)
+            mm = m[i0:i1]
+            # fray: within ~1 R of a staple end the fibre leaves the ply and curls outward (not where the strand
+            # merely ends: the yarn goes on in the next one or is cut there, and those ends taper instead)
+            e0 = np.clip(1 - (mm - x0) / (1.2 * R), 0, 1) ** 2 if x0 > m0 else 0 * mm
+            e1 = np.clip(1 - (x1 - mm) / (1.2 * R), 0, 1) ** 2 if x1 < m1 else 0 * mm
             e = np.maximum(e0, e1); fr = e * amp
             r = rply[i0:i1] * (rho[f, i0:i1] + fr)
             a = ang[f, i0:i1] + fr * curl
             pts = pc[i0:i1] + r[:, None] * (np.cos(a)[:, None] * n[i0:i1] + np.sin(a)[:, None] * b[i0:i1])
-            out.append((pts, R * 0.009 * (1 - 0.6 * e)))          # tapers toward the frayed tips
+            out.append((pts, R * 0.009 * FIBRE_K * (1 - 0.6 * e)))          # tapers toward the frayed tips
     return out
 
-def strand_curves(si_idx, st, s0=0.0, n_start=None, taper_start=True, taper_end=True):
-    """-> (dict(kind -> list of (points (n,3) app units, radii (n,))), length, last normal). s0, n_start: this
-    strand carries on the yarn before it (choreo splits one yarn into colours at a point that moves every
-    frame): its twist, fibres and flyaways stay on the same bits of yarn, its frame turns on from the last"""
+def strand_curves(si_idx, st, mat=None, n_start=None, taper_start=True, taper_end=True):
+    """-> (dict(kind -> list of (points (n,3) app units, radii (n,))), m at the end, last normal).
+    mat(s) -> m, the yarn's own coordinate along this strand (see yarn_coords): the twist, fibres and
+    flyaways are laid out along m, so they stay on the same bits of yarn as the strand moves; n_start turns
+    the frame on from the strand before (one yarn split into colours)"""
     R = st["radius"]; closed = st["closed"]
-    c, s, L = resample(st["pts"], closed, R * 0.09, s0)
+    c, s, L, m = resample(st["pts"], closed, R * 0.09, mat)
     n, b = frames_rmf(c, closed, n_start)
     twist = 2 * math.pi / (R * 4.2)                       # one ply turn per ~4 yarn radii
     if closed: twist = 2 * math.pi * max(1, round(L * twist / (2 * math.pi))) / L
@@ -347,18 +351,18 @@ def strand_curves(si_idx, st, s0=0.0, n_start=None, taper_start=True, taper_end=
     # taper the free ends a touch so cut ends read as yarn, not pipes
     taper = np.ones(len(s)) if closed else np.clip(np.minimum(s if taper_start else np.inf, L - s if taper_end else np.inf) / (R * 0.8), 0.55, 1)
     for k in range(PLIES):
-        th = 2 * math.pi * k / PLIES + (s + s0) * twist
+        th = 2 * math.pi * k / PLIES + m * twist
         pc = c + rp * (np.cos(th)[:, None] * n + np.sin(th)[:, None] * b) * taper[:, None]
         out["ply"].append((pc, rply * 0.72 * taper))           # solid core under the fibres
-        out["fibre"] += ply_fibres(si_idx * 7 + k, pc, n, b, s, th, rply * taper, R, closed, L, s0)
-    # flyaways: thin curly wisps, anchored by absolute arc length so they don't swim between frames
-    spacing = R * 0.12; seed = 1009 * (si_idx + 1); q = np.linspace(0, 1, 14)[:, None]
-    for j in range(int(s0 / spacing), int((s0 + L) / spacing) + 1):
-        u = (j + rng_at(seed, j)) * spacing - s0
-        if u < 0: continue
-        if u >= L: break
-        r1, r2, r3, r4 = (rng_at(seed + m, j) for m in (1, 2, 3, 4))
-        i = min(len(s) - 1, int(np.searchsorted(s, u)))
+        out["fibre"] += ply_fibres(si_idx * 7 + k, pc, n, b, m, th, rply * taper, R)
+    # flyaways: thin curly wisps, anchored along m so they don't swim between frames
+    spacing = R * 0.12 * FUZZ_K; seed = 1009 * (si_idx + 1); q = np.linspace(0, 1, 14)[:, None]
+    for j in range(int(math.floor(m[0] / spacing)), int(m[-1] / spacing) + 1):
+        u = (j + rng_at(seed, j % 1000003)) * spacing
+        if u < m[0]: continue
+        if u >= m[-1]: break
+        r1, r2, r3, r4 = (rng_at(seed + mm_, j % 1000003) for mm_ in (1, 2, 3, 4))
+        i = min(len(s) - 1, int(np.searchsorted(m, u)))
         a = r1 * 2 * math.pi; d = math.cos(a) * n[i] + math.sin(a) * b[i]
         t = c[(i + 1) % len(c)] - c[i - 1]; t /= np.linalg.norm(t) + 1e-12
         w = np.cross(t, d)
@@ -366,8 +370,30 @@ def strand_curves(si_idx, st, s0=0.0, n_start=None, taper_start=True, taper_end=
         k = (2 + 5 * r3) * math.pi                             # curl
         out_ = d * (0.25 + 0.5 * r4) + t * (r3 - 0.5) * 1.2    # leaves the surface at a shallow angle
         pts = c[i] + d * R * 0.9 + (out_ * q + (np.cos(k * q) - 1) * d * 0.18 + np.sin(k * q) * w * 0.25) * ln
-        out["fuzz"].append((pts, (R * 0.011 * (1 - 0.7 * q)).ravel()))
-    return out, L, n[-1]
+        out["fuzz"].append((pts, (R * 0.011 * FIBRE_K * (1 - 0.7 * q)).ravel()))
+    return out, m[-1], n[-1]
+
+FIBRE_K = float(os.environ.get("FIBRE_K", "1.0"))   # fibre and flyaway thickness (x R * 0.009 / 0.011)
+FUZZ_K = float(os.environ.get("FUZZ_K", "1.0"))     # flyaway spacing (x R * 0.12)
+def poly_len(pts):
+    p = np.asarray(pts, float); return float(np.linalg.norm(np.diff(p, axis=0), axis=1).sum()) if len(p) > 1 else 0.0
+def yarn_coords(st, m_start, m_hold):
+    """mat(s) for a strand: from its start the yarn's coordinate counts on from m_start (the yarn is fixed in the
+    fabric); a strand marked with "slide"/"hold" (the working yarn) is held from "hold" on — over the throat, to
+    the hand and the ball, fed from the ball — so there it counts back from its end, m_hold being the yarn's
+    length to the ball (constant over the take); between "slide" and "hold", the loops on the hook, the yarn
+    slides and the two meet"""
+    if "hold" not in st or m_hold is None: return lambda s_: m_start + s_
+    p = np.asarray(st["pts"], float); seg = np.linalg.norm(np.diff(p, axis=0), axis=1); arc = np.concatenate([[0], np.cumsum(seg)]); L = arc[-1]
+    sa, sh = arc[min(st["slide"], len(arc) - 1)], arc[min(st["hold"], len(arc) - 1)]
+    W = max(sh - sa, 1e-6); mh = m_hold
+    gap = (m_start + L) - mh                                  # how much longer the yarn is than the held length
+    if gap > 0.7 * W: mh = m_start + L - 0.7 * W              # (keep m increasing: the held part gives a little)
+    def mat(s_):
+        front, back = m_start + s_, mh - (L - s_)
+        w = np.clip((s_ - sa) / W, 0, 1)
+        return front * (1 - w) + back * w
+    return mat
 
 def build_curves(name, items, mat):
     cv = bpy.data.hair_curves.new(name)
@@ -395,20 +421,35 @@ def mats_for(acc, shade):
         hx = shade_hex(D["accent"] if acc else D["yarn"], shade); nm = ("Acc" if acc else "Yarn") + "%.2f" % shade
         MATS[key] = (yarn_mat(nm, hx), fibre_mat(nm + "Fibre", hx), flyaway_mat(nm + "Fuzz", hx))
     return MATS[key]
+def held_lengths():
+    """per yarn (its first strand's index): the median over the take of its whole length to the far end of its
+    held ("hold") strand: the yarn there is counted back from this, so it stays put (yarn_coords)"""
+    acc = {}
+    for fr in D["frames"]:
+        prev = None
+        for i, st in enumerate(fr["strands"]):
+            if not st.get("visible") or len(st.get("pts", [])) < 3 or st.get("closed"): prev = None; continue
+            cont = prev is not None and np.linalg.norm(np.array(st["pts"][0]) - prev[0]) < 1e-6
+            root, m0 = (prev[1], prev[2]) if cont else (i, 0.0)
+            m1 = m0 + poly_len(st["pts"])
+            if "hold" in st: acc.setdefault(root, []).append(m1)
+            prev = (np.array(st["pts"][-1]), root, m1)
+    return {k: float(np.median(v)) for k, v in acc.items()}
 YOBJ, YOBJ_KEYS = {}, set()
 def set_yarn(fr):
     groups = {}
-    prev = None                                                   # (last point, root index, length so far, last normal)
+    prev = None                                                   # (last point, root index, m so far, last normal)
     for i, st in enumerate(fr["strands"]):
         if not st.get("visible") or len(st.get("pts", [])) < 3: prev = None; continue
         acc = bool(st.get("accent")); shade = round(float(st.get("shade", 1.0)), 2)
         cont = (prev is not None and not st["closed"] and np.linalg.norm(np.array(st["pts"][0]) - prev[0]) < 1e-6)
-        root, s0, n0 = (prev[1], prev[2], prev[3]) if cont else (i, 0.0, None)
+        root, m0, n0 = (prev[1], prev[2], prev[3]) if cont else (i, 0.0, None)
         nx = fr["strands"][i + 1] if i + 1 < len(fr["strands"]) else None
         goes_on = (not st["closed"] and nx is not None and nx.get("visible") and len(nx.get("pts", [])) >= 3
                    and np.linalg.norm(np.array(nx["pts"][0]) - np.array(st["pts"][-1])) < 1e-6)
-        curves, L_, n_last = strand_curves(root, st, s0, n0, taper_start=not cont, taper_end=not goes_on)
-        prev = None if st["closed"] else (np.array(st["pts"][-1]), root, s0 + L_, n_last)
+        mat = yarn_coords(st, m0, HELD_LEN.get(root)) if not st["closed"] else None
+        curves, m_end, n_last = strand_curves(root, st, mat, n0, taper_start=not cont, taper_end=not goes_on)
+        prev = None if st["closed"] else (np.array(st["pts"][-1]), root, m_end, n_last)
         for kind, items in curves.items():
             groups.setdefault((acc, shade, kind), []).extend(items)
     keys = sorted({(a, sh) for a, sh, _ in groups} | {(False, 1.0), (True, 1.0)} | {(a, sh) for a, sh in YOBJ_KEYS})
@@ -433,6 +474,7 @@ if A.lookdev:   # a single lazy S of yarn across the frame, camera square on, fo
     cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler(); cam_fwd = (tgt - cam.location).normalized()
     cd.dof.aperture_fstop = 32; hook.hide_render = True; A.zoom = 2
 nF = len(D["frames"]); FPS_ = int(D.get("fps", 24))
+HELD_LEN = held_lengths()                                       # the working yarn's held length (yarn_coords)
 a, b_, st_ = (A.frames.split(":") + ["", "", ""])[:3]
 f0 = int(a or 0); f1 = int(b_ or -1); f1 = nF if f1 < 0 else min(nF, f1 + 1); step = int(st_ or 1)
 import time, shutil

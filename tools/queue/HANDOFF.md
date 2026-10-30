@@ -120,6 +120,11 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    flyaways (and its frame) to its own start, so they crawled along the working yarn. A strand that starts
    where the previous ended now carries on its length (`s0`), seed and frame; open strands are sampled at
    fixed places along the yarn; the joins don't taper. The focus distance is the hook's averaged over a second.
+   Then (user: "still see it a bit"): the working yarn is held from where it leaves the work to the ball and
+   fed from the ball, so the renderer counts that stretch back from its end (choreo exports `slide`/`hold`
+   on the accent strand; `yarn_coords`) and the loops on the hook take up the difference. Encoding at VP9
+   crf 24 (grid 27) instead of 30/32: the encoder's error changed frame to frame on the fibres. Tried and
+   rejected: thicker fibres/fewer flyaways (`FIBRE_K`, `FUZZ_K`: more flicker), 32 samples (barely helps).
    A blue line on the nails: the free-edge plate stood off the skin (you saw through the gap); now set into it.
 
 ## Checking tools

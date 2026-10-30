@@ -126,22 +126,25 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    crf 24 (grid 27) instead of 30/32: the encoder's error changed frame to frame on the fibres. Tried and
    rejected: thicker fibres/fewer flyaways (`FIBRE_K`, `FUZZ_K`: more flicker), 32 samples (barely helps).
    A blue line on the nails: the free-edge plate stood off the skin (you saw through the gap); now set into it.
-17. **Yarn through yarn** (user: "the two yarns wouldn't mix like that, they're going through"): detector
-   `tools/yarn_contact.py` (centrelines closer than 2R; `--colour`: only where differently coloured yarns
-   meet, the glitch that shows), relaxation `tools/yarn_relax.py`, applied in choreo's `yarn_clear`. What it took:
-   - relaxing alone stalls where centrelines cross: crossing strands now part along their common normal;
-   - the finished fabric is relaxed with an anchor (`RELAX_ANCHOR` 0.1) — relaxed freely it bent the V's out of
-     shape. The designed fabric touches itself everywhere (V pinches 0.2R): left to the anchor, not chased;
-   - routing: from the loops on the hook the yarn goes back over the top of the work then down behind it
-     (it went straight through the new stitch); the sc-height yarn over (`yo_front`) catches the yarn above
-     the top, as the taller stitches already did (the hook went through the stitches behind it); loops coming
-     off the head turn square across the caught yarn's two strands;
-   - the stitches below spread round wherever the working yarn's legs pass them over the take, the finished
-     row round where the working yarn passes its end (`working_passes`), and both clear the yarn round the
-     left hand (the rows' cut ends at the left edge stop short of it).
-   Use `python3 tools/yarn_contact.py <paths> 0:N:6 --colour` as a gate. sc went from 1.95R worst (every frame)
-   to under ~0.8R on samples; see the commit for the measured run.
-
+17. **Yarn through yarn** (user: "the two yarns wouldn't mix like that, they're going through" — the orange
+   working yarn through the blue): detector `tools/yarn_contact.py`; the publish gate is `tools/queue/yarn_gate.py`
+   (working yarn vs everything else ≤ 0.65R on every 6th frame; fabric vs fabric only logged — the designed V
+   pinches touch on purpose; `build/queue/gate_except_<key>` holds an "a:b" range not gated; sc: `384:408`, the
+   pull-through close). `publish.sh` runs it before encoding. sc went from 1.97R in every frame to 0 frames over
+   0.65R outside the close. What it took, in choreo:
+   - the held yarn leaves the work over its top edge once a loop is pulled up (`yarn_leaves`), so the yarn over
+     is taken above the work, not by reaching through it; from the loops it goes over the top, not through the
+     new stitch;
+   - the live loop sits on the shaft where it clears the fabric (`live_clear_d`), not inside it;
+   - pulling up backs the head straight out through the hole before lifting (`PU_OUT`), not up through the V;
+   - loops off the head turn their open side to the yarn coming into them (`RING_TURN`);
+   - relaxation (`tools/yarn_relax.py`): crossing strands part along their common normal; the fabric gives way only
+     to the working yarn's passes, the hand's yarn and the left hand's skin (not to itself: `FABRIC_SELF=0`,
+     anchored `RELAX_ANCHOR`), so the V tops keep their designed shape; the working yarn also keeps off the skin.
+   Open: the pull-through close (sc 390–402, 1.3–1.9R): the pulled-up loop's legs thread through the live loop's
+   ring as they leave the head (the finished stitch is threaded the other way round; `LEGS=real` is a prototype
+   of the stitch threaded as made). It reads as loops chained round the head, not as a colour glitch. choreo now
+   takes ~45 min per stitch (the per-frame relax). Previews for the user go to branch `previews`, via the relay.
 ## Checking tools
 - `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts
   drawn over the rendered cue frames (render them first at `round(t * 24)`).

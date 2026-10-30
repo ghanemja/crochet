@@ -1009,9 +1009,13 @@ def yarn_clear(c, e, h, hk):
     if h - e > 2:
         lo, hi = c[e:h].min(0) - 3 * R, c[e:h].max(0) + 3 * R
         Fn = F[np.all((F > lo) & (F < hi), axis=1)] if len(F) else F
+        # the hook as obstacles too, so its loops and the yarn caught in it are kept off it and off each other
+        # in one go (pushing them onto the hook afterwards put the two sides of the caught yarn back together)
+        ds = np.arange(0.0, 40.0, 0.3); prof = [hook_profile(d_) for d_ in ds]
+        hax = np.array([hk.tip + hk.u * d_ + hk.t * cx for d_, (cx, _) in zip(ds, prof)])
+        hneed = np.array([r_ + 0.9 * R for _, r_ in prof])
         mask = np.zeros(h, bool); mask[e + 1:h - 1] = True
-        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=Fn, R=R, iters=30)[0]
-        c = push_out(c, hk)                                       # and still off the hook
+        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed])), R=R, iters=40)[0]
     return c
 
 def frame_strands(ta):

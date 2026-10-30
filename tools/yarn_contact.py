@@ -3,13 +3,14 @@
 #   python3 tools/yarn_contact.py <paths.json> [a:b:step] [--all]
 # Prints the worst frames (depth below 2R in yarn radii, and which strands), and a summary line. Strands that
 # continue one another (one yarn split into colours) are one yarn: points on it closer than 3R along it are
-# neighbours, not a contact. --all: static fabric strands against each other too.
+# neighbours, not a contact. --all: static fabric strands against each other too. --colour: only where yarns of
+# different colours meet (the working yarn's accent through the fabric's), the glitch that shows.
 import sys, json
 import numpy as np
 
 D = json.load(open(sys.argv[1]))
 rng = sys.argv[2] if len(sys.argv) > 2 and ":" in sys.argv[2] else "0:100000:1"
-a, b, st_ = (int(x) for x in rng.split(":")); ALL = "--all" in sys.argv
+a, b, st_ = (int(x) for x in rng.split(":")); ALL = "--all" in sys.argv; COLOUR = "--colour" in sys.argv
 frames = D["frames"][a:b:st_]
 
 def resample(p, step):
@@ -27,7 +28,7 @@ def yarns(fr):
         cont = prev is not None and not st.get("closed") and np.linalg.norm(p[0] - prev[0]) < 1e-6
         yid, s0 = (prev[1], prev[2]) if cont else (i, 0.0)
         moving = bool(st.get("accent")) or "hold" in st or (prev is not None and cont and prev[3])
-        out.append([q, s + s0, yid, i, moving, R])
+        out.append([q, s + s0, yid, i, moving, R, (bool(st.get("accent")), round(float(st.get("shade", 1.0)), 2))])
         prev = (p[-1], yid, s0 + s[-1], moving)
     ids_moving = {y[2] for y in out if y[4]}                     # the whole yarn the working yarn belongs to
     for y in out: y[4] = y[2] in ids_moving
@@ -42,6 +43,7 @@ for k, fr in enumerate(frames):
         for ib, yb in enumerate(Y):
             if ib < ia and (yb[4] or ALL): continue              # each pair once
             if not ya[4] and not yb[4] and not ALL: continue
+            if COLOUR and ya[6] == yb[6]: continue
             R = ya[5]; pa, pb = ya[0], yb[0]
             for c0 in range(0, len(pa), 400):
                 A = pa[c0:c0 + 400]

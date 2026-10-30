@@ -20,7 +20,8 @@ def _pairs(P, ids, arc, R, reach, A=None):
 def relax(polys, movable=None, fixed=None, R=1.0, iters=30, smooth=0.25):
     """polys: list of (N_k, 3) centrelines (separate yarns, or the pieces of one marked with the same id:
     give (points, id) tuples); movable: per poly a bool mask (default all); fixed: (M, 3) points the movable
-    yarn keeps 2R from (they don't move). -> the relaxed polylines"""
+    yarn keeps 2R from (they don't move), or (points, clearances) to give each its own (e.g. the hook's axis,
+    kept its radius + R off). -> the relaxed polylines"""
     pts, ids, arc, mov = [], [], [], []
     for k, item in enumerate(polys):
         p, yid = item if isinstance(item, tuple) else (item, k)
@@ -38,12 +39,15 @@ def relax(polys, movable=None, fixed=None, R=1.0, iters=30, smooth=0.25):
         last[yid] = arc[k][-1]
     P = np.vstack(pts); I = np.concatenate(ids); S = np.concatenate(arc); M = np.concatenate(mov)
     ends = np.zeros(len(P), bool); ends[off[:-1]] = True; ends[off[1:] - 1] = True
+    Fneed = None
+    if isinstance(fixed, tuple): fixed, Fneed = fixed
     F = None if fixed is None or len(fixed) == 0 else np.asarray(fixed, float)
+    if F is not None: Fneed = np.full(len(F), 2.0 * R) if Fneed is None else np.asarray(Fneed, float)
     need = 2.0 * R; touched = np.zeros(len(P), bool)
     for it in range(iters):
         if it % 6 == 0:
             pr = _pairs(P, I, S, R, need * 1.6)
-            fp = _pairs(F, None, None, R, need * 1.6, A=P[M]) if F is not None else None
+            fp = _pairs(F, None, None, R, max(need, Fneed.max()) * 1.4, A=P[M]) if F is not None else None
             midx = np.nonzero(M)[0]
         moved = np.zeros_like(P); cnt = np.zeros(len(P))
         if len(pr):
@@ -56,7 +60,7 @@ def relax(polys, movable=None, fixed=None, R=1.0, iters=30, smooth=0.25):
             np.add.at(moved, b, push * (wb / tot)[:, None]); np.add.at(cnt, b, wb)
         if fp is not None and len(fp):
             a = midx[fp[:, 0]]; d = P[a] - F[fp[:, 1]]; L = np.linalg.norm(d, axis=1) + 1e-9
-            short = np.maximum(0, need - L); k = short > 0
+            short = np.maximum(0, Fneed[fp[:, 1]] - L); k = short > 0
             np.add.at(moved, a[k], (d[k] / L[k][:, None]) * short[k][:, None]); np.add.at(cnt, a[k], 1)
         upd = cnt > 0
         P[upd] += moved[upd] / np.maximum(cnt[upd], 1)[:, None] * 0.8

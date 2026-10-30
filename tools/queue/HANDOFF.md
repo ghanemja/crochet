@@ -163,6 +163,18 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    middle are capsules (`off_fingers`) for yarn found deep in a fingertip. sc: gate 0 frames over 0.65R;
    hand_contact ≤ 3 mm in 17/81 frames, all in the crease between the index and middle knuckles (palm side, the
    gap narrower than the yarn when the index swings in; hidden behind the fingers). choreo ~65 min for sc.
+19. **The pull-through close** (the orange knot / blue fabric through orange loops at every stitch's last
+   pull-through: sc 390–402, sl 306–312, hdc ~492, dec ~648): the close morphs the loops on the hook into the new
+   stitch (`morph`), and its curve took the *new* stitch's end of fabric (`own_e`) from the first frame, so the
+   loops still coming off the hook and the yarn through them were relaxed as finished fabric: frozen, not kept
+   off each other or the fabric. `CLOSE_OWN=1` (default) keeps the old end of fabric until the close is done.
+   sc (single frames): 390/396/402 from 1.78/1.90/1.02R to 0.39/0.39/0.06R, the rest unchanged. Slip stitch:
+   `SL_THRU=1` also takes the yarn on from the new loop down through the stitch (as the yarn over came) instead of
+   over its top, which the close otherwise dragged through the stitch below: sl 303–315 from up to 1.93R to
+   ≤0.41R. Left over in sl, ~0.7–0.8R: 270, 294, 318–324, and 240 (1.16R, the caught yarn drawn through the
+   stitch, as before). Not fixed by this: inc's second sc shares the first's hole (legs on top of each other),
+   hdc/dec's mid-stitch stretches (hdc 72–102, 348–366; dec 348–426). Tools: scratchpad-style single-frame gate =
+   exec choreo.py up to the frame loop, then `frame_strands(at_video(f/24)[0])` (~4 min setup, seconds a frame).
 ## Checking tools
 - `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts
   drawn over the rendered cue frames (render them first at `round(t * 24)`).

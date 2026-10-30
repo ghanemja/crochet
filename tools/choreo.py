@@ -566,8 +566,8 @@ YARN_HAND = YARN_HAND + [YARN_HAND[-1] + v(-6.0, 8.0, -20.0)]
 # middle hold the work just below the hook and move up every few stitches; the index feeds the yarn).
 WORK_POSES = ("Ly", "Lf", "Le")
 HAND_ACTIVE = os.environ.get("HAND_ACTIVE", "1") == "1" and bool(HAND_PTS) and all(k in HAND_PTS for k in WORK_POSES)
-LY_W, LF_W, LE_W = 0.75, 0.7, 0.9                               # how far into each pose (1 = the baked pose)
-WRIST_DEG = float(os.environ.get("WRIST_DEG", "-6"))             # the hand's turn toward the hook (sign checked below)
+LY_W, LF_W, LE_W = 0.85, 0.7, 0.6                               # how far into each pose (1 = the baked pose)
+WRIST_DEG = float(os.environ.get("WRIST_DEG", "-11"))             # the hand's turn toward the hook (sign checked below)
 CREEP = float(os.environ.get("CREEP", "0.5")) * P               # how far the pinch moves along the row per stitch made
 HAND_NOW = {"mix": {}, "Rw": np.eye(3), "t": np.zeros(3)}
 _PIVOT = L_POS + L_ROT @ ((_J["thumb_pad"] + _J["middle_pad"]) / 2) if HAND_PTS else L_PINCH

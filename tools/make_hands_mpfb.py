@@ -39,10 +39,10 @@ POSES["Lc"] = dict(POSES["L"], finger1=((25, 0, 10), 10, 30))
 # keys, so they keep L's mesh exactly): Ly the index pointed (turned and tipped) toward the hook's head, presenting the
 # yarn for a yarn over; Lf the index forward and down, giving yarn as a loop is pulled up or through; Le the
 # pinch eased (thumb and middle a little open) between stitches, before it moves along to the new one
-LY_SWING = float(os.environ.get("LY_SWING", "-14"))
-POSES["Ly"] = dict(POSES["L"], finger2=((0, 0, LY_SWING), 10, 6))
-POSES["Lf"] = dict(POSES["L"], finger2=(10, 16, 10))
-POSES["Le"] = dict(POSES["L"], finger1=((10, 0, 10), 8, 22), finger3=(22, 52, 28))
+LY_SWING = float(os.environ.get("LY_SWING", "-24"))
+POSES["Ly"] = dict(POSES["L"], finger2=((10, 0, LY_SWING), 18, 10))
+POSES["Lf"] = dict(POSES["L"], finger2=((26, 0, -8), 28, 16))
+POSES["Le"] = dict(POSES["L"], finger1=((6, 0, 10), 6, 18), finger3=(18, 46, 24))
 for name in POSES:          # tests: HAND_POSE_L='{"finger1": [10, 20, 20]}'
     if os.environ.get("HAND_POSE_" + name): POSES[name].update(json.loads(os.environ["HAND_POSE_" + name]))
 

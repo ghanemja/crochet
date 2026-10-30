@@ -71,6 +71,7 @@ if os.environ.get("DN_PREFILTER"): sc.cycles.denoising_prefilter = os.environ["D
 if os.environ.get("DN_QUALITY"): sc.cycles.denoising_quality = os.environ["DN_QUALITY"]
 if os.environ.get("CLAMP_IND"): sc.cycles.sample_clamp_indirect = float(os.environ["CLAMP_IND"])
 if os.environ.get("ADAPT_MIN"): sc.cycles.adaptive_min_samples = int(os.environ["ADAPT_MIN"])
+if os.environ.get("DENOISE") == "0": sc.cycles.use_denoising = False
 sc.render.use_persistent_data = True
 sc.render.resolution_x, sc.render.resolution_y, sc.render.resolution_percentage = W, H, 100
 sc.render.film_transparent = True

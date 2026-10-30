@@ -548,11 +548,13 @@ def settle(pts, clear=1.06 * R, its=8):
 def settle_on(c, sk, sn, clear=1.06 * R, its=8):
     c = np.array(c, float)
     lo, hi = c.min(0) - 3, c.max(0) + 3; m = np.all((sk > lo) & (sk < hi), axis=1); sk, sn = sk[m], sn[m]
-    for _ in range(its):
+    def push(c):
         for k in range(0, len(c), 128):
             q = c[k:k + 128]; j = ((q[:, None, :] - sk[None]) ** 2).sum(-1).argmin(1)
             d = ((q - sk[j]) * sn[j]).sum(-1); c[k:k + 128] = q + sn[j] * np.maximum(0.0, clear - d)[:, None]
-        c[1:-1] = 0.5 * c[1:-1] + 0.25 * (c[:-2] + c[2:])
+    for _ in range(its):
+        push(c); c[1:-1] = 0.5 * c[1:-1] + 0.25 * (c[:-2] + c[2:])
+    for _ in range(3): push(c)                                   # (ending on the smoothing left it in the creases between fingers)
     return c
 _route = hand_route_local()
 YARN_HAND = [L_POS + L_ROT @ p for p in _route]

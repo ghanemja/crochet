@@ -150,6 +150,19 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    ring as they leave the head (the finished stitch is threaded the other way round; `LEGS=real` is a prototype
    of the stitch threaded as made). It reads as loops chained round the head, not as a colour glitch. choreo now
    takes ~45 min per stitch (the per-frame relax). Previews for the user go to branch `previews`, via the relay.
+18. **The left hand at work** (user: "you are never moving the left hand ... it just looks like the yarn is
+   magically sliding"; then "it should actually move MORE"): `make_hands_mpfb.py` bakes working poses on L's mesh:
+   Ly (index lifted and swung toward the head, `LY_SWING`), Lf (index forward and down, giving yarn), Le (pinch
+   eased). choreo's `hand_state(ta)` mixes them per op (Ly at each yarn over, dipping as the hook catches; Lf
+   through the pull-ups and pull-throughs; Le after each stitch), turns the hand toward the hook about the pads'
+   line (`WRIST_DEG` -11) and slides the pinch along the row per stitch made (`CREEP`); the frame's left hand
+   carries `"mix"`, which the renderer and hand_contact set as shape keys (`tools/hand_mix.py`). `HAND_ACTIVE=0`:
+   the still hand. **After pulling, rebuild `build/hands`** (`make_hands_mpfb.py`, ~20 s) before regenerating
+   paths, or the renderer shows the still hand. The yarn round the fingers is the poses' routes blended, then
+   settled on the blended skin (`settle_on`); the runs up to the index and on to the ball are in steps; index and
+   middle are capsules (`off_fingers`) for yarn found deep in a fingertip. sc: gate 0 frames over 0.65R;
+   hand_contact ≤ 3 mm in 17/81 frames, all in the crease between the index and middle knuckles (palm side, the
+   gap narrower than the yarn when the index swings in; hidden behind the fingers). choreo ~65 min for sc.
 ## Checking tools
 - `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts
   drawn over the rendered cue frames (render them first at `round(t * 24)`).

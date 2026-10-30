@@ -544,13 +544,16 @@ def hand_route_local():
 def settle(pts, clear=1.06 * R, its=8):
     """the route as a dense line, pushed out of the skin wherever the curve between way-points dips
     into it, and lightly smoothed (the ends stay put)"""
-    c = spline(pts, 0.3 * R)
+    return list(settle_on(spline(pts, 0.3 * R), SKIN_L, SKIN_LN, clear, its))
+def settle_on(c, sk, sn, clear=1.06 * R, its=8):
+    c = np.array(c, float)
+    lo, hi = c.min(0) - 3, c.max(0) + 3; m = np.all((sk > lo) & (sk < hi), axis=1); sk, sn = sk[m], sn[m]
     for _ in range(its):
         for k in range(0, len(c), 128):
-            q = c[k:k + 128]; j = ((q[:, None, :] - SKIN_L[None]) ** 2).sum(-1).argmin(1)
-            d = ((q - SKIN_L[j]) * SKIN_LN[j]).sum(-1); c[k:k + 128] = q + SKIN_LN[j] * np.maximum(0.0, clear - d)[:, None]
+            q = c[k:k + 128]; j = ((q[:, None, :] - sk[None]) ** 2).sum(-1).argmin(1)
+            d = ((q - sk[j]) * sn[j]).sum(-1); c[k:k + 128] = q + sn[j] * np.maximum(0.0, clear - d)[:, None]
         c[1:-1] = 0.5 * c[1:-1] + 0.25 * (c[:-2] + c[2:])
-    return list(c)
+    return c
 _route = hand_route_local()
 YARN_HAND = [L_POS + L_ROT @ p for p in _route]
 YARN_HAND = YARN_HAND + [YARN_HAND[-1] + v(-6.0, 8.0, -20.0)]
@@ -571,20 +574,51 @@ WRIST_DEG = float(os.environ.get("WRIST_DEG", "-11"))             # the hand's t
 CREEP = float(os.environ.get("CREEP", "0.5")) * P               # how far the pinch moves along the row per stitch made
 HAND_NOW = {"mix": {}, "Rw": np.eye(3), "t": np.zeros(3)}
 _PIVOT = L_POS + L_ROT @ ((_J["thumb_pad"] + _J["middle_pad"]) / 2) if HAND_PTS else L_PINCH
-_D_SKIN, _D_ROUTE = {}, {}
+_D_SKIN, _D_ROUTE, _D_J, _N_SKIN = {}, {}, {}, {}
 if HAND_ACTIVE:
     _hl0 = np.array(HAND_PTS["L"]["_verts"]) * HAND_SCALE / UNIT
     _keep = (SKIN_L, SKIN_LN, dict(_J))
+    _NR = max(len(_route), int(np.linalg.norm(np.diff(np.asarray(_route), axis=0), axis=1).sum() / (0.4 * R)) + 1)   # (fine enough to keep off the fingers)
     for _k in WORK_POSES:
         _D_SKIN[_k] = np.array(HAND_PTS[_k]["_verts"]) * HAND_SCALE / UNIT - _hl0      # the pose's change from L
         _jk = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS[_k].items() if not k.startswith("_")}
         _j0 = {k: np.array(x) * HAND_SCALE / UNIT for k, x in HAND_PTS["L"].items() if not k.startswith("_")}
-        SKIN_L = _keep[0] + _D_SKIN[_k]; SKIN_LN = np.array(HAND_PTS[_k]["_normals"])
+        _D_J[_k] = {k: _jk[k] - _j0[k] for k in _jk if k in _j0}
+        SKIN_L = _keep[0] + _D_SKIN[_k]; SKIN_LN = np.array(HAND_PTS[_k]["_normals"]); _N_SKIN[_k] = SKIN_LN - _keep[1]
         _J = {k: _keep[2][k] + (_jk[k] - _j0[k]) if k in _jk else x for k, x in _keep[2].items()}
         _rk = hand_route_local()
-        _D_ROUTE[_k] = resample(np.asarray(_rk), n=len(_route)) - resample(np.asarray(_route), n=len(_route))
+        _D_ROUTE[_k] = resample(np.asarray(_rk), n=_NR) - resample(np.asarray(_route), n=_NR)
     SKIN_L, SKIN_LN, _J = _keep
-    _route = resample(np.asarray(_route), n=len(_route))
+    _route = resample(np.asarray(_route), n=_NR)
+
+# the index and middle fingers as capsules (bone to bone, the skin's median distance round each), so yarn found
+# inside a finger is pushed out sideways from its bone: the nearest skin point doesn't say which way is out
+# from deep inside a fingertip
+_SEGS = [(f + "_" + a, f + "_" + b) for f in ("index", "middle") for a, b in (("knuckle", "pip"), ("pip", "dip"), ("dip", "tip"))]
+def _seg_d(q, a, b):
+    ab = b - a; t = np.clip(((q - a) @ ab) / (ab @ ab), 0.0, 1.0); f = a + t[:, None] * ab; return q - f, t
+_SEG_R = {}
+if HAND_PTS:
+    _all = [(f + "_" + a, f + "_" + b) for f in ("thumb", "index", "middle", "ring", "pinky") for a, b in (("knuckle", "pip"), ("pip", "dip"), ("dip", "tip"))]
+    _dd = np.stack([np.linalg.norm(_seg_d(SKIN_L, _J[a], _J[b])[0], axis=1) for a, b in _all], 1); _own = _dd.argmin(1)
+    for _i, (a, b) in enumerate(_all):
+        if (a, b) in _SEGS:
+            _m = (_own == _i) & (_dd[:, _i] < 4.0); _SEG_R[(a, b)] = float(np.median(_dd[_m, _i])) if _m.sum() > 20 else 0.0
+def joints_now(hs=None):
+    hs = hs or HAND_NOW; Rh, ph = hand_xform(hs); out = {}
+    for k in {k for ab in _SEGS for k in ab}:
+        loc = _J[k] + sum((w * _D_J[p][k] for p, w in hs["mix"].items() if k in _D_J.get(p, {})), np.zeros(3))
+        out[k] = ph + Rh @ loc
+    return out
+def off_fingers(q):
+    if not _SEG_R: return q
+    jn = joints_now()
+    for (a, b), r in _SEG_R.items():
+        if r <= 0: continue
+        d, _ = _seg_d(q, jn[a], jn[b]); n = np.linalg.norm(d, axis=1); need = r + 1.06 * R
+        m = n < need
+        if m.any(): q = q.copy(); q[m] = q[m] + d[m] / np.maximum(n[m], 1e-6)[:, None] * (need - n[m])[:, None]
+    return q
 
 def hand_samples(n=24):
     """the left hand's states over the take (with its offset), for what must clear it wherever it goes"""
@@ -628,8 +662,21 @@ def route_now(hs=None):
     """the working yarn's way round the left fingers (row space), moving with them"""
     if not HAND_ACTIVE: return [q + L_OFF[0] for q in YARN_HAND]
     hs = hs or HAND_NOW; Rh, ph = hand_xform(hs); loc = _route
-    for k, w in hs["mix"].items(): loc = loc + w * _D_ROUTE[k]
-    pts = list(ph + loc @ Rh.T); return pts + [pts[-1] + Rh @ (L_ROT.T @ v(-6.0, 8.0, -20.0))]
+    end = loc[-1] + L_ROT.T @ v(-6.0, 8.0, -20.0)
+    loc = np.vstack([loc] + [lerp(loc[-1], end, f)[None] for f in np.linspace(0, 1, 25)[1:]])   # (on to the ball, in steps)
+    key = tuple(sorted(hs["mix"].items()))
+    if key in _ROUTE_C: loc = _ROUTE_C[key]
+    elif hs["mix"]:
+        # blended between the poses' routes, then settled on the blended skin as the baked routes are (the
+        # blend alone can cut a finger where the poses' routes differ)
+        sk, sn = SKIN_L, SKIN_LN
+        for k, w in hs["mix"].items():
+            loc = loc + w * np.vstack([_D_ROUTE[k], np.repeat(_D_ROUTE[k][-1:], 24, 0)]); sk = sk + w * _D_SKIN[k]; sn = sn + w * _N_SKIN[k]
+        sn = sn / np.linalg.norm(sn, axis=1, keepdims=True)
+        loc = _ROUTE_C[key] = settle_on(loc, sk, sn)
+        if len(_ROUTE_C) > 64: _ROUTE_C.pop(next(iter(_ROUTE_C)))
+    return list(ph + loc @ Rh.T)
+_ROUTE_C = {}
 
 DOWN = v(0, 0, -1)
 U_REST, U_IN, U_UP = v(1.0, -0.55, 0.8), v(0.8, -1.35, 0.45), v(0.95, -0.9, 0.85)   # U_IN flatter: the tip comes up behind the work
@@ -756,8 +803,12 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings
         pts += tin
         if ang: pts += wrap(hk, THROAT_D, *ang)
         pts += tout + [over_top(A)]
+    rt = route_now()
+    if HAND_ACTIVE:                                              # the way up to the index in steps: it is kept off the fingers as they move
+        n_ = int(np.linalg.norm(rt[0] - pts[-1]) / (0.4 * R))
+        pts += [lerp(pts[-1], rt[0], f) for f in np.linspace(0, 1, n_ + 2)[1:-1]]
     marks["hand"] = len(pts)
-    pts += route_now()
+    pts += rt
     return Path(pts, marks, split, len(S.prefix) - 1)
 
 # ---------------------------------------------------------------- ops
@@ -1112,7 +1163,7 @@ def left_skin(off=None):
     if off is None: return skin_now()[0]
     return L_POS + off + SKIN_L @ L_ROT.T
 
-def off_left_hand(c):
+def off_left_hand(c, iters=3, fingers=True):
     """the working yarn kept on the left hand's skin, never in it (its way up from the hook to the
     index changes every frame)"""
     if not HAND_PTS: return c
@@ -1121,7 +1172,9 @@ def off_left_hand(c):
     if not m.any(): return c
     c = c.copy(); q = c[m]
     near = np.all((sk > q.min(0) - 3) & (sk < q.max(0) + 3), axis=1); sk, sn = sk[near], sn[near]
-    for _ in range(3):
+    if HAND_ACTIVE and fingers:                                  # (not on the route round them: it lies between the fingers)
+        for _ in range(2): q = off_fingers(q)
+    for _ in range(iters):
         d, j = skin_clearance(q, sk, sn); q = q + sn[j] * np.maximum(0.0, 1.06 * R - d)[:, None]
     c[m] = q; return c
 
@@ -1225,6 +1278,8 @@ def frame_strands(ta):
     if h > sp: c[sp:h] = off_left_hand(c[sp:h])
     off = (len(ts) - 1) if RING else 0
     c = yarn_clear(c, cv.own_e + off if not RING else 0, h, hk)
+    if HAND_ACTIVE and h > sp:                                   # (the relax can pull a little of it back into the moving fingers)
+        c[sp:h] = off_left_hand(c[sp:h])
     segs = [(c[:sp + 1], False), (c[sp:], True)]
     for s, acc in segs:
         if len(s) < 2: continue

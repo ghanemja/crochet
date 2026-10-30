@@ -440,6 +440,21 @@ def warp_hook(hk):
     c, s = math.cos(a), math.sin(a)
     rot = lambda d: v(c * d[0] - s * d[2], d[1], s * d[0] + c * d[2])
     return Hook(tip, rot(hk.u), rot(hk.t))
+MR_LEG = [float(x) for x in os.environ.get("MR_LEG", "0.42,0.32").split(",")]    # the post's legs: half-spread at the top, at the ring (x P)
+MR_TOPZ = float(os.environ.get("MR_TOPZ", "0.0"))                                  # how much the top link bulges up off the rim
+def ring_piece(x, holes, zt=ZT):
+    """a finished stitch on the ring, drawn compact: the top link lies flat along the rim and the post's legs keep
+    to the sides of its wedge, so they meet the neighbours' and the round closes into a firm disc (the row's sc
+    narrows to a point under its V, which round the ring left a gap between stitches: a rosette of loose loops)"""
+    hx = holes[0]; zh = ZR - 0.3; wt, wb = MR_LEG; b = MR_TOPZ
+    return [v(x + 0.5 * P, -0.1, zt + 0.05 * b),
+            v(x + 0.24 * P, -TOP_W, zt + 0.3 * b), v(x - 0.2 * P, -0.85 * TOP_W, zt + 0.32 * b),
+            v(x - 0.5 * P, 0.05, zt + 0.22 * b),
+            v(x - 0.2 * P, TOP_W, zt + 0.2 * b), v(x + 0.24 * P, 0.8 * TOP_W, zt - 0.25),
+            v(x + wt * P, -0.95, zt - 0.9), v(lerp(x, hx, 0.8) + wb * P, -1.0, zh + 1.2),        # down the front at the wedge's side
+            v(hx + 0.12 * P, 0.15, zh - 1.3), v(hx, 1.35, zh - 1.0), v(hx - 0.12 * P, 0.15, zh - 1.3),   # round the ring strand
+            v(lerp(x, hx, 0.8) - wb * P, -1.0, zh + 1.2), v(x - wt * P, -0.95, zt - 0.9),
+            v(x - 0.5 * P, -0.25, zt + 0.15)]
 
 # ---------------------------------------------------------------- the chain: older links hang down
 DROOP_X, DROOP_R = 0.5 * P, 3.0                                # where the chain bends down, and how tightly
@@ -867,8 +882,8 @@ def make_ops():
             else:
                 x = XS[st.stitch]; holes = HOLES[st.stitch]
                 if CHAIN: piece = chain_link(x, 0.0)
-                elif RING and st.stitch == 0:     # pull up + ch 1: the turning chain standing on the ring
-                    piece = stitch_static(x, ZT, holes, 0)
+                elif RING:                        # (the first: pull up + ch 1, the turning chain standing on the ring)
+                    piece = ring_piece(x, holes)
                 else: piece = stitch_static(x, ZT, holes, NB)
                 e.prefix = st.prefix + piece[1:]; e.E = piece[-1]
                 e.loops = [Loop("live")]; e.post = None; e.nthr = 0

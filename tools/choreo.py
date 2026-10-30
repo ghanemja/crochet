@@ -1304,7 +1304,9 @@ def build_shots():
     shot(0.6, end, end, FRONT, 1.0)
 build_shots()
 
-def at_video(tv):
+def _at_shots(tv):
+    """(action time, camera dir, zoom) at video time tv as the shots lay them out: the camera eases from shot
+    to shot over each whole shot (the held camera below keeps the action and replaces the camera)"""
     t0 = 0.0
     for i, (dur, a0, a1, c1, (z0, z1), cue, c0) in enumerate(SHOTS):
         if tv <= t0 + dur or i == len(SHOTS) - 1:
@@ -1320,9 +1322,75 @@ def hook_world(ta):
     hk = warp_hook(op_pose(op, p)); WARP["x0"] = None; return hk
 def action_focus(ta):
     hk = hook_world(ta); return lerp(look, hk.at(2.0), 0.5)
-def guided_target(tv):
+def _target_free(tv):
     ts = np.linspace(tv - 0.5, tv + 0.5, 9)
-    return np.mean([action_focus(at_video(min(max(0.0, x), total))[0]) for x in ts], axis=0)
+    return np.mean([action_focus(_at_shots(min(max(0.0, x), total))[0]) for x in ts], axis=0)
+
+# ---------------------------------------------------------------- the held camera
+# The camera never moves during an action: every frame it moved (a slow dolly, the target following the hook)
+# rescaled the yarn's sub-pixel fibres and they shimmered (flicker study: 63% less with the camera still). Shots
+# next to each other seen from the same side are one framing (their zooms averaged); between framings the camera
+# (its distance, target, and the work's turn) eases over CAM_T s, placed in the stillest stretch of the hook near
+# the change and never over a callout. CAM_HOLD=0: the camera as the shots lay it out.
+CAM_HOLD = os.environ.get("CAM_HOLD", "1") == "1"
+CAM_T = float(os.environ.get("CAM_T", "0.4"))              # s, a change of distance / target (a turn: up to +0.2 s)
+CAM_MERGE = float(os.environ.get("CAM_MERGE", "0.4"))      # zooms within this ratio of each other, same side: one framing
+CAM_MARGIN = float(os.environ.get("CAM_MARGIN", "0.12"))    # the hook's head stays this far (frame fraction) in from the edges
+def _ang(a, b): return math.degrees(math.acos(max(-1.0, min(1.0, float(nrm(a) @ nrm(b))))))
+def build_track():
+    fr, t0 = [], 0.0                                              # framings: [start, end, dir, zoom]
+    for dur, a0, a1, c1, (z0, z1), cue, c0 in SHOTS:
+        if fr and _ang(fr[-1][2], c1) < 1.0 and max(fr[-1][3], z1) / min(fr[-1][3], z1) <= 1 + CAM_MERGE:
+            w0 = fr[-1][1] - fr[-1][0]; fr[-1][3] = (fr[-1][3] * w0 + z1 * dur) / (w0 + dur); fr[-1][1] = t0 + dur
+        else: fr.append([t0, t0 + dur, nrm(c1), z1])
+        t0 += dur
+    dt = 1.0 / A.fps; ts = np.arange(0.0, total + dt, dt)
+    tips = np.array([hook_world(_at_shots(t)[0]).tip for t in ts]); speed = np.r_[0.0, np.linalg.norm(np.diff(tips, axis=0), axis=1)]
+    tgts = []
+    for f_ in fr:                                                 # aim between the extremes of the action, then back
+        smp = np.arange(f_[0], f_[1], 0.1)                        # off until the hook's head keeps CAM_MARGIN of the frame
+        foc = np.array([action_focus(_at_shots(t)[0]) for t in smp]); tg = (foc.min(0) + foc.max(0)) / 2
+        hks = [hook_world(_at_shots(t)[0]) for t in smp]; pts = [h_.tip for h_ in hks] + [h_.at(2.5) for h_ in hks]
+        for _ in range(12):
+            eye = tg + f_[2] * DIST * f_[3]; fw = nrm(tg - eye); Rt = turn_of(f_[2])
+            f0 = -nrm(FRONT); r0 = nrm(np.cross(f0, v(0, 0, 1))); rr, uu = Rt @ r0, Rt @ np.cross(r0, f0)
+            th = math.tan(math.radians(FOV) / 2)
+            m = min(min(0.5 - abs((q - eye) @ rr / ((q - eye) @ fw) / th / 1.6 / 2), 0.5 - abs((q - eye) @ uu / ((q - eye) @ fw) / th / 2)) for q in pts)
+            if m >= CAM_MARGIN: break
+            f_[3] *= 1.06
+        tgts.append(tg)
+    cue_ts, t0 = [], 0.0
+    for dur, *_, cue, _c0 in SHOTS:
+        t0 += dur
+        if cue: cue_ts.append(t0 - 0.5 / A.fps)
+    moves = []                                                    # (start, length, framing before)
+    for k in range(len(fr) - 1):
+        tb = fr[k][1]; T = CAM_T + 0.2 * min(1.0, _ang(fr[k][2], fr[k + 1][2]) / 90.0)
+        lo, hi = max(fr[k][0] + 0.1, tb - T - 0.7), min(fr[k + 1][1] - T - 0.1, tb + 0.7)
+        best = None
+        for s0 in np.arange(lo, hi + 1e-9, dt):
+            if any(s0 - 2 * dt <= c <= s0 + T + 2 * dt for c in cue_ts): continue
+            if moves and s0 < moves[-1][0] + moves[-1][1] + 0.1: continue
+            i0, i1 = int(round(s0 / dt)), int(round((s0 + T) / dt))
+            cost = speed[i0:i1 + 1].sum() + 0.02 * abs(s0 + T / 2 - tb)    # still hook first, then near the change
+            if best is None or cost < best[0]: best = (cost, s0)
+        moves.append((best[1] if best else max(tb - T / 2, moves[-1][0] + moves[-1][1] if moves else 0.0), T, k))
+    return fr, tgts, moves
+if CAM_HOLD: TRACK = build_track()
+def _cam_at(tv):
+    fr, tgts, moves = TRACK
+    for s0, T, k in moves:
+        if s0 <= tv <= s0 + T:
+            e = ease((tv - s0) / T)
+            return slerp_dir(fr[k][2], fr[k + 1][2], e), lerp(fr[k][3], fr[k + 1][3], e), lerp(tgts[k], tgts[k + 1], e)
+    k = sum(1 for s0, T, _ in moves if tv > s0 + T)               # framings fully moved into
+    return fr[k][2], fr[k][3], tgts[k]
+def at_video(tv):
+    ta, cdir, zoom = _at_shots(tv)
+    if not CAM_HOLD: return ta, cdir, zoom
+    cdir, zoom, _ = _cam_at(tv); return ta, cdir, zoom
+def guided_target(tv):
+    return _cam_at(tv)[2] if CAM_HOLD else _target_free(tv)
 
 RIGHT_RIG = hand_rig.skeleton(hand_rig.RIGHT_GRIP, "R")
 D_GRIP = 22.0 * R                     # the fingertips hold the shaft this far up from the tip

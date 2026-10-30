@@ -755,6 +755,7 @@ def yarn_leaves(S):
         A = v(A[0], 1.3, max(A[2], top + 1.6 * R))
     return A
 PRE_TOP = os.environ.get("PRE_TOP", "1") == "1"            # (hdc/dc/tr) see yarn_leaves; 0: as before
+WRAP_TOP = os.environ.get("WRAP_TOP", "0") == "1"          # (study, hdc/dc/tr) a pulled-up loop after a yarn over: its yarn over the top edge (see assemble)
 CLOSE_LAG = float(os.environ.get("CLOSE_LAG", "0.35"))
 CLOSE_OWN = os.environ.get("CLOSE_OWN", "1") == "1"           # (0: the new stitch counts as fabric from the start of the close, as before)
 SL_THRU = os.environ.get("SL_THRU", "1") == "1"               # after a slip stitch the yarn goes on down through it, the way the yarn over came (0: over the top)
@@ -789,6 +790,10 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings
         marks["ring%d" % i] = len(pts)
         if i == 0: marks["a0"] = len(pts)
         if L.kind == "pulled":
+            if WRAP_TOP and i > 0 and S.loops[i - 1].kind == "wrap":
+                # from a yarn over in front of the work the yarn goes back over its top edge to where it was drawn through
+                pre = np.asarray(S.prefix); bt = BT(L.hole); near_ = pre[np.abs(pre[:, 0] - bt[0]) < P]
+                pts += [v(bt[0], 1.3, (near_[:, 2].max() if len(near_) else ZT) + 1.6 * R)]
             pts += legs_in(L.hole, s, r[0])
             if i == 0: marks["a0"] = len(pts); split = len(pts) + len(r) // 2
             pts += r + legs_out(L.hole, s, r[-1])

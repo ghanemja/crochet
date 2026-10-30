@@ -761,6 +761,12 @@ CLOSE_OWN = os.environ.get("CLOSE_OWN", "1") == "1"           # (0: the new stit
 SL_THRU = os.environ.get("SL_THRU", "1") == "1"               # after a slip stitch the yarn goes on down through it, the way the yarn over came (0: over the top)
 YARN_TOP = os.environ.get("YARN_TOP", "1") == "1"
 
+def over_edge(hx):
+    """the way over the top of the row below at hole x hx, from in front of it to behind it"""
+    if not _FAB_PTS: _FAB_PTS.append(np.vstack([spline(s_) for s_, _ in STATIC]) if STATIC else np.zeros((0, 3)))
+    F = _FAB_PTS[0]; near_ = F[np.abs(F[:, 0] - hx) < 0.5 * P] if len(F) else F
+    z = (near_[:, 2].max() if len(near_) else -H) + 1.6 * R
+    return [v(hx, -1.6, z), v(hx, 1.3, z)]
 def legs_in(hx, s, w0):
     h1 = HOLE(hx) + v(0.55, 0, 0)
     return [BT(hx), lerp(w0, h1 + v(0, 1.4, 0.1), s), lerp(w0, h1, s), lerp(w0, h1 + v(0, -1.4, 0.4), s)]
@@ -791,9 +797,9 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings
         if i == 0: marks["a0"] = len(pts)
         if L.kind == "pulled":
             if WRAP_TOP and i > 0 and S.loops[i - 1].kind == "wrap":
-                # from a yarn over in front of the work the yarn goes back over its top edge to where it was drawn through
-                pre = np.asarray(S.prefix); bt = BT(L.hole); near_ = pre[np.abs(pre[:, 0] - bt[0]) < P]
-                pts += [v(bt[0], 1.3, (near_[:, 2].max() if len(near_) else ZT) + 1.6 * R)]
+                # from a yarn over in front of the work the yarn goes back over its top edge (the row below's, where
+                # this stitch is being made) to where it was drawn through
+                pts += over_edge(L.hole)
             pts += legs_in(L.hole, s, r[0])
             if i == 0: marks["a0"] = len(pts); split = len(pts) + len(r) // 2
             pts += r + legs_out(L.hole, s, r[-1])

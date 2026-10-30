@@ -1,4 +1,14 @@
 {
+ "ch": {
+  "views": [
+   "Guided"
+  ],
+  "grid": [
+   1,
+   1
+  ],
+  "cues": true
+ },
  "sl": {
   "views": [
    "Guided"

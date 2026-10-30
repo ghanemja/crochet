@@ -738,6 +738,7 @@ def yo_plan(op):
     if op.name == "yo_catch" and not RING:                       # a hook in a stitch: catch it up clear of the row it is in, in view
         Q = A + v(0, 0.8, 0) + d * np.clip((YO_CATCH_Z - A[2]) / d[2], 0, 0.6)   # drawn back a little: the throat well out the back
     ub = U_UP if op.name == "yo_front" and not (CHAIN or RING) else h0.u     # (a loop just pulled up ends turned aside, U_PULL: not this)
+    if CHAIN: ub = v(1.0, -0.2, 0.0)                             # the chain: the shaft across the view, the head and throat side on (not foreshortened behind the loop)
     plan = dict(c0=c0, Q=Q, dn=dn, dip=Q + dn * (THROAT_R + 1.0), catch=Q + dn * (THROAT_R - 1.3),
                 u_yo=nrm(v(ub[0], ub[1], -0.25 * np.hypot(ub[0], ub[1]))))    # shaft falling toward the hand: the head higher
     if op.name == "yo_catch":                                    # in the stitch: back out a little, tip up about it

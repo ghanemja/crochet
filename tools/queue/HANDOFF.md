@@ -126,6 +126,21 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    crf 24 (grid 27) instead of 30/32: the encoder's error changed frame to frame on the fibres. Tried and
    rejected: thicker fibres/fewer flyaways (`FIBRE_K`, `FUZZ_K`: more flicker), 32 samples (barely helps).
    A blue line on the nails: the free-edge plate stood off the skin (you saw through the gap); now set into it.
+17. **Yarn through yarn** (user: "the two yarns wouldn't mix like that, they're going through"): detector
+   `tools/yarn_contact.py` (centrelines closer than 2R; `--colour`: only where differently coloured yarns
+   meet, the glitch that shows), relaxation `tools/yarn_relax.py`, applied in choreo's `yarn_clear`. What it took:
+   - relaxing alone stalls where centrelines cross: crossing strands now part along their common normal;
+   - the finished fabric is relaxed with an anchor (`RELAX_ANCHOR` 0.1) — relaxed freely it bent the V's out of
+     shape. The designed fabric touches itself everywhere (V pinches 0.2R): left to the anchor, not chased;
+   - routing: from the loops on the hook the yarn goes back over the top of the work then down behind it
+     (it went straight through the new stitch); the sc-height yarn over (`yo_front`) catches the yarn above
+     the top, as the taller stitches already did (the hook went through the stitches behind it); loops coming
+     off the head turn square across the caught yarn's two strands;
+   - the stitches below spread round wherever the working yarn's legs pass them over the take, the finished
+     row round where the working yarn passes its end (`working_passes`), and both clear the yarn round the
+     left hand (the rows' cut ends at the left edge stop short of it).
+   Use `python3 tools/yarn_contact.py <paths> 0:N:6 --colour` as a gate. sc went from 1.95R worst (every frame)
+   to under ~0.8R on samples; see the commit for the measured run.
 
 ## Checking tools
 - `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts

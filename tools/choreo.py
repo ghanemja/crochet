@@ -578,6 +578,22 @@ class State:
     def copy(s):
         o = State(); o.__dict__ = dict(s.__dict__); o.loops = list(s.loops); o.prefix = list(s.prefix); return o
 
+_FAB_PTS = []
+def live_clear_d(S, hk, d0, lo):
+    """the shaft position nearest d0 where the live loop (a ring round the shaft) clears the fabric by a yarn's
+    width: with the hook in a stitch, the shaft in front of it can run along the face of the row below"""
+    if not _FAB_PTS: _FAB_PTS.append(np.vstack([spline(s_) for s_, _ in STATIC]) if STATIC else np.zeros((0, 3)))
+    pre = np.asarray(S.prefix); pre = pre[np.linalg.norm(pre - S.E, axis=1) > 3.0 * R]
+    F = np.vstack([_FAB_PTS[0], pre]) if len(pre) else _FAB_PTS[0]
+    ds_ = np.arange(lo, lo + 14.0, 0.25); ax_ = hk.tip[None] + ds_[:, None] * hk.u[None]
+    near_ = F[np.all((F > ax_.min(0) - 6) & (F < ax_.max(0) + 6), axis=1)]
+    if not len(near_): return d0
+    clr = np.array([np.linalg.norm(near_ - q, axis=1).min() for q in ax_])
+    need = np.array([hook_profile(x)[1] for x in ds_]) + 3.0 * R          # the ring round the shaft, then a yarn's width
+    ok = clr >= need
+    if not ok.any(): return float(ds_[np.argmax(clr - need)])
+    return float(ds_[ok][np.argmin(np.abs(ds_[ok] - d0))])
+
 def loop_ds(S, hk):
     """shaft positions of the loops (yarn order): the newest nearest the tip; the live loop held
     back by the fabric where it can be"""
@@ -586,8 +602,8 @@ def loop_ds(S, hk):
         rank = n - 1 - i; d = D_B + rank * SPACING
         if L.kind == "live":
             lo = d; d = max(lo, min(max(14.0, lo), (ANCHOR(S.E) - hk.tip) @ hk.u))
-            if not (CHAIN or RING) and hk.tip[1] > 0 and hk.u[1] < -0.05:   # a hook through the work: the loop stays in front of it
-                d = max(d, hk.tip[1] / -hk.u[1] + LIVE_CLEAR)
+            if not (CHAIN or RING) and hk.tip[1] > 0 and hk.u[1] < -0.05:   # a hook through the work: the loop sits where it clears it
+                d = live_clear_d(S, hk, d, lo)
         ds.append(d)
     return ds
 
@@ -752,6 +768,7 @@ LIVE_CLEAR = float(os.environ.get("LIVE_CLEAR", "2.6"))   # the live loop on a h
 YO_FRONT_DZ = float(os.environ.get("YO_FRONT_DZ", "1.5"))  # a yarn over with the hook out of the stitch: caught this high over the row's top
 YO_CATCH_Z = -H + float(os.environ.get("YO_CATCH_DZ", "2.5"))   # how high (above the tops of the row the hook is in) a hook in a stitch catches the yarn
 YO_ROLL = 180.0                     # the throat turned to face straight up while the yarn is laid over the shaft (degrees from facing down)
+PU_OUT = float(os.environ.get("PU_OUT", "2.0"))     # pulling up: the head backs straight out to this far in front of the work, then lifts
 PU_LIFT = float(os.environ.get("PU_LIFT", "3.0"))
 ROLL_SHOW = float(os.environ.get("ROLL_SHOW", "150"))                   # pulling up a loop: the throat up and toward the viewer, the caught yarn in it in view
 ROLL_PULL = 70.0                    # ...and where it faces while it drags the yarn through: toward the pull
@@ -853,6 +870,11 @@ def _op_pose(op, p):
         # back out the way it went in (along the shaft) before lifting the loop up in front
         dst = T_UP(hx, lift_for(0)) + (v(0, -0.6, PU_LIFT) if not RING else 0) if k == 1 else v(hx + 0.4, -2.8, -H + 2.0)   # the head up clear of the work, against the backdrop
         tip = bez(h0.tip, h0.tip + h0.u * 7.5, v(hx + 0.3, -3.5, -H), dst, e)
+        if not RING and h0.tip[1] > 0 and h0.u[1] < -0.05:
+            # straight back out along the shaft (the way it went in, back through the hole under the V, not up
+            # through the V) until the head is in front of the work, then up
+            L_out = (h0.tip[1] + PU_OUT) / -h0.u[1]; out = h0.tip + h0.u * L_out
+            tip = h0.tip + h0.u * L_out * ease(e / 0.4) if e < 0.4 else bez(out, out + h0.u * 2.0, dst + v(0.5, -1.0, -1.0), dst, (e - 0.4) / 0.6)
         if k == 1 and not RING:                                      # (the ring's brisk stitches keep the plain pull)
             # the head comes out to the front with the caught yarn in view: the throat turns up and toward the
             # viewer (ROLL_SHOW) and stays so, the shaft ends turned aside (U_PULL) so the hand is not in front
@@ -947,7 +969,12 @@ def through_loops(op, hk_, qq):
         c = hb.axis_centre(d); dd = (c - hk_.tip) @ hk_.u
         if dd > 0.25: ds[i] = dd; continue                       # still on the shaft
         cen = hk_.tip + hk_.u * dd                               # off the head: round the caught yarn
-        dn, fr = hk_.basis(); a = np.radians(np.linspace(25, -295, 26)); lift = np.linspace(-0.4, 0.4, 26)[:, None] * R
+        dn, fr = hk_.basis()
+        # the ring's open side (between its two ends) turns to face the yarn coming into it (from the fabric for the
+        # first loop, from the hole for a pulled-up one), so that yarn doesn't cut across the ring to reach its start
+        L_ = S0.loops[i]; src = (HOLE(L_.hole) + v(0.55, -1.4, 0.4)) if L_.kind == "pulled" else S0.E + v(0, -0.6, 1.2)
+        w_ = src - cen; phi = math.degrees(math.atan2(w_ @ fr, w_ @ dn)); sh = ((phi - 45.0 + 180.0) % 360.0 - 180.0) * ease(-dd / 3.0) * RING_TURN
+        a = np.radians(np.linspace(25, -295, 26) + sh); lift = np.linspace(-0.4, 0.4, 26)[:, None] * R
         ro = lerp(hook_profile(D_B)[1] + 0.92 * R, RING_OFF * R, ease(-dd / 5.0))       # open as it leaves the head, closing round the strands
         rings[i] = list(cen + ro * (np.cos(a)[:, None] * dn + np.sin(a)[:, None] * fr) + lift * hk_.u)
         thread.append(cen)
@@ -1028,6 +1055,7 @@ def off_left_hand(c):
 # being worked once per shape against it; and every frame the working yarn against both and itself.
 import yarn_relax
 _STATIC_RX = []
+RING_TURN = float(os.environ.get("RING_TURN", "1"))
 RING_OFF = float(os.environ.get("RING_OFF", "1.6")); SIDE_OFF = float(os.environ.get("SIDE_OFF", "0.9"))   # loops off the head close round the caught yarn's two strands
 WORK_ITERS = int(os.environ.get("WORK_ITERS", "40"))           # the working yarn's relax, every frame
 FABRIC_SELF = os.environ.get("FABRIC_SELF", "0") == "1"   # the fabric gives way to the working yarn and hand, not to itself (its V's touch on purpose)

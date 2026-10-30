@@ -754,7 +754,7 @@ def yarn_leaves(S):
         top = near_[:, 2].max() if len(near_) else ZT
         A = v(A[0], 1.3, max(A[2], top + 1.6 * R))
     return A
-PRE_TOP = os.environ.get("PRE_TOP", "0") == "1"            # (study, hdc/dc/tr) see yarn_leaves; 0: as before
+PRE_TOP = os.environ.get("PRE_TOP", "1") == "1"            # (hdc/dc/tr) see yarn_leaves; 0: as before
 CLOSE_LAG = float(os.environ.get("CLOSE_LAG", "0.35"))
 CLOSE_OWN = os.environ.get("CLOSE_OWN", "1") == "1"           # (0: the new stitch counts as fabric from the start of the close, as before)
 SL_THRU = os.environ.get("SL_THRU", "1") == "1"               # after a slip stitch the yarn goes on down through it, the way the yarn over came (0: over the top)

@@ -294,7 +294,10 @@ def morph(ca, cb, e, lag=0.35):
         return off
     sp = int(round(lerp(remap(ba, ca.split), remap(bb, cb.split), ease(e))))
     offs = len(head) + np.cumsum([0] + [s_ - 1 for s_ in sizes]); idx = {m: int(offs[k]) for k, m in enumerate(MARKS)}
-    return Curve(out, idx, min(len(out) - 1, max(0, sp)), min(len(out) - 1, remap(bb, cb.own_e)))
+    # the end of the fabric stays where it was until the close is done: the loops coming off and the yarn through them
+    # are still working yarn (kept off each other and the fabric) while they settle, not finished fabric yet
+    own = remap(ba, ca.own_e) if CLOSE_OWN and e < 1.0 else remap(bb, cb.own_e)
+    return Curve(out, idx, min(len(out) - 1, max(0, sp)), min(len(out) - 1, own))
 
 def blend(ca, cb, w):
     """plain arc-length blend of two nearly equal curves from each one's end of fabric (op joins);
@@ -745,6 +748,8 @@ def yarn_leaves(S):
         A = v(A[0], 1.3, max(A[2], top + 1.6 * R))
     return A
 CLOSE_LAG = float(os.environ.get("CLOSE_LAG", "0.35"))
+CLOSE_OWN = os.environ.get("CLOSE_OWN", "1") == "1"           # (0: the new stitch counts as fabric from the start of the close, as before)
+SL_THRU = os.environ.get("SL_THRU", "1") == "1"               # after a slip stitch the yarn goes on down through it, the way the yarn over came (0: over the top)
 YARN_TOP = os.environ.get("YARN_TOP", "1") == "1"
 
 def legs_in(hx, s, w0):
@@ -798,7 +803,9 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings
             # from the loops on the hook the yarn goes back over the top of the work, then down behind it
             # to where the hook can reach it, not through the stitches between (not while the hook has it)
             pre = np.asarray(S.prefix); near_ = pre[np.abs(pre[:, 0] - A[0]) < P]
-            if len(near_): pts += [v(A[0], A[1], max(A[2], near_[:, 2].max() + 1.6 * R))]
+            if getattr(S, "thru", None) is not None:           # after a slip stitch: down through it, the way the yarn over came
+                pts += legs_out(S.thru, 1.0, pts[-1])          # (over the top, its pull-through crossed the stitch under it)
+            elif len(near_): pts += [v(A[0], A[1], max(A[2], near_[:, 2].max() + 1.6 * R))]
         pts += [A]
         side = hk.z * SIDE_OFF * R                                    # the caught yarn's two strands, side by side (a yarn's width apart, not through each other)
         tin = [c + side for c in thread] if thread else []; tout = [c - side for c in reversed(thread)] if thread else []
@@ -832,7 +839,7 @@ TOTAL_ACT = len(STEPS) * STEP_DUR
 
 S = State()
 S.prefix = list(FABRIC0); S.E = E0; S.loops = [] if RING else [Loop("live")]
-S.post = None; S.xw = XS[0]; S.inserted = None; S.caught = False; S.keep_s = 0.0
+S.post = None; S.xw = XS[0]; S.inserted = None; S.caught = False; S.keep_s = 0.0; S.thru = None
 S.stitch = 0; S.hole_i = 0; S.nthr = 0; S.x0 = XS[0] if RING else None; S.ring_r = MR_R0
 S.hk = (Hook(REST(E0), U_REST, DOWN) if not RING else Hook(REST(v(MR_XS, -0.25, 0.15)), U_REST, DOWN))
 S.ring_on = not RING
@@ -848,7 +855,7 @@ def make_ops():
         hx = HOLES[st.stitch][min(st.hole_i, len(HOLES[st.stitch]) - 1)] if st.stitch < len(HOLES) else None
         op.hx = hx
         if name == "insert":
-            e.inserted = hx; e.xw = hx
+            e.inserted = hx; e.xw = hx; e.thru = None
         elif name == "yo_catch" or name == "yo_front":
             e.caught = True
         elif name == "yo_free":
@@ -859,7 +866,7 @@ def make_ops():
             e.caught = True; e.inserted = None; e.keep = hx; e.keep_s = 1.0
         elif name in ("through", "through2"):
             n = 2 if name == "through2" else len(st.loops)
-            e.caught = False; e.keep = None
+            e.caught = False; e.keep = None; e.thru = getattr(st, "keep", None) if SL_THRU else None
             if name == "through2":
                 # the two loops nearest the tip come off into the post; the caught yarn is a new loop
                 e.loops = st.loops[:-2] + [Loop("drawn")]; e.nthr = st.nthr + 1

@@ -393,6 +393,7 @@ def post_partial(hx, zt_hook, nb_done, zt, nb, zh=-H):
 # height of the new row's top above the row below (sc = 1 row), bars on the post, the step
 # texts (STITCH_STEPS in index.html — keep in sync) with their ops, the callouts.
 X1 = -P                                                         # the stitch the hook goes into ("stitch 2")
+INC_D = float(os.environ.get("INC_D", "0"))       # (study) an increase: its two stitches in the same stitch below, their legs side by side in its hole (0: on top of each other)
 SPECS = {
     "sc":  dict(zt=0.0, nb=0, steps=[["insert"], ["yo_catch"], ["pull_up"], ["yo_front"], ["through"]]),
     "sl":  dict(zt=-0.48 * H, nb=0, steps=[["insert"], ["yo_catch"], ["pull_keep", "through"]]),
@@ -400,7 +401,7 @@ SPECS = {
     "dc":  dict(zt=1.0 * H, nb=1, steps=[["yo_free"], ["insert"], ["yo_catch", "pull_up"], ["yo_front", "through2"], ["yo_front", "through"]]),
     "tr":  dict(zt=1.75 * H, nb=2, steps=[["yo_free", "yo_free"], ["insert"], ["yo_catch", "pull_up"], ["yo_front", "through2"], ["yo_front", "through2"], ["yo_front", "through"]]),
     "inc": dict(zt=0.0, nb=0, steps=[["insert", "yo_catch", "pull_up", "yo_front", "through"],
-                                      ["insert", "yo_catch", "pull_up", "yo_front", "through"], ["hold"]], xs=[-P, -2 * P], holes=[[-P], [-P]]),
+                                      ["insert", "yo_catch", "pull_up", "yo_front", "through"], ["hold"]], xs=[-P, -2 * P], holes=[[-P + INC_D], [-P - INC_D]]),
     "dec": dict(zt=0.0, nb=0, steps=[["insert", "yo_catch", "pull_up"], ["insert", "yo_catch", "pull_up"], ["yo_front", "through"]],
                 xs=[-1.5 * P], holes=[[-P, -2 * P]]),
     "ch":  dict(zt=0.0, nb=0, chain=True, steps=[["yo_front"], ["through"]]),

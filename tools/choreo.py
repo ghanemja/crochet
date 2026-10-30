@@ -655,9 +655,10 @@ def hand_xform(hs=None):
     return Rw @ L_ROT, _PIVOT + Rw @ (L_POS - _PIVOT) + hs["t"] + L_OFF[0]
 def skin_now(hs=None):
     """the left hand's skin (row space) and its normals, as it is now"""
-    hs = hs or HAND_NOW; Rh, ph = hand_xform(hs); loc = SKIN_L
-    for k, w in hs["mix"].items(): loc = loc + w * _D_SKIN[k]
-    return ph + loc @ Rh.T, SKIN_LN @ Rh.T
+    hs = hs or HAND_NOW; Rh, ph = hand_xform(hs); loc = SKIN_L; nl = SKIN_LN
+    for k, w in hs["mix"].items(): loc = loc + w * _D_SKIN[k]; nl = nl + w * _N_SKIN[k]
+    if hs["mix"]: nl = nl / np.linalg.norm(nl, axis=1, keepdims=True)
+    return ph + loc @ Rh.T, nl @ Rh.T
 def route_now(hs=None):
     """the working yarn's way round the left fingers (row space), moving with them"""
     if not HAND_ACTIVE: return [q + L_OFF[0] for q in YARN_HAND]

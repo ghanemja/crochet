@@ -298,6 +298,7 @@ as 16/220 at the site's size (`run.sh` takes renderer flags after the frames fie
     round: MR_SQ/MR_SLACK/MR_TOPZ/MR_LEG), the close turned toward the rim (`RIM`), the hook lifts its loop aside
     (MR_LIFT). hand_contact: the held yarn sits 2-3 mm into the left middle/ring fingers (mr's pinch pose on the
     re-baked hand), reads as a snug wrap.
+  - **ch** (`6a8d8a7`, paths on 7a8bc3a with TOP_FLAT): 144 at 0.73R. hand_contact ≤2.5 mm (the held yarn round the raised index).
 - **Fibres ride with the yarn** (`tools/queue/matcoords.py`, run by `chunks.sh` after each merge): choreo rebuilds the
   yarn every frame and its length jumped by up to ~1 R between frames (sl 200: hook still, length −1.25), and the
   renderer laid the twist/fibres/flyaways out along each frame's arc length, so every fibre crawled on its own (user:

@@ -315,3 +315,6 @@ as 16/220 at the site's size (`run.sh` takes renderer flags after the frames fie
   blocking (relay's plan (a)). yarn_gate (step 6, 0.65R) exceptions:
   - **hdc**: 348, 354 (1.10, 1.21R): the pull_up start, the loops on the hook brushing the row below's front as the hook
     backs out (main is on it). hand_contact (150, 350, 500): nothing inside a hand; V tops connected on the last frame.
+  - **dec**: 348–402 (0.70–0.82R, the held second insert after PULLED_FRONT), 426 (1.71R, hidden behind the left index
+    finger), 444–450 (0.72R), 576–594 (0.65–0.74R), 642 (0.93R, the close). hand_contact (200, 400, 600): the working
+    yarn 2.3 mm into the index/middle knuckle crease at 200 (as sc's, hidden), else nothing inside a hand.

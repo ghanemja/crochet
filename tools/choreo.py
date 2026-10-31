@@ -1303,9 +1303,11 @@ def working_passes():
                 if near_.any(): _PASSES.append(q[near_])
         _PASSES.append(np.zeros((0, 3)))
     return np.vstack(_PASSES) if _PASSES else np.zeros((0, 3))
-def yarn_clear(c, e, h, hk):
+def yarn_clear(c, e, h, hk, iters=None):
     """c (the yarn of the row being worked, then the working yarn) cleared of the fabric and itself: c[:e] is the
-    finished fabric (relaxed once, cached), c[e:h] the working yarn up to the hand (relaxed every frame)"""
+    finished fabric (relaxed once, cached), c[e:h] the working yarn up to the hand (relaxed every frame; iters=0: as
+    designed, only the join to the relaxed fabric carried along it)"""
+    iters = WORK_ITERS if iters is None else iters
     c = c.copy(); fab = static_relaxed(); F = np.vstack(fab) if fab else np.zeros((0, 3))
     if e > 2:
         key = (e, round(float(c[:e + 1].sum()), 3))
@@ -1333,11 +1335,21 @@ def yarn_clear(c, e, h, hk):
             u0 = np.linspace(0, 1, _WARM["n"]); u1 = np.linspace(0, 1, h - e)
             off = np.stack([np.interp(u1, u0, _WARM["off"][:, k]) for k in range(3)], 1)
             c[e + 1:h - 1] += WARM * off[1:-1]
-        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax, sk]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed, np.full(len(sk), 1.06 * R)])), R=R, iters=WORK_ITERS)[0]
+        if PHYS and iters == 0:                                  # for tools/queue/physics_pass.py (the yarn as a rod stepped in time)
+            sel = slice(None, None, max(1, len(sk) // 3000))
+            PHYS_NOW.update(hook=app(hax), need=[round(float(x), 3) for x in hneed / R], skin=app(sk[sel]))
+            return c
+        c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax, sk]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed, np.full(len(sk), 1.06 * R)])), R=R, iters=iters)[0]
         _WARM.update(e=e, n=h - e, off=c[e:h] - raw)
     return c
 WARM = float(os.environ.get("WARM", "0"))                     # (study) the working yarn's relax starts from the frame before's offsets (0: from scratch)
 _WARM = {}
+# PHYS=1: each frame also carries "phys", what tools/queue/physics_pass.py needs to remake the working yarn as a rod stepped in
+# time: the working yarn as designed (c[e:h] before the relax, the join to the fabric carried), e/h/split indices into the yarn
+# (the current row's strand then the accent strand), the hook's axis points with the clearance each needs (in R) and the left
+# hand's skin near the yarn. (0: as before)
+PHYS = os.environ.get("PHYS", "0") == "1"
+PHYS_NOW = {}; PHYS_REC = {}
 
 def frame_strands(ta):
     op, p = op_at(ta); L_OFF[0] = l_off(ta); HAND_NOW.update(hand_state(ta))
@@ -1357,7 +1369,11 @@ def frame_strands(ta):
     h = min(len(c), cv.idx["hand"] + (len(ts) - 1 if RING else 0) + 1)    # the route round the fingers is settled already
     if h > sp: c[sp:h] = off_left_hand(c[sp:h])
     off = (len(ts) - 1) if RING else 0
-    c = yarn_clear(c, cv.own_e + off if not RING else 0, h, hk)
+    e_ = cv.own_e + off if not RING else 0
+    if PHYS:
+        PHYS_NOW.clear(); base = yarn_clear(c, e_, h, hk, iters=0)
+        PHYS_REC[round(ta, 4)] = dict(PHYS_NOW, e=int(e_), h=int(h), sp=int(sp), work=app(base[e_:h]))
+    c = yarn_clear(c, e_, h, hk)
     if HAND_ACTIVE and h > sp:                                   # (the relax can pull a little of it back into the moving fingers)
         c[sp:h] = off_left_hand(c[sp:h])
     segs = [(c[:sp + 1], False), (c[sp:], True)]
@@ -1660,6 +1676,7 @@ for i in range(min(n, A.max_frames) if A.max_frames else n):
              {"side": "L", "pose": "LEFT_HOLD", "obj": "Hand" + L_VARIANT, "scale": HAND_SCALE, "pos": [round(float(x) * UNIT, 5) for x in lpos], "rot": [round(float(x), 5) for x in lrot.ravel()], "mix": lhs["mix"]}]
     frames.append({"t": round(tv, 4), "a": key, "cam": cam(cdir, guided_target(tv), zoom, turn=True), "hands": hands if A.hands else None,
                    "hook": {"pos": app([hk.tip])[0], "quat": [round(q, 6) for q in hk.quat_app()]}, "strands": strands})
+    if PHYS and key in PHYS_REC: frames[-1]["phys"] = PHYS_REC[key]
 
 # ---------------------------------------------------------------- callouts
 def project(d, tgt, pts, zoom=1.0, turn=False):

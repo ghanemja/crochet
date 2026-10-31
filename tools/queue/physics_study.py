@@ -37,8 +37,9 @@ new_c, t0 = [], time.time()
 for r in recs:
     e, h = r["e"], r["h"]; base = r["base"]
     des = base[e:h]                                              # (base: the fabric prefix relaxed, the working yarn as designed)
-    pre = base[:e + 1]; sa = arc(pre[::-1])                      # the finished part of the row, minus its last 3R (the same yarn)
-    fixed = np.vstack([r["F"], pre[::-1][sa > 3.0 * R]])
+    # the finished part of the row, all of it: where the rod comes out of it, the rod's contacts fade in (YarnRod.fade), so
+    # its last few R only don't push the rod's first few R; further along the rod they are fabric like any other
+    fixed = np.vstack([r["F"], base[:e]])
     lo, hi = des.min(0) - 6 * R, des.max(0) + 6 * R
     fixed = fixed[np.all((fixed > lo) & (fixed < hi), axis=1)]
     hax, hneed = hook_pts(r["hook"])

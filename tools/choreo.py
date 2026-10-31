@@ -313,9 +313,10 @@ def blend(ca, cb, w):
     return Curve(out, idx, min(len(out) - 1, max(0, sp)), cb.own_e)
 
 # ---------------------------------------------------------------- fabric geometry
-def bar(xc, zj):
-    """a yarn over that came off the hook: a wrap round the post"""
-    return [v(xc + 0.4 * P, -1.25, zj + 0.9), v(xc - 0.35 * P, -1.35, zj - 0.3), v(xc - 0.45 * P, 0.6, zj - 0.6), v(xc + 0.1 * P, 1.3, zj - 0.2)]
+def bar(xc, zj, w=1.0):
+    """a yarn over that came off the hook: a wrap round the post (w: its width across the row, as a share)"""
+    return [v(xc + 0.4 * w * P, -1.25, zj + 0.9), v(xc - 0.35 * w * P, -1.35, zj - 0.3), v(xc - 0.45 * w * P, 0.6, zj - 0.6), v(xc + 0.1 * w * P, 1.3, zj - 0.2)]
+BAR_W = float(os.environ.get("BAR_W", "1.0"))   # (study, dc/tr) the post being built: its bars this share as wide (the finished fabric's relax spreads its neighbours apart; the post in progress isn't)
 
 def bar_heights(zt, zh, nb):
     lo, hi = zh + 1.8, zt - 1.6
@@ -385,7 +386,7 @@ def post_partial(hx, zt_hook, nb_done, zt, nb, zh=-H):
     bars made so far, into the hole and back up the back"""
     pts = [v(hx + 0.2 * P, -1.0, zt_hook - 0.8)]
     hs = bar_heights(zt, zh, nb)[:nb_done]
-    for zj in reversed(hs): pts += bar(hx, min(zj, zt_hook - 2.0))
+    for zj in reversed(hs): pts += bar(hx, min(zj, zt_hook - 2.0), BAR_W)
     return pts + [v(hx + 0.12 * P, -0.95, zh + 1.8), v(hx + 0.05 * P, 0.0, zh - 1.3), v(hx - 0.05 * P, 1.25, zh - 0.9),
                   v(hx - 0.15 * P, 1.0, zh + 2.2), v(hx - 0.3 * P, -0.95, zt_hook - 1.2)]
 

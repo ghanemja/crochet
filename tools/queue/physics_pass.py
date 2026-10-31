@@ -40,7 +40,8 @@ for fi, fr in enumerate(D["frames"]):
     assert len(c) >= h and np.allclose(des(st[cur]["pts"])[-1], des(st[acc]["pts"])[0], atol=1e-3), fi
     work = des(ph["work"])                                               # the working yarn as designed (c[e:h])
     old = c[e:h]
-    if rod is None or e != last_e:                                       # a fresh start, or the attachment moved
+    if rod is None or abs(e - last_e) > 8:                              # a fresh start, or the attachment moved (choreo's own_e
+                                                                         # index jitters by one point where the curve is re-splined)
         rod = yarn_xpbd.YarnRod(**{k: float(v) for k, v in KW.items()}); ext = None
         if last_e is not None: resets.append(fi)
     last_e = e

@@ -91,11 +91,13 @@ class YarnRod:
             om[d_h < hook_need[j_h] + 1.5 * R] = s.w_hook
         w = np.full(N, 1.0 / s.m); w[0] = w[-1] = 0.0
         # colliders: the fabric (static) and the skin in one tree, each point its own clearance
-        pts, need = [], []
-        if fixed is not None and len(fixed): pts.append(fixed); need.append(np.full(len(fixed), 2.0 * R) if fixed_need is None else fixed_need)
-        if skin is not None and len(skin): pts.append(skin); need.append(np.full(len(skin), skin_need * R))
-        FP = np.vstack(pts) if pts else np.zeros((0, 3)); FN = np.concatenate(need) if need else np.zeros(0)
-        ftree = cKDTree(FP) if len(FP) else None; fmax = FN.max() if len(FN) else 0.0
+        # colliders, each its own set (a particle between the work and the fingers is pushed by both: in one tree the denser
+        # skin took all of a particle's nearest points and the fabric's push was lost, sl's end)
+        sets = []
+        if fixed is not None and len(fixed):
+            fn = np.full(len(fixed), 2.0 * R) if fixed_need is None else np.asarray(fixed_need, float)
+            sets.append((cKDTree(fixed), fixed, fn))
+        if skin is not None and len(skin): sets.append((cKDTree(skin), skin, np.full(len(skin), skin_need * R)))
         h = dt / s.n_sub; nb = s.k_bend * h * h
         excess = 0.0; ncont = 0
         for sub in range(s.n_sub):
@@ -115,13 +117,13 @@ class YarnRod:
                     dl = -C / ((w[i - 1] + 4 * w[i] + w[i + 1]) + 1.0 / nb)
                     s.x[i - 1] += (w[i - 1] * dl)[:, None] * n; s.x[i] += (-2 * w[i] * dl)[:, None] * n; s.x[i + 1] += (w[i + 1] * dl)[:, None] * n
                 # contacts with the fixed yarn, skin and hook
-                ncont = s._contacts(ftree, FP, FN, fmax, HK, hook_need, xp, w)
+                ncont = s._contacts(sets, HK, hook_need, xp, w)
                 s._self(xp, w)
                 if sub == s.n_sub - 1 and it == s.iters - 1:   # how much longer the contacts want it: the pull on the hand
                     want = arc(s.x)[-1] - s.s[-1]
                 s._inextensible(rest, w)
             if s.contact_last:                                   # contacts have the last word (a hair of stretch, no yarn through yarn)
-                s._contacts(ftree, FP, FN, fmax, HK, hook_need, xp, w); s._self(xp, w)
+                s._contacts(sets, HK, hook_need, xp, w); s._self(xp, w)
             s.v = (s.x - xp) / h * np.exp(-s.damping * h)
             s.v[0] = s.v[-1] = 0.0
         L_now = arc(s.x)[-1]; excess = s.feed_gain * want
@@ -149,14 +151,14 @@ class YarnRod:
             dx = np.zeros_like(s.x); dx[:-1] -= f; dx[1:] += f
             s.x += w[:, None] * dx
 
-    def _contacts(s, ftree, FP, FN, fmax, HK, hook_need, xp, w):
-        x = s.x; R = s.R; corr = np.zeros_like(x); cnt = np.zeros(len(x)); dep = np.zeros(len(x))
+    def _contacts(s, sets, HK, hook_need, xp, w):
+        x = s.x; R = s.R; corr = np.zeros_like(x); dep = np.zeros(len(x)); hitany = np.zeros(len(x), bool)
         # the yarn comes out of the fabric where it is pinned: its contacts fade in over its first FADE radii
         fade = np.clip(s.s / s.fade, 0.0, 1.0) if s.fade > 0 else np.ones(len(x))
-        for tree, P, NEED, mx in ((ftree, FP, FN, fmax), (cKDTree(HK) if HK is not None else None, HK, hook_need, None)):
-            if tree is None: continue
-            mx = NEED.max() if mx is None else mx
-            dd, jj = tree.query(x, k=6, distance_upper_bound=mx)
+        allsets = list(sets) + ([(cKDTree(HK), HK, hook_need)] if HK is not None else [])
+        for tree, P, NEED in allsets:                            # each set's pushes averaged, the sets' added
+            dd, jj = tree.query(x, k=6, distance_upper_bound=NEED.max())
+            sc = np.zeros_like(x); sn = np.zeros(len(x))
             for k in range(dd.shape[1]):
                 m = np.isfinite(dd[:, k]) & (w > 0)
                 if not m.any(): continue
@@ -164,8 +166,10 @@ class YarnRod:
                 short = NEED[j] * fade[m] - L; hit = short > 0
                 if not hit.any(): continue
                 idx = np.nonzero(m)[0][hit]
-                corr[idx] += q[hit] / L[hit, None] * short[hit, None]; cnt[idx] += 1
+                sc[idx] += q[hit] / L[hit, None] * short[hit, None]; sn[idx] += 1
                 dep[idx] = np.maximum(dep[idx], short[hit])
+            h_ = sn > 0; corr[h_] += sc[h_] / sn[h_, None]; hitany |= h_
+        cnt = hitany.astype(float)
         c = cnt > 0
         if c.any():
             x[c] += corr[c] / cnt[c, None]

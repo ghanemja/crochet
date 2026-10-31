@@ -28,8 +28,8 @@ def interp_curve(s_q, s, p):
 
 class YarnRod:
     # defaults from the sc 280-340 study (tools/queue/physics_study.py): w_soft 20 Hz (10: more yarn through yarn,
-    # 30+: the pull holds it in the fabric), 8 iterations x 40 substeps a frame, feed gain 1 (0.5: yarn through the row at sc 318; 2: the length swings)
-    def __init__(s, ds=0.5, substeps=40, iters=8, ei=0.0, lb=1.0, tex=TEX, w_soft=20.0, w_hook=20.0, zeta=1.0,
+    # 30+: the pull holds it in the fabric), 10 iterations x 60 substeps a frame (40 x 8: sc gate 0.61R, hdc 0.96R; 60 x 10: 0.24R, 0.71R), feed gain 1 (0.5: yarn through the row at sc 318; 2: the length swings)
+    def __init__(s, ds=0.5, substeps=60, iters=10, ei=0.0, lb=1.0, tex=TEX, w_soft=20.0, w_hook=20.0, zeta=1.0,
                  mu=0.4, feed_tau=0.5, gravity=0.0, fade=4.0, feed_gain=1.0, slack_tau=0.5, contact_last=0, R=1.0):
         s.ds, s.n_sub, s.iters, s.R = ds, int(substeps), int(iters), R
         s.m = tex * ds * R_M                                    # kg per particle

@@ -1,5 +1,55 @@
 {
+ "ch": {
+  "views": [
+   "Guided"
+  ],
+  "grid": [
+   1,
+   1
+  ],
+  "cues": true
+ },
+ "sl": {
+  "views": [
+   "Guided"
+  ],
+  "grid": [
+   1,
+   1
+  ],
+  "cues": true
+ },
  "sc": {
+  "views": [
+   "Guided"
+  ],
+  "grid": [
+   1,
+   1
+  ],
+  "cues": true
+ },
+ "hdc": {
+  "views": [
+   "Guided"
+  ],
+  "grid": [
+   1,
+   1
+  ],
+  "cues": true
+ },
+ "dc": {
+  "views": [
+   "Guided"
+  ],
+  "grid": [
+   1,
+   1
+  ],
+  "cues": true
+ },
+ "inc": {
   "views": [
    "Guided"
   ],

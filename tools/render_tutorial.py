@@ -71,6 +71,9 @@ if os.environ.get("DN_PREFILTER"): sc.cycles.denoising_prefilter = os.environ["D
 if os.environ.get("DN_QUALITY"): sc.cycles.denoising_quality = os.environ["DN_QUALITY"]
 if os.environ.get("CLAMP_IND"): sc.cycles.sample_clamp_indirect = float(os.environ["CLAMP_IND"])
 if os.environ.get("ADAPT_MIN"): sc.cycles.adaptive_min_samples = int(os.environ["ADAPT_MIN"])
+if os.environ.get("DENOISE") == "0": sc.cycles.use_denoising = False
+if os.environ.get("ADAPTIVE") == "0": sc.cycles.use_adaptive_sampling = False
+if os.environ.get("FILTER_W"): sc.cycles.filter_width = float(os.environ["FILTER_W"])
 sc.render.use_persistent_data = True
 sc.render.resolution_x, sc.render.resolution_y, sc.render.resolution_percentage = W, H, 100
 sc.render.film_transparent = True
@@ -230,7 +233,7 @@ hook = bpy.data.objects.new("Hook", hm); sc.collection.objects.link(hook); hook.
 # Frames carry {"side", "pose", "pos", "rot"} placements; the hand is a tools/hand_rig.py skeleton
 # skinned with the Skin + Subdivision modifiers (metres, Blender axes).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import hand_rig
+import hand_rig, hand_mix
 skin = bpy.data.materials.new("Skin"); skin.use_nodes = True
 kb = skin.node_tree.nodes["Principled BSDF"]
 kb.inputs["Base Color"].default_value = (0.50, 0.25, 0.16, 1); kb.inputs["Roughness"].default_value = 0.5
@@ -244,6 +247,7 @@ def hand_object(side, pose, obj=None):
     if key not in HAND_OBJ and os.path.exists(HANDS_BLEND):   # realistic MakeHuman hands (tools/make_hands_mpfb.py)
         with bpy.data.libraries.load(HANDS_BLEND) as (src, dst): dst.objects = [obj or "Hand" + side]
         ob = dst.objects[0]; sc.collection.objects.link(ob); HAND_OBJ[key] = ob
+        hand_mix.add_pose_keys(bpy, ob, HANDS_BLEND)                 # the left hand's working poses, as shape keys
     if key not in HAND_OBJ:
         V, E, Rd, Ro, _ = hand_rig.skeleton(getattr(hand_rig, pose), side)
         me = bpy.data.meshes.new("Hand" + side); me.from_pydata(V, E, [])
@@ -258,7 +262,7 @@ def hand_object(side, pose, obj=None):
 def set_hands(fr):
     if not HANDS_ON or not fr.get("hands"): return
     for h in fr["hands"]:
-        ob = hand_object(h["side"], h["pose"], h.get("obj")); r = h["rot"]
+        ob = hand_object(h["side"], h["pose"], h.get("obj")); r = h["rot"]; hand_mix.set_mix(ob, h.get("mix"))
         ob.matrix_world = Matrix(((r[0], r[1], r[2], h["pos"][0]), (r[3], r[4], r[5], h["pos"][1]),
                                   (r[6], r[7], r[8], h["pos"][2]), (0, 0, 0, 1))) @ Matrix.Scale(h.get("scale", 1.0), 4)
 
@@ -400,6 +404,14 @@ def yarn_coords(st, m_start, m_hold):
         return front * (1 - w) + back * w
     return mat
 
+USE_M = os.environ.get("MATCOORDS", "0") == "1"    # off: the first matcoords.py flickered more (sl 194-206, flicker_metric)
+def m_coords(st):
+    """mat(s) from the strand's own per-point "m" (tools/queue/matcoords.py: carried from frame to frame, so the
+    fibres stay on the yarn while choreo's rebuilt polyline changes length under them)"""
+    p = np.asarray(st["pts"], float); a = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(p, axis=0), axis=1))])
+    m = np.asarray(st["m"], float)
+    return lambda s_: np.interp(s_, a, m)
+
 def build_curves(name, items, mat):
     cv = bpy.data.hair_curves.new(name)
     if not items: return cv
@@ -452,7 +464,7 @@ def set_yarn(fr):
         nx = fr["strands"][i + 1] if i + 1 < len(fr["strands"]) else None
         goes_on = (not st["closed"] and nx is not None and nx.get("visible") and len(nx.get("pts", [])) >= 3
                    and np.linalg.norm(np.array(nx["pts"][0]) - np.array(st["pts"][-1])) < 1e-6)
-        mat = yarn_coords(st, m0, HELD_LEN.get(root)) if not st["closed"] else None
+        mat = (m_coords(st) if USE_M and "m" in st else yarn_coords(st, m0, HELD_LEN.get(root))) if not st["closed"] else None
         curves, m_end, n_last = strand_curves(root, st, mat, n0, taper_start=not cont, taper_end=not goes_on)
         prev = None if st["closed"] else (np.array(st["pts"][-1]), root, m_end, n_last)
         for kind, items in curves.items():

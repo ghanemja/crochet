@@ -126,7 +126,63 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    crf 24 (grid 27) instead of 30/32: the encoder's error changed frame to frame on the fibres. Tried and
    rejected: thicker fibres/fewer flyaways (`FIBRE_K`, `FUZZ_K`: more flicker), 32 samples (barely helps).
    A blue line on the nails: the free-edge plate stood off the skin (you saw through the gap); now set into it.
-
+   Later (relayed: "keep improving that flicker"): idea 7 is the default in `encode_views.sh` — the temporal filter
+   averages ±2 frames where still and stays 4 px off motion (still shimmer 0.32 -> 0.24). Idea 6 (1.5x supersample)
+   rejected: no gain at 2.25x cost. Idea 5, motion-compensated (`tools/queue/mcfilter.py`, needs
+   `pip install opencv-python-headless`): shimmer on moving yarn -20% but the moving plies soften (the user's first
+   complaint was "blurry in motion"), so it is off; `MCFILTER=12:1` switches it on if the user picks it.
+17. **Yarn through yarn** (user: "the two yarns wouldn't mix like that, they're going through" — the orange
+   working yarn through the blue): detector `tools/yarn_contact.py`; the publish gate is `tools/queue/yarn_gate.py`
+   (working yarn vs everything else ≤ 0.65R on every 6th frame; fabric vs fabric only logged — the designed V
+   pinches touch on purpose; `build/queue/gate_except_<key>` holds an "a:b" range not gated; sc: `384:408`, the
+   pull-through close). `publish.sh` runs it before encoding. sc went from 1.97R in every frame to 0 frames over
+   0.65R outside the close. What it took, in choreo:
+   - the held yarn leaves the work over its top edge once a loop is pulled up (`yarn_leaves`), so the yarn over
+     is taken above the work, not by reaching through it; from the loops it goes over the top, not through the
+     new stitch;
+   - the live loop sits on the shaft where it clears the fabric (`live_clear_d`), not inside it;
+   - pulling up backs the head straight out through the hole before lifting (`PU_OUT`), not up through the V;
+   - loops off the head turn their open side to the yarn coming into them (`RING_TURN`);
+   - relaxation (`tools/yarn_relax.py`): crossing strands part along their common normal; the fabric gives way only
+     to the working yarn's passes, the hand's yarn and the left hand's skin (not to itself: `FABRIC_SELF=0`,
+     anchored `RELAX_ANCHOR`), so the V tops keep their designed shape; the working yarn also keeps off the skin.
+   Open: the pull-through close (sc 390–402, 1.3–1.9R): the pulled-up loop's legs thread through the live loop's
+   ring as they leave the head (the finished stitch is threaded the other way round; `LEGS=real` is a prototype
+   of the stitch threaded as made). It reads as loops chained round the head, not as a colour glitch. choreo now
+   takes ~45 min per stitch (the per-frame relax). Previews for the user go to branch `previews`, via the relay.
+18. **The left hand at work** (user: "you are never moving the left hand ... it just looks like the yarn is
+   magically sliding"; then "it should actually move MORE"): `make_hands_mpfb.py` bakes working poses on L's mesh:
+   Ly (index lifted and swung toward the head, `LY_SWING`), Lf (index forward and down, giving yarn), Le (pinch
+   eased). choreo's `hand_state(ta)` mixes them per op (Ly at each yarn over, dipping as the hook catches; Lf
+   through the pull-ups and pull-throughs; Le after each stitch), turns the hand toward the hook about the pads'
+   line (`WRIST_DEG` -11) and slides the pinch along the row per stitch made (`CREEP`); the frame's left hand
+   carries `"mix"`, which the renderer and hand_contact set as shape keys (`tools/hand_mix.py`). `HAND_ACTIVE=0`:
+   the still hand. **After pulling, rebuild `build/hands`** (`make_hands_mpfb.py`, ~20 s) before regenerating
+   paths, or the renderer shows the still hand. The yarn round the fingers is the poses' routes blended, then
+   settled on the blended skin (`settle_on`); the runs up to the index and on to the ball are in steps; index and
+   middle are capsules (`off_fingers`) for yarn found deep in a fingertip. sc: gate 0 frames over 0.65R;
+   hand_contact ≤ 3 mm in 17/81 frames, all in the crease between the index and middle knuckles (palm side, the
+   gap narrower than the yarn when the index swings in; hidden behind the fingers). choreo ~65 min for sc.
+19. **The pull-through close** (the orange knot / blue fabric through orange loops at every stitch's last
+   pull-through: sc 390–402, sl 306–312, hdc ~492, dec ~648): the close morphs the loops on the hook into the new
+   stitch (`morph`), and its curve took the *new* stitch's end of fabric (`own_e`) from the first frame, so the
+   loops still coming off the hook and the yarn through them were relaxed as finished fabric: frozen, not kept
+   off each other or the fabric. `CLOSE_OWN=1` (default) keeps the old end of fabric until the close is done.
+   sc (single frames): 390/396/402 from 1.78/1.90/1.02R to 0.39/0.39/0.06R, the rest unchanged. Slip stitch:
+   `SL_THRU=1` also takes the yarn on from the new loop down through the stitch (as the yarn over came) instead of
+   over its top, which the close otherwise dragged through the stitch below: sl 303–315 from up to 1.93R to
+   ≤0.41R. Left over in sl, ~0.7–0.8R: 270, 294, 318–324, and 240 (1.16R, the caught yarn drawn through the
+   stitch, as before). Not fixed by this: inc's second sc shares the first's hole (legs on top of each other),
+   hdc/dec's mid-stitch stretches (hdc 72–102, 348–366; dec 348–426). Tools: scratchpad-style single-frame gate =
+   exec choreo.py up to the frame loop, then `frame_strands(at_video(f/24)[0])` (~4 min setup, seconds a frame).
+   Further yarn-through-fabric fixes (single-frame gate): `PRE_TOP` (hdc/dc/tr: yarn overs before the insert, the
+   hook in front of the work, take the yarn back over the top edge; hdc 72–102 from 1.55R to ≤0.45R); `WRAP_TOP`
+   (hdc/dc/tr: a pulled-up loop after a yarn over takes its yarn over the row below's top at the hole,
+   `over_edge`; hdc 360–366 from 1.5R to 0.34R); `PULLED_FRONT` 2.5 (dec: a pulled-up loop stays on the shaft
+   in front of the work while the hook is in the next stitch; 348–402 from ~1.1R to ~0.8R, 500 up from 0.76R to
+   1.06R). `INC_D` (off): inc's two stitches side by side in the shared hole, only partly helps (the second
+   stitch's loop and legs go through the first's V and legs, 582–684 ~1.6R; needs a fan-out redesign).
+   Still open: hdc 348–354 (the loops on the hook brush the row below's front as it backs out, ~1.1R).
 ## Checking tools
 - `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts
   drawn over the rendered cue frames (render them first at `round(t * 24)`).
@@ -182,3 +238,57 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
 4 CPU cores, CPU-only Cycles at 800×500, 16 samples + OIDN: ~45–60 s/frame Guided with hands. sc
 486 frames × 4 angles, the others ~5,400 frames → ~60–70 h in total. Commit each stitch as soon as it's encoded. Finish with a
 short summary of which stitches/angles were rendered and anything cut.
+
+## Base versions of hdc, dc, dec, tr (session_01RFXAp9cSMRVMFfJmhJ5amD, 2026-10-30)
+Guided only, 24 fps, 800×500, rendered with `--samples 6 --fibres 70` (+ OIDN, tfilter in the encode):
+~4× faster than 16 samples / 220 fibres and close to it at the site's size. Paths from main at `a3a9830`
+(yarn relax). Full-quality renders from the main queue should overwrite them.
+Known issue (not fixed here, it's shared choreo): **the left hand is placed against the un-relaxed fabric**
+(`_fab` in the left-hand placement uses `spline(s)` of STATIC, not `static_relaxed()`), so after the yarn relax
+puffs the fabric out the left middle fingertip sits ~2 mm inside it (hand_contact: `fabric1/L middle_pad -2.0`
+on every frame of hdc/dc/dec). On dec the working yarn also runs ~2 mm into the left middle finger in the
+last third (frames 480–720). Mostly behind the work in the Guided view. Fix: place the hand against
+`static_relaxed()` (move `import yarn_relax`/`static_relaxed` above the placement) and re-run hand_contact.
+
+## ch, sl, inc, mr (session_01RFXApCsFfy8t6C1NjXPFtF, 2026-10-30)
+Base renders: Guided, 24 fps, 800×500, `--samples 8 --fibres 100` (+ OIDN, tfilter): ~20 s/frame, looks the same
+as 16/220 at the site's size (`run.sh` takes renderer flags after the frames field of a jobs line).
+- **ch** (`9c0f3f4`, re-encoded `333c219`) and **sl** (`8094f73`, re-encoded `f3d22bb`) are on the site from the
+  a3a9830 paths. **sl has the V-top fault** (the current row's tops read as separate curls: a3a9830 relaxed the
+  fabric against itself); sl regenerated on 23f305f has connected V tops again (stills on branch `previews`,
+  `vtops/`). ch has no row and is fine. **inc**'s render on a3a9830 paths was stopped and not published.
+- Plan: when the left-hand choreo lands, regenerate sl and inc on it, check the V tops on the last frame against
+  old sc `9bc0185`'s last frame, render, publish (replacing sl).
+- **mr is unpublished.** Its finished round reads as a rosette of loose loops, not a compact disc with a rim of
+  V's. Branch `mr-vtops`: `daece6d` turns the work for the close and the end so the rim is seen from above
+  (`RIM`, via `turn_of`; cue times unchanged; yarn_gate 0.73R at 636/840, hand_contact clean). Still needed (being
+  remodelled on that branch): the ring's stitches are the row sc bent round (7 of them, the ch 1 a full post);
+  they need their own shape (`ring_piece`): compact wedge posts that share sides, top links flat on the rim, a small
+  ch 1, so the closed round is a firm flat disc. Single frames build in ~10 s by running choreo.py up to its frame
+  loop and only the wanted frames (keep paths in `build/`; see the session's scratchpad `oneframe.py` idea).
+- **Paths in chunks** (`tools/queue/chunks.sh <key> ...`): choreo.py's own frame loop run by `chunkgen.py` over
+  24-frame ranges, each written to `build/chunks/` as it completes, 4 workers. A full choreo run (1.5–2 h with the
+  left hand) kept dying in container restarts; this resumes (rerun the script) and uses all cores (sl ~20 min).
+  Output is identical to choreo.py's (checked frame by frame). Rerun it once the workers are done to merge each key
+  into `build/paths/<key>.json` + `.cues.json`; delete `build/chunks/<key>_*` before regenerating a key.
+- **Final renders on the left hand + held camera** (Guided, 24 fps, `--samples 8 --fibres 100`, default encode; paths from
+  42fcc47's close fix + the ring commits, generated with `chunks.sh`). Logged yarn_gate exceptions (working yarn > 0.65R):
+  - **sl** (`3fb1038`): 240:324, worst 1.18R at 240 (the pull through the stitch and loop; 0.69–0.82R after 240).
+  - **inc** (`020d9e3`, paths from 42fcc47 without TOP_FLAT): 534:684, worst 1.66R (the second sc's legs share the
+    first's hole and run through its V and legs; 534 at 0.71R). Its pull-throughs (390:402, 468:516) pass.
+- **Fibres ride with the yarn** (`tools/queue/matcoords.py`, run by `chunks.sh` after each merge): choreo rebuilds the
+  yarn every frame and its length jumped by up to ~1 R between frames (sl 200: hook still, length −1.25), and the
+  renderer laid the twist/fibres/flyaways out along each frame's arc length, so every fibre crawled on its own (user:
+  "every strand moves individually"). matcoords gives each strand a per-point `m` carried from the frame before (nearest
+  point of the same yarn); render_tutorial.py uses it when present (`m_coords`). sl 170–330, points that stay put:
+  fibre jumps > 0.25 R 9.6% → 3.2%, p90 0.18 R → 0. **But the renders flickered more** (flicker_metric, sl 194–206:
+  still 6.54 → 7.62, moving 6.18 → 8.37; held-camera sl 250–274: still 4.56 → 4.79, moving 6.71 → 8.84): inheriting m
+  from the nearest point pins the texture while the yarn slides along itself. So it is **off by default**
+  (`MATCOORDS=1` in render_tutorial.py to use it). The better route: keep choreo's yarn from jumping (warm-start
+  the per-frame relax from the previous frame), or track material through the ops in choreo itself.
+- **hdc, dec, dc, tr on the left hand + held camera** (Guided, 24 fps, `--samples 8 --fibres 100`, default encode — MCFILTER
+  was measured worse on still yarn under cam-hold; paths from 7a8bc3a (close fix, PRE_TOP, WRAP_TOP, PULLED_FRONT,
+  TOP_FLAT) via `chunks.sh`; renderer 5276761, matcoords off). Published as base versions with the gate logged, not
+  blocking (relay's plan (a)). yarn_gate (step 6, 0.65R) exceptions:
+  - **hdc**: 348, 354 (1.10, 1.21R): the pull_up start, the loops on the hook brushing the row below's front as the hook
+    backs out (main is on it). hand_contact (150, 350, 500): nothing inside a hand; V tops connected on the last frame.

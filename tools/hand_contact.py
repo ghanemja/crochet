@@ -24,6 +24,9 @@ def to_bl_np(a): a = np.asarray(a, float); return np.stack([a[:, 0], -a[:, 2], a
 for o in list(bpy.data.objects): bpy.data.objects.remove(o)
 with bpy.data.libraries.load(HB) as (src, dst): dst.objects = ["Hand" + k for k in PTS]
 for o in dst.objects: bpy.context.scene.collection.objects.link(o)     # (the hands are baked at the rendered density)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import hand_mix
+for o in list(dst.objects):
+    if o.name in ("HandL", "HandLc"): hand_mix.add_pose_keys(bpy, o, HB)   # the left hand's working poses (frame "mix")
 C0 = Matrix.Rotation(math.pi / 2, 4, "X")
 HOOK = []
 for part in D["hookMesh"]:
@@ -32,7 +35,7 @@ def check(fr):
     dg = bpy.context.evaluated_depsgraph_get()
     hands = {}
     for h in fr["hands"] or []:
-        ob = bpy.data.objects[h.get("obj", "Hand" + h["side"])]; r = h["rot"]; p = h["pos"]
+        ob = bpy.data.objects[h.get("obj", "Hand" + h["side"])]; r = h["rot"]; p = h["pos"]; hand_mix.set_mix(ob, h.get("mix")); dg.update()
         M = Matrix(((r[0], r[1], r[2], p[0]), (r[3], r[4], r[5], p[1]), (r[6], r[7], r[8], p[2]), (0, 0, 0, 1))) @ Matrix.Scale(h["scale"], 4)
         me = ob.evaluated_get(dg).to_mesh()
         n_skin = ob.data.get("n_skin", len(me.vertices))         # the skin only: the nails' free edges are open plates

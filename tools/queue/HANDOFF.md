@@ -286,3 +286,9 @@ as 16/220 at the site's size (`run.sh` takes renderer flags after the frames fie
   from the nearest point pins the texture while the yarn slides along itself. So it is **off by default**
   (`MATCOORDS=1` in render_tutorial.py to use it). The better route: keep choreo's yarn from jumping (warm-start
   the per-frame relax from the previous frame), or track material through the ops in choreo itself.
+- **hdc, dec, dc, tr on the left hand + held camera** (Guided, 24 fps, `--samples 8 --fibres 100`, default encode — MCFILTER
+  was measured worse on still yarn under cam-hold; paths from 7a8bc3a (close fix, PRE_TOP, WRAP_TOP, PULLED_FRONT,
+  TOP_FLAT) via `chunks.sh`; renderer 5276761, matcoords off). Published as base versions with the gate logged, not
+  blocking (relay's plan (a)). yarn_gate (step 6, 0.65R) exceptions:
+  - **hdc**: 348, 354 (1.10, 1.21R): the pull_up start, the loops on the hook brushing the row below's front as the hook
+    backs out (main is on it). hand_contact (150, 350, 500): nothing inside a hand; V tops connected on the last frame.

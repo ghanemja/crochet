@@ -28,9 +28,9 @@ def interp_curve(s_q, s, p):
 
 class YarnRod:
     # defaults from the sc 280-340 study (tools/queue/physics_study.py): w_soft 20 Hz (10: more yarn through yarn,
-    # 30+: the pull holds it in the fabric), 8 iterations x 40 substeps a frame, feed gain 0.5 (2: the length swings)
+    # 30+: the pull holds it in the fabric), 8 iterations x 40 substeps a frame, feed gain 1 (0.5: yarn through the row at sc 318; 2: the length swings)
     def __init__(s, ds=0.5, substeps=40, iters=8, ei=0.0, lb=1.0, tex=TEX, w_soft=20.0, w_hook=20.0, zeta=1.0,
-                 mu=0.4, feed_tau=0.5, gravity=0.0, fade=4.0, feed_gain=0.5, slack_tau=0.5, R=1.0):
+                 mu=0.4, feed_tau=0.5, gravity=0.0, fade=4.0, feed_gain=1.0, slack_tau=0.5, contact_last=0, R=1.0):
         s.ds, s.n_sub, s.iters, s.R = ds, int(substeps), int(iters), R
         s.m = tex * ds * R_M                                    # kg per particle
         s.w_soft, s.w_hook = 2 * np.pi * w_soft, 2 * np.pi * w_hook   # the pull toward the design, as frequencies
@@ -44,6 +44,7 @@ class YarnRod:
         s.damping = 2.0 * zeta * s.w_soft                        # critically damped toward the design (yarn has next to no inertia: contact
                                                                  # friction and the hands' grip, not the air, take its energy)
         s.mu, s.feed_tau, s.fade, s.feed_gain, s.slack_tau = mu, feed_tau, fade, feed_gain, slack_tau
+        s.contact_last = bool(contact_last)
         s.g = np.array([0.0, 0.0, -9.81 / R_M]) * gravity
         s.x = None; s.slack = 0.0; s.slack_s = 0.0; s.prev = None; s.log = []
 
@@ -119,6 +120,8 @@ class YarnRod:
                 if sub == s.n_sub - 1 and it == s.iters - 1:   # how much longer the contacts want it: the pull on the hand
                     want = arc(s.x)[-1] - s.s[-1]
                 s._inextensible(rest, w)
+            if s.contact_last:                                   # contacts have the last word (a hair of stretch, no yarn through yarn)
+                s._contacts(ftree, FP, FN, fmax, HK, hook_need, xp, w); s._self(xp, w)
             s.v = (s.x - xp) / h * np.exp(-s.damping * h)
             s.v[0] = s.v[-1] = 0.0
         L_now = arc(s.x)[-1]; excess = s.feed_gain * want

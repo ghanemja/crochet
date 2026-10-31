@@ -1325,8 +1325,18 @@ def yarn_clear(c, e, h, hk):
         hneed = np.array([r_ + 0.9 * R for _, r_ in prof])
         mask = np.zeros(h, bool); mask[e + 1:h - 1] = True
         sk = left_skin(); sk = sk[np.all((sk > lo) & (sk < hi), axis=1)]          # and the left hand
+        raw = c[e:h].copy()
+        if WARM and _WARM.get("e") == e and _WARM.get("n") is not None:
+            # start from the frame before's settled offsets (by place along the working yarn), not from the bare path:
+            # the relax then lands next to where it was instead of flipping between pushes frame to frame
+            u0 = np.linspace(0, 1, _WARM["n"]); u1 = np.linspace(0, 1, h - e)
+            off = np.stack([np.interp(u1, u0, _WARM["off"][:, k]) for k in range(3)], 1)
+            c[e + 1:h - 1] += WARM * off[1:-1]
         c[:h] = yarn_relax.relax([c[:h]], movable=[mask], fixed=(np.vstack([Fn, hax, sk]), np.concatenate([np.full(len(Fn), 2.0 * R), hneed, np.full(len(sk), 1.06 * R)])), R=R, iters=WORK_ITERS)[0]
+        _WARM.update(e=e, n=h - e, off=c[e:h] - raw)
     return c
+WARM = float(os.environ.get("WARM", "0"))                     # (study) the working yarn's relax starts from the frame before's offsets (0: from scratch)
+_WARM = {}
 
 def frame_strands(ta):
     op, p = op_at(ta); L_OFF[0] = l_off(ta); HAND_NOW.update(hand_state(ta))

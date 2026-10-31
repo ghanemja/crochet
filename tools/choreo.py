@@ -760,7 +760,7 @@ def loop_ds(S, hk):
             d = max(d, (hk.tip[1] + (PULLED_FRONT if L.kind == "pulled" else WRAP_FRONT)) / -hk.u[1])
         ds.append(d)
     for i in range(n - 2, -1, -1):                               # the older ones further up the shaft
-        moved = (S.loops[i + 1].kind == "pulled" and PULLED_FRONT) or (S.loops[i + 1].kind == "wrap" and WRAP_FRONT)
+        moved = (S.loops[i + 1].kind == "pulled" and PULLED_FRONT) or (S.loops[i + 1].kind == "wrap" and WRAP_FRONT and S.loops[i].kind != "live")
         ds[i] = max(ds[i], ds[i + 1] + SPACING) if moved else ds[i]
     return ds
 PULLED_FRONT = float(os.environ.get("PULLED_FRONT", "2.5"))     # (dec) a pulled-up loop this far in front of the work while the hook is in the next stitch (0: as before)

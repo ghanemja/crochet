@@ -23,3 +23,10 @@ hdc gate frames over 0.65R: 78–90 (the yarn over behind the row, hidden behind
 Look: the loops on the hook sit more bunched and draped than old's crisp loops (`sc_hands_stills_282_305_328.jpg`),
 same size; the live loop is visible. Worth a look by the user.
 Files: `sc_280_340_hands_old_vs_pass.mp4`, `hdc_60_120_hands_old_vs_pass.mp4`, the two stills.
+
+## sl end of stitch (frames 330–396)
+
+`sl_f360_old_vs_new.jpg`: Guided view, frame 360, choreo's relax (left) vs the pass (right), 8 samples / 100 fibres, 800×500.
+The pass's yarn gate is 0.86R here (limit 0.65R). Choreo's design for the yarn on to the hand runs 0.23R through the
+stitch just closed, and the rod is held taut on it. Logged as an exception: in the Guided view the overlap sits behind
+the loop on the hook. Friction μ=0 brings it to 0.71R, but it costs sc, so the default stays μ=0.4.

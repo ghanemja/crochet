@@ -24,6 +24,7 @@ def des(a): return np.asarray(a, float) @ TO_APP / K           # app -> design s
 def app(c): return [[round(float(x), 4) for x in p] for p in np.asarray(c) @ TO_APP.T * K]
 KW = dict(x.split("=") for x in os.environ.get("ROD", "").split(",") if x)
 BUDGET = float(os.environ.get("BUDGET", "1")); BTAU = float(os.environ.get("BUDGET_TAU", "0.3"))
+SHAPE = os.environ.get("SHAPE", "0") == "1"; SHAPE_W = float(os.environ.get("SHAPE_W", "3"))
 
 # HOLD=1 (default): a frame that repeats the pose before it (the held camera: the same ta) keeps the yarn the rod gave that
 # pose, so held frames stay identical (the renderer copies them) instead of the rod settling on through the hold
@@ -40,7 +41,8 @@ for fi, fr in enumerate(D["frames"]):
     assert len(c) >= h and np.allclose(des(st[cur]["pts"])[-1], des(st[acc]["pts"])[0], atol=1e-3), fi
     work = des(ph["work"])                                               # the working yarn as designed (c[e:h])
     old = c[e:h]
-    if rod is None or e != last_e:                                       # a fresh start, or the attachment moved
+    if rod is None or abs(e - last_e) > 8:                              # a fresh start, or the attachment moved (choreo's own_e
+                                                                         # index jitters by one point where the curve is re-splined)
         rod = yarn_xpbd.YarnRod(**{k: float(v) for k, v in KW.items()}); ext = None
         if last_e is not None: resets.append(fi)
     last_e = e
@@ -51,7 +53,15 @@ for fi, fr in enumerate(D["frames"]):
     want = np.array([BUDGET * (seg_o[a:b].sum() - seg_d[a:b].sum()) for a, b in zip(mk[:-1], mk[1:])])
     ext = want if ext is None else ext + (want - ext) * (1 - np.exp(-1.0 / fps / BTAU))
     k = np.ones(len(seg_d))
-    for (a, b), x in zip(zip(mk[:-1], mk[1:]), ext): k[a:b] = 1 + max(x, 0.0) / max(seg_d[a:b].sum(), 1e-6)
+    # within a stretch the extra yarn goes where the relax put it (its local lengthening, smoothed over SHAPE_W yarn radii
+    # either way so it doesn't jitter), not evenly: spread evenly, a stretch was short where it crosses the fabric (sl's end)
+    if SHAPE:
+        wl = max(1, int(SHAPE_W / max(np.median(seg_d), 1e-3))); ker = np.ones(2 * wl + 1)
+        loc = np.convolve(np.maximum(seg_o - seg_d, 0.0), ker, "same") + 0.02 * np.convolve(seg_d, ker, "same")
+    for (a, b), x in zip(zip(mk[:-1], mk[1:]), ext):
+        if b <= a: continue
+        if SHAPE: k[a:b] = 1 + max(x, 0.0) * loc[a:b] / max((loc[a:b] * seg_d[a:b]).sum(), 1e-6)
+        else: k[a:b] = 1 + max(x, 0.0) / max(seg_d[a:b].sum(), 1e-6)
     mat = np.concatenate([[0.0], np.cumsum(seg_d * k)])
     if rod.x is None:                                                    # start on choreo's relaxed yarn, at the budget's places
         rod.s = rod._layout(mat[-1]); rod.x = yarn_xpbd.interp_curve(rod.s, mat, old); rod.v = np.zeros_like(rod.x)

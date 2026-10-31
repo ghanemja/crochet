@@ -12,9 +12,9 @@ fabric and self, the hook profile + 0.9R, friction μ 0.4. 40 substeps × 8 iter
 
 | sc 280–340 (61 steps), yarn radii | design | old (yarn_clear) | new (rod) |
 |---|---|---|---|
-| per-frame motion, shape (median / p90) | 0.074 / 0.150 | 0.141 / 0.252 | 0.116 / 0.255 |
+| per-frame motion, shape (median / p90) | 0.074 / 0.150 | 0.141 / 0.252 | 0.146 / 0.254 |
 | ratio to design, shape (med / p90) | 1 | 1.35 / 2.09 | 1.53 / 2.35 |
-| per-frame motion at fixed arc length from fabric (med / p90) | 0.42 / 1.44 | 1.27 / 2.76 | 0.43 / 1.43 |
+| per-frame motion at fixed arc length from fabric (med / p90) | 0.42 / 1.44 | 1.27 / 2.76 | 0.43 / 1.45 |
 | ratio to design, arc-length (med / p90) — fibre crawl | 1 | 2.39 / 15.3 | 0.96 / 1.80 |
 | \|frame-to-frame length change\| (med / p90 / max) | 0.44 / 1.89 / 8.2 | 1.18 / 4.97 / 14.2 | 0.44 / 1.90 / 7.3 |
 | length over the design (median) | 0 | +17.6 | +1.7 |

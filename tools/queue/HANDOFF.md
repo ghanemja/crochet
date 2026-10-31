@@ -183,6 +183,24 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    1.06R). `INC_D` (off): inc's two stitches side by side in the shared hole, only partly helps (the second
    stitch's loop and legs go through the first's V and legs, 582–684 ~1.6R; needs a fan-out redesign).
    Still open: hdc 348–354 (the loops on the hook brush the row below's front as it backs out, ~1.1R).
+   `TOP_FLAT` (on): over_top(A) added 4.5 up even from an A already lifted over the edge (YARN_TOP, PRE_TOP), so the
+   held yarn rose well above work and finger and came back down, which the relax coiled (the "springy" held yarn);
+   now it goes on at A's height. hdc 204/342/351 1.1–1.25R -> 0.21R. The remaining curl down the side to the hook
+   is the yarn over's own helix round the shaft (`wrap`), kept on purpose (the yarn over reads as hooked).
+   Frame-to-frame jitter (the "fibres crawl" report): the per-frame relax (`yarn_clear`) lengthens the working yarn
+   15–30% and by a different amount each frame (crinkles it sideways where neighbouring points are pushed off
+   different obstacles). Not fixed by: more iterations; stronger smoothing (0.5 worse, 0.7 unstable); a temporal
+   post-pass (gate 3 -> 10 frames over); `WARM` (off: the relax warm-started from the frame before's offsets: flat on
+   flicker, worse gate; note flicker_metric must score each render on its own masks, cross-scoring doubles "moving").
+   Fixed by the opt-in rod post-pass (merged f84656c, from yarn-physics): choreo `PHYS=1` exports the designed
+   working yarn per frame, `tools/queue/physics_pass.py` remakes it as an inextensible rod stepped in time (sc gate
+   0.25R/0 frames, crawl p90 1.89R -> 0.86R; `HOLD=1` keeps held-camera frames identical). Renders with it wait on
+   the user's draped-vs-crisp call. `BAR_W` (off): narrower bars on a dc/tr post being built; only partly helped.
+   tr 792–819 (final pull-through, up to 1.79R, sustained; also 660–672): the drawn loop's ring on the hook shaft
+   (`ring1`, a1..new) passes through the previous tr's post at mid height (z ~2.8 where its top is 7.7): the shaft
+   is angled toward the previous stitch. Needs the hook pose or loop placement in tr's last pull-through
+   redesigned; the rod post-pass can't undo yarn that starts inside other yarn. Logged as an exception for now.
+   dc 495–500: single-frame relax flips (not a held knot); the rod post-pass's temporal carry removes those.
 ## Checking tools
 - `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts
   drawn over the rendered cue frames (render them first at `round(t * 24)`).

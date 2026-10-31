@@ -1346,9 +1346,9 @@ _WARM = {}
 # PHYS=1: each frame also carries "phys", what tools/queue/physics_pass.py needs to remake the working yarn as a rod stepped in
 # time: the working yarn as designed (c[e:h] before the relax, the join to the fabric carried), e/h/split indices into the yarn
 # (the current row's strand then the accent strand), the hook's axis points with the clearance each needs (in R) and the left
-# hand's skin near the yarn. (0: as before)
+# hand's skin near the yarn, and the right hand's. (0: as before)
 PHYS = os.environ.get("PHYS", "0") == "1"
-PHYS_NOW = {}; PHYS_REC = {}
+PHYS_NOW = {}; PHYS_REC = {}; _RVERTS = []
 
 def frame_strands(ta):
     op, p = op_at(ta); L_OFF[0] = l_off(ta); HAND_NOW.update(hand_state(ta))
@@ -1371,7 +1371,14 @@ def frame_strands(ta):
     e_ = cv.own_e + off if not RING else 0
     if PHYS:
         PHYS_NOW.clear(); base = yarn_clear(c, e_, h, hk, iters=0)
-        PHYS_REC[round(ta, 4)] = dict(PHYS_NOW, e=int(e_), h=int(h), sp=int(sp), work=app(base[e_:h]))
+        rec = dict(PHYS_NOW, e=int(e_), h=int(h), sp=int(sp), work=app(base[e_:h]))
+        if "skin" in rec and HAND_PTS and "_verts" in HAND_PTS["R"]:      # and the right hand's skin (it holds the hook)
+            if not _RVERTS: _RVERTS.append(np.array(HAND_PTS["R"]["_verts"]) * HAND_SCALE / UNIT)
+            rpos, rrot = right_hand(hk); rv = rpos + _RVERTS[0] @ rrot.T
+            lo, hi = base[e_:h].min(0) - 3 * R, base[e_:h].max(0) + 3 * R
+            rv = rv[np.all((rv > lo) & (rv < hi), axis=1)]; rv = rv[::max(1, len(rv) // 3000)]
+            rec["skin"] = rec["skin"] + app(rv)
+        PHYS_REC[round(ta, 4)] = rec
     c = yarn_clear(c, e_, h, hk)
     if HAND_ACTIVE and h > sp:                                   # (the relax can pull a little of it back into the moving fingers)
         c[sp:h] = off_left_hand(c[sp:h])

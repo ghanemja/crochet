@@ -27,6 +27,12 @@ def hook_pts(hk):
     return hax, prof[:, 1] + 0.9 * R
 
 def arc(p): return yarn_xpbd.arc(p)
+# BUDGET=k: the rod gets the yarn the per-frame relax found each stretch needs (from where it leaves the fabric to the
+# first loop, the loops on the hook, on to the hand), k x that, smoothed in time (BUDGET_TAU s), spread evenly along it
+BUDGET = float(os.environ.get("BUDGET", "0")); BTAU = float(os.environ.get("BUDGET_TAU", "0.3")); ext = None
+def marks(r):
+    acc = [s for s in r["frame"]["strands"] if s.get("accent")][0]
+    return [0, r["sp"] + acc["slide"] - r["e"], r["sp"] + acc["hold"] - r["e"], r["h"] - r["e"] - 1]
 new_c, t0 = [], time.time()
 for r in recs:
     e, h = r["e"], r["h"]; base = r["base"]
@@ -36,7 +42,15 @@ for r in recs:
     lo, hi = des.min(0) - 6 * R, des.max(0) + 6 * R
     fixed = fixed[np.all((fixed > lo) & (fixed < hi), axis=1)]
     hax, hneed = hook_pts(r["hook"])
-    out = rod.step(des, 1.0 / fps, fixed=fixed, hook=hax, hook_need=hneed, skin=r["skin"] if len(r["skin"]) else None)
+    mat = None
+    if BUDGET:
+        seg_d = np.linalg.norm(np.diff(des, axis=0), axis=1); seg_o = np.linalg.norm(np.diff(r["old_c"][e:h], axis=0), axis=1)
+        mk = marks(r); want = np.array([BUDGET * (seg_o[a:b].sum() - seg_d[a:b].sum()) for a, b in zip(mk[:-1], mk[1:])])
+        ext = want if ext is None else ext + (want - ext) * (1 - np.exp(-1.0 / fps / BTAU))
+        k = np.ones(len(seg_d))
+        for (a, b), x in zip(zip(mk[:-1], mk[1:]), ext): k[a:b] = 1 + max(x, 0.0) / max(seg_d[a:b].sum(), 1e-6)
+        mat = np.concatenate([[0.0], np.cumsum(seg_d * k)])
+    out = rod.step(des, 1.0 / fps, fixed=fixed, hook=hax, hook_need=hneed, skin=r["skin"] if len(r["skin"]) else None, mat=mat)
     c = base.copy(); c[e:h] = out; new_c.append(c)
 print("rod: %d frames %.1f s" % (len(recs), time.time() - t0), file=sys.stderr)
 

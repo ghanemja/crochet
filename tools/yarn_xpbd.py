@@ -65,11 +65,13 @@ class YarnRod:
         return sn
 
     # ------------------------------------------------------------------ one video frame
-    def step(s, design, dt, fixed=None, fixed_need=None, hook=None, hook_need=None, skin=None, skin_need=1.06):
+    def step(s, design, dt, fixed=None, fixed_need=None, hook=None, hook_need=None, skin=None, skin_need=1.06, mat=None):
         """design: (M, 3) choreo's working yarn this frame, from where it leaves the fabric to the hand (both ends
         pinned); fixed: (K, 3) yarn it keeps 2R off (fixed_need per point); hook: (H, 3) the shaft's axis points
-        (hook_need per point); skin: (S, 3). -> (M, 3) the rod at the design's points' material places"""
-        R = s.R; sD = arc(design); Ld = sD[-1]
+        (hook_need per point); skin: (S, 3); mat: (M,) the material place of each design point (default its arc
+        length): more yarn than the design's own length where the design is drawn tighter than the yarn is thick.
+        -> (M, 3) the rod at the design's points' material places"""
+        R = s.R; sD = arc(design) if mat is None else np.asarray(mat, float); Ld = sD[-1]
         if s.x is None:                                          # start at rest on the design
             s.slack = 0.0; s.s = s._layout(Ld); s.x = interp_curve(s.s, sD, design); s.v = np.zeros_like(s.x)
         Lm = Ld + s.slack_s
@@ -78,9 +80,9 @@ class YarnRod:
         tgt1 = interp_curve(s.s * (Ld / Lm), sD, design)
         if s.prev is None: tgt0, hook0 = tgt1, hook
         else:
-            pd, ph = s.prev; sp = arc(pd); tgt0 = interp_curve(s.s / s.s[-1] * sp[-1], sp, pd)
+            pd, ph, sp = s.prev; tgt0 = interp_curve(s.s / s.s[-1] * sp[-1], sp, pd)
             hook0 = ph if ph is not None and hook is not None and len(ph) == len(hook) else hook
-        s.prev = (design.copy(), None if hook is None else hook.copy())
+        s.prev = (design.copy(), None if hook is None else hook.copy(), sD.copy())
         # stiff where the design has the yarn round the hook (the loops riding the shaft)
         om = np.full(N, s.w_soft)
         if hook is not None:

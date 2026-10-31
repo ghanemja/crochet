@@ -1,12 +1,12 @@
 # Single crochet, last week and this week
 
-![Oct 25 vs Oct 29](sc-pink-vs-now.jpg)
+![Oct 25 vs Oct 31](sc-pink-vs-now.jpg)
 
 - `sc-pink-vs-now-4x5.mp4`: 1080×1350, for Instagram/Threads
 - `sc-pink-vs-now-wide.mp4`: 1600×500, side by side
 - `hookpath-demo.mp4`: Hookpath, the keyframe tool, playing the single crochet plan with its planned camera shots
 
-Both halves show the same five steps. The Oct 29 half is recorded from the app's Learn
+Both halves show the same five steps. The Oct 31 half (commit `afb27fb`) is recorded from the app's Learn
 modal, so it has the guided annotations the app draws over the video: the step caption, the
 ring and arrow, the stitch numbers, and a 2.4 s freeze on each callout. The Oct 25 video
 (`assets/tutorials/sc.mp4`, commit `2bc5181`, captured from the live three.js scene) is
@@ -18,7 +18,7 @@ during each freeze, so each step lines up on screen.
 On October 25, the **Learn this stitch** button played a capture of the live three.js scene:
 pink twisted yarn, a bare grey hook, a green working strand, and a fixed camera.
 
-Four days and 60 commits later, the same button plays a Blender Cycles render. The yarn has
+Six days and 137 commits later, the same button plays a Blender Cycles render. The yarn has
 three plies wrapped in hundreds of tapered fibres. Real hands hold the hook and the work. The
 camera films the stitch the way a person teaching it would, and freeze-frames point at where
 the hook goes.
@@ -42,7 +42,7 @@ Here is what changed and what we learned about splitting the work between a pers
    came a choreographed single crochet in blue and orange teaching colours, a guided camera
    and MakeHuman hands.
 6. **Oct 26 · Hookpath.** A tool for planning the hook's motion by hand (below).
-7. **Oct 27–30 · Sixteen rounds of feedback.** Each note was logged word for word with the
+7. **Oct 27–31 · Rounds and rounds of feedback.** Each note was logged word for word with the
    fix it led to.
 
 ## Hookpath

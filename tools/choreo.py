@@ -784,6 +784,7 @@ def yarn_leaves(S):
         A = v(A[0], 1.3, max(A[2], top + 1.6 * R))
     return A
 PRE_TOP = os.environ.get("PRE_TOP", "1") == "1"            # (hdc/dc/tr) see yarn_leaves; 0: as before
+TOP_FLAT = os.environ.get("TOP_FLAT", "0") == "1"          # (study) the held yarn on to the finger level from a lifted A (see assemble; 0: as before)
 WRAP_TOP = os.environ.get("WRAP_TOP", "1") == "1"          # (hdc/dc/tr; 0: as before) a pulled-up loop after a yarn over: its yarn over the top edge (see assemble)
 CLOSE_LAG = float(os.environ.get("CLOSE_LAG", "0.35"))
 CLOSE_OWN = os.environ.get("CLOSE_OWN", "1") == "1"           # (0: the new stitch counts as fabric from the start of the close, as before)
@@ -860,7 +861,10 @@ def assemble(S, hk, ds=None, form=None, throat=None, keep=None, tail=None, rings
         ang = contact(hk, tin[-1] if tin else A, tout[0] if tout else over_top(A), throat == "caught") if throat else None
         pts += tin
         if ang: pts += wrap(hk, THROAT_D, *ang)
-        pts += tout + [over_top(A)]
+        B = over_top(A)
+        if TOP_FLAT and not RING:                                # A already over the top edge (YARN_TOP, PRE_TOP): on from there toward
+            B[2] = max(A[2], BT(xw)[2] + 4.5)                    # the finger at its height, not another 4.5 up (a hump the relax coiled)
+        pts += tout + [B]
     rt = route_now()
     if HAND_ACTIVE:                                              # the way up to the index in steps: it is kept off the fingers as they move
         n_ = int(np.linalg.norm(rt[0] - pts[-1]) / (0.4 * R))

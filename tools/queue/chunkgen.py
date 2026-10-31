@@ -22,6 +22,8 @@ if not merge:
         if os.path.exists(p): continue
         g["RANGE"] = range(s, min(n, s + size)); exec(compile(body, "choreo_frames", "exec"), g)
         json.dump(g["frames"], open(p + ".tmp", "w")); os.replace(p + ".tmp", p); print("chunk", s, flush=True)
+    if all(os.path.exists(os.path.join(D, "%s_%05d.json" % (key, s_))) for s_ in range(0, n, size)):
+        open(os.path.join(D, key + ".complete"), "w").close()          # chunks.sh merges it and starts no more workers for it
     print("worker done", w)
 else:
     frames = []

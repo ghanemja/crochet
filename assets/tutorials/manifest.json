@@ -58,5 +58,15 @@
    1
   ],
   "cues": true
+ },
+ "mr": {
+  "views": [
+   "Guided"
+  ],
+  "grid": [
+   1,
+   1
+  ],
+  "cues": true
  }
 }

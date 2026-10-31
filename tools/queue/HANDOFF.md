@@ -175,6 +175,14 @@ committed. Plan: sc gets all 4 angles; the others the Guided view only, at 24 fp
    stitch, as before). Not fixed by this: inc's second sc shares the first's hole (legs on top of each other),
    hdc/dec's mid-stitch stretches (hdc 72–102, 348–366; dec 348–426). Tools: scratchpad-style single-frame gate =
    exec choreo.py up to the frame loop, then `frame_strands(at_video(f/24)[0])` (~4 min setup, seconds a frame).
+   Further yarn-through-fabric fixes (single-frame gate): `PRE_TOP` (hdc/dc/tr: yarn overs before the insert, the
+   hook in front of the work, take the yarn back over the top edge; hdc 72–102 from 1.55R to ≤0.45R); `WRAP_TOP`
+   (hdc/dc/tr: a pulled-up loop after a yarn over takes its yarn over the row below's top at the hole,
+   `over_edge`; hdc 360–366 from 1.5R to 0.34R); `PULLED_FRONT` 2.5 (dec: a pulled-up loop stays on the shaft
+   in front of the work while the hook is in the next stitch; 348–402 from ~1.1R to ~0.8R, 500 up from 0.76R to
+   1.06R). `INC_D` (off): inc's two stitches side by side in the shared hole, only partly helps (the second
+   stitch's loop and legs go through the first's V and legs, 582–684 ~1.6R; needs a fan-out redesign).
+   Still open: hdc 348–354 (the loops on the hook brush the row below's front as it backs out, ~1.1R).
 ## Checking tools
 - `python3 tools/queue/cue_overlay.py build/paths/<key>.cues.json <frames dir> out.jpg [view]` — the callouts
   drawn over the rendered cue frames (render them first at `round(t * 24)`).

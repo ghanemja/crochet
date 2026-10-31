@@ -274,6 +274,8 @@ as 16/220 at the site's size (`run.sh` takes renderer flags after the frames fie
 - **Final renders on the left hand + held camera** (Guided, 24 fps, `--samples 8 --fibres 100`, default encode; paths from
   42fcc47's close fix + the ring commits, generated with `chunks.sh`). Logged yarn_gate exceptions (working yarn > 0.65R):
   - **sl** (`3fb1038`): 240:324, worst 1.18R at 240 (the pull through the stitch and loop; 0.69–0.82R after 240).
+  - **inc** (`020d9e3`, paths from 42fcc47 without TOP_FLAT): 534:684, worst 1.66R (the second sc's legs share the
+    first's hole and run through its V and legs; 534 at 0.71R). Its pull-throughs (390:402, 468:516) pass.
 - **Fibres ride with the yarn** (`tools/queue/matcoords.py`, run by `chunks.sh` after each merge): choreo rebuilds the
   yarn every frame and its length jumped by up to ~1 R between frames (sl 200: hook still, length −1.25), and the
   renderer laid the twist/fibres/flyaways out along each frame's arc length, so every fibre crawled on its own (user:

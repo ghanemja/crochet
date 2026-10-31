@@ -279,5 +279,8 @@ as 16/220 at the site's size (`run.sh` takes renderer flags after the frames fie
   renderer laid the twist/fibres/flyaways out along each frame's arc length, so every fibre crawled on its own (user:
   "every strand moves individually"). matcoords gives each strand a per-point `m` carried from the frame before (nearest
   point of the same yarn); render_tutorial.py uses it when present (`m_coords`). sl 170–330, points that stay put:
-  fibre jumps > 0.25 R 9.6% → 3.2%, p90 0.18 R → 0. Paths without `m` render as before. Left: the per-frame relax
-  in choreo (warm-start it from the previous frame).
+  fibre jumps > 0.25 R 9.6% → 3.2%, p90 0.18 R → 0. **But the renders flickered more** (flicker_metric, sl 194–206:
+  still 6.54 → 7.62, moving 6.18 → 8.37; held-camera sl 250–274: still 4.56 → 4.79, moving 6.71 → 8.84): inheriting m
+  from the nearest point pins the texture while the yarn slides along itself. So it is **off by default**
+  (`MATCOORDS=1` in render_tutorial.py to use it). The better route: keep choreo's yarn from jumping (warm-start
+  the per-frame relax from the previous frame), or track material through the ops in choreo itself.

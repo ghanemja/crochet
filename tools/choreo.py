@@ -1076,16 +1076,22 @@ def _op_pose(op, p):
     if op.name in ("through", "through2"):
         # the loops crowd up to the head, then the hook draws back along its shaft through them, the
         # caught yarn in the throat: each loop passes off over the head (raw_path: through_loops)
-        T_OUT = h0.tip + h0.u * slide_back(op, 1.0) + v(0, 0, 0.6)
+        uT = h0.u
+        if THRU_UX != 1.0 and not (CHAIN or RING):
+            # (study knob) the shaft turned away from the previous stitch as it draws back, so the loops riding
+            # it do not pass through that stitch's post: its across-the-row part scaled by THRU_UX
+            uT = nrm(v(h0.u[0] * THRU_UX, h0.u[1], h0.u[2]))
+        uq = (lambda qq: h0.u) if uT is h0.u else (lambda qq: slerp_dir(h0.u, uT, ease(qq / 0.3)))
+        T_OUT = h0.tip + uT * slide_back(op, 1.0) + v(0, 0, 0.6)
         if p < PULL_SPLIT:
-            qq = p / PULL_SPLIT
-            return rolled(h0.tip + h0.u * slide_back(op, qq) + v(0, 0, 0.6) * ease(qq), h0.u, back(PULL_SPLIT))
+            qq = p / PULL_SPLIT; u_ = uq(qq)
+            return rolled(h0.tip + u_ * slide_back(op, qq) + v(0, 0, 0.6) * ease(qq), u_, back(PULL_SPLIT))
         q = ease((p - PULL_SPLIT) / (1 - PULL_SPLIT))
         if op.name == "through2":
             dst, ud = T_UP(S0.xw, lift_for(op.E.nthr)), U_UP
         else:
             dst, ud = REST(op.E.E), U_REST
-        return rolled(bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), dst + v(0.8, -1.0, 1.0), dst, q), slerp_dir(h0.u, ud, q), back(PULL_SPLIT))
+        return rolled(bez(T_OUT, T_OUT + v(0.2, -0.6, 1.2), dst + v(0.8, -1.0, 1.0), dst, q), slerp_dir(uT, ud, q), back(PULL_SPLIT))
     if op.name == "mr_close":
         # presenting the finished round: the hook draws its loop out past the rim and lifts aside (the shaft
         # pointing away from the centre), so it no longer lies across the middle of the ring
@@ -1095,6 +1101,7 @@ def _op_pose(op, p):
 MR_LIFT = _env_vec("MR_LIFT", v(0.3, -0.6, 4.5))            # row space: z is out from the ring's centre
 MR_LIFT_U = nrm(_env_vec("MR_LIFT_U", v(0.35, -0.5, 1.0)))
 PULL_SPLIT = 0.55
+THRU_UX = float(os.environ.get("THRU_UX", "1"))   # the pull-through shaft's across-the-row part (1: as before)
 RIDE = 0.4                                   # share of the pull-through spent crowding the loops up to the head
 def n_through(op): return 2 if op.name == "through2" else len(op.S.loops)
 def slide_back(op, qq):

@@ -271,3 +271,6 @@ as 16/220 at the site's size (`run.sh` takes renderer flags after the frames fie
   left hand) kept dying in container restarts; this resumes (rerun the script) and uses all cores (sl ~20 min).
   Output is identical to choreo.py's (checked frame by frame). Rerun it once the workers are done to merge each key
   into `build/paths/<key>.json` + `.cues.json`; delete `build/chunks/<key>_*` before regenerating a key.
+- **Final renders on the left hand + held camera** (Guided, 24 fps, `--samples 8 --fibres 100`, default encode; paths from
+  42fcc47's close fix + the ring commits, generated with `chunks.sh`). Logged yarn_gate exceptions (working yarn > 0.65R):
+  - **sl** (`3fb1038`): 240:324, worst 1.18R at 240 (the pull through the stitch and loop; 0.69–0.82R after 240).

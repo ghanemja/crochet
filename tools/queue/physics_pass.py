@@ -25,11 +25,16 @@ def app(c): return [[round(float(x), 4) for x in p] for p in np.asarray(c) @ TO_
 KW = dict(x.split("=") for x in os.environ.get("ROD", "").split(",") if x)
 BUDGET = float(os.environ.get("BUDGET", "1")); BTAU = float(os.environ.get("BUDGET_TAU", "0.3"))
 
-rod, ext, last_e, n_done, resets, t0 = None, None, None, 0, [], time.time()
+# HOLD=1 (default): a frame that repeats the pose before it (the held camera: the same ta) keeps the yarn the rod gave that
+# pose, so held frames stay identical (the renderer copies them) instead of the rod settling on through the hold
+HOLD = os.environ.get("HOLD", "1") == "1"
+rod, ext, last_e, n_done, resets, t0, held = None, None, None, 0, [], time.time(), None
 for fi, fr in enumerate(D["frames"]):
     ph = fr.get("phys")
-    if not ph or "hook" not in ph: rod = None; continue
+    if not ph or "hook" not in ph: rod = None; held = None; continue
     st = fr["strands"]; acc = [k for k, s in enumerate(st) if s.get("accent")][0]; cur = acc - 1
+    if HOLD and held is not None and held[0] == fr.get("a"):
+        st[cur]["pts"], st[acc]["pts"] = held[1], held[2]; n_done += 1; continue
     e, h, sp = ph["e"], ph["h"], ph["sp"]
     c = np.vstack([des(st[cur]["pts"]), des(st[acc]["pts"])[1:]])        # the yarn as choreo relaxed it: row, then working yarn
     assert len(c) >= h and np.allclose(des(st[cur]["pts"])[-1], des(st[acc]["pts"])[0], atol=1e-3), fi
@@ -58,6 +63,7 @@ for fi, fr in enumerate(D["frames"]):
     new = rod.step(work, 1.0 / fps, fixed=fixed, hook=des(ph["hook"]), hook_need=np.asarray(ph["need"]) * R, skin=skin, mat=mat)
     c[e:h] = new
     st[cur]["pts"] = app(c[:sp + 1]); st[acc]["pts"] = app(c[sp:]); n_done += 1
+    held = (fr.get("a"), st[cur]["pts"], st[acc]["pts"])
 if not KEEP:
     for fr in D["frames"]: fr.pop("phys", None)
 json.dump(D, open(out_p, "w"))

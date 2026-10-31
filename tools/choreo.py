@@ -784,7 +784,7 @@ def yarn_leaves(S):
         A = v(A[0], 1.3, max(A[2], top + 1.6 * R))
     return A
 PRE_TOP = os.environ.get("PRE_TOP", "1") == "1"            # (hdc/dc/tr) see yarn_leaves; 0: as before
-TOP_FLAT = os.environ.get("TOP_FLAT", "0") == "1"          # (study) the held yarn on to the finger level from a lifted A (see assemble; 0: as before)
+TOP_FLAT = os.environ.get("TOP_FLAT", "1") == "1"          the held yarn on to the finger level from a lifted A (see assemble; 0: as before)
 WRAP_TOP = os.environ.get("WRAP_TOP", "1") == "1"          # (hdc/dc/tr; 0: as before) a pulled-up loop after a yarn over: its yarn over the top edge (see assemble)
 CLOSE_LAG = float(os.environ.get("CLOSE_LAG", "0.35"))
 CLOSE_OWN = os.environ.get("CLOSE_OWN", "1") == "1"           # (0: the new stitch counts as fabric from the start of the close, as before)

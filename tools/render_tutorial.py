@@ -404,6 +404,13 @@ def yarn_coords(st, m_start, m_hold):
         return front * (1 - w) + back * w
     return mat
 
+def m_coords(st):
+    """mat(s) from the strand's own per-point "m" (tools/queue/matcoords.py: carried from frame to frame, so the
+    fibres stay on the yarn while choreo's rebuilt polyline changes length under them)"""
+    p = np.asarray(st["pts"], float); a = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(p, axis=0), axis=1))])
+    m = np.asarray(st["m"], float)
+    return lambda s_: np.interp(s_, a, m)
+
 def build_curves(name, items, mat):
     cv = bpy.data.hair_curves.new(name)
     if not items: return cv
@@ -456,7 +463,7 @@ def set_yarn(fr):
         nx = fr["strands"][i + 1] if i + 1 < len(fr["strands"]) else None
         goes_on = (not st["closed"] and nx is not None and nx.get("visible") and len(nx.get("pts", [])) >= 3
                    and np.linalg.norm(np.array(nx["pts"][0]) - np.array(st["pts"][-1])) < 1e-6)
-        mat = yarn_coords(st, m0, HELD_LEN.get(root)) if not st["closed"] else None
+        mat = (m_coords(st) if "m" in st else yarn_coords(st, m0, HELD_LEN.get(root))) if not st["closed"] else None
         curves, m_end, n_last = strand_curves(root, st, mat, n0, taper_start=not cont, taper_end=not goes_on)
         prev = None if st["closed"] else (np.array(st["pts"][-1]), root, m_end, n_last)
         for kind, items in curves.items():

@@ -35,3 +35,26 @@ Feeding more yarn (gain 2) or holding the loops stiffer brings back length swing
 
 Files: `sc_280_340_old_vs_new.mp4` (left old, right new), `cmp_grid.jpg` (frames 282 / 305 / 335),
 `cmp_f328.jpg`, `sc_280_340_per_frame.tsv`.
+
+## Round 2: rod + per-stretch yarn budget (`BUDGET=1`)
+
+The design is tighter than the yarn, measured per stretch on sc 280–340: fabric→first loop +8R (+44%), loops on
+the hook +10R (+15%), the yarn over and the run to the hand +0. It isn't wiggle; at 2R resolution the relax still
+adds 14R. Growing choreo's shapes with knobs was tried (legs through the hole 1.1R → 2R apart, loop helix lift
+0.55 → 1R, loop radius +0.4R) and barely changed it (loops 14% → 11%), so the knobs were not kept. The tightness
+is spread along the path. Instead, the rod gets that much yarn per stretch: the old relax's length per stretch,
+smoothed in time (0.3 s) and spread evenly along the stretch (`mat`). Physics decides where it bulges.
+
+| sc 280–340 | old (yarn_clear) | rod, no budget | rod + budget |
+|---|---|---|---|
+| fibre crawl ×design (med / p90) | 2.39 / 15.3 | 0.96 / 1.80 | 0.99 / 2.65 |
+| \|ΔL\| per frame (med / p90 / max) | 1.18 / 4.97 / 14.2 | 0.44 / 1.90 / 7.3 | 0.50 / 1.82 / 7.6 |
+| length over design (median) | +17.6 | +1.7 | +19.9 (smooth) |
+| shape motion ×design (med / p90) | 1.35 / 2.09 | 1.53 / 2.35 | 1.84 / 3.09 |
+| yarn_gate worst / frames > 0.65R | 0.79R / 1 | 0.67R / 1 | 0.77R / 5 |
+| flicker still / moving, own masks | 4.12 / 6.05 | 4.13 / 5.36 | **3.97 / 5.53** |
+| flicker still / moving, old's masks | 4.12 / 6.05 | 4.37 / 10.19 | 4.52 / 10.80 |
+| loops read | yes | no (blob) | yes, live loop visible |
+
+`budget_grid.jpg`: rows = frames 282 / 305 / 328 / 335; columns = old | rod | rod + budget.
+`sc_280_340_old_vs_budget.mp4`: old left, rod + budget right.

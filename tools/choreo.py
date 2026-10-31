@@ -762,7 +762,7 @@ def loop_ds(S, hk):
     for i in range(n - 2, -1, -1):                               # the older ones further up the shaft
         ds[i] = max(ds[i], ds[i + 1] + SPACING) if S.loops[i + 1].kind == "pulled" and PULLED_FRONT else ds[i]
     return ds
-PULLED_FRONT = float(os.environ.get("PULLED_FRONT", "0"))       # (study, dec) a pulled-up loop this far in front of the work while the hook is in the next stitch (0: as before)
+PULLED_FRONT = float(os.environ.get("PULLED_FRONT", "2.5"))     # (dec) a pulled-up loop this far in front of the work while the hook is in the next stitch (0: as before)
 
 def yarn_leaves(S):
     """where the held yarn leaves the work on its way to the left index: low behind it while the hook is in a
